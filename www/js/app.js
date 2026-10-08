@@ -8,6 +8,30 @@ const KG_TO_LBS = 2.20462;
 function round1(n) { return Math.round(n * 10) / 10; }
 function round2(n) { return Math.round(n * 100) / 100; }
 
+// one-time rename/category/reps corrections applied to already-saved exercise lists
+// (new installs get these directly from seed.js) — keyed by the OLD exercise name.
+const EXERCISE_CONTENT_PATCH_V2 = {
+  'משיכה לפנים בפולי עליון (אחיזה רחבה)': { newName: 'משיכה לפנים בפולי עליון', category: 'גב עליון' },
+  'חתירה צרה לבטן': { category: 'גב אמצעי' },
+  'לחיצת רגליים': { category: 'רגליים - 4 ראשי' },
+  'פשיטת ברכיים': { category: 'רגליים - 4 ראשי' },
+  'כפיפת ברכיים': { category: 'רגליים - המסטרינג' },
+  'הרחקה לצדדים עם משקולות יד': { newName: 'הרחקה לצדדים', category: 'כתפיים צדדיות' },
+  'הרחקה אופקית (פרפר הפוך)': { category: 'כתפיים אחוריות' },
+  'פשיטת מרפקים בפולי עליון (טריצפס)': { newName: 'פשיטת מרפקים בפולי עליון', category: 'יד אחורית' },
+  'פשיטת מרפקים בפולי עליון': { category: 'יד אחורית' },
+  'כפיפת מרפקים בישיבה (ביצפס)': { newName: 'כפיפת מרפקים בישיבה', category: 'יד קדמית' },
+  'כפיפת מרפקים בישיבה': { category: 'יד קדמית' },
+  'פטישים (Hammer Curls)': { newName: 'פטישים', category: 'אמות' },
+  'כפיפה ופשיטה של שורש כף היד (Wrist Curl)': { newName: 'כפיפה ופשיטה של שורש כף היד', category: 'מפרקי כף יד' },
+  'כפיפות בטן / רולאפ': { newName: 'כפיפות בטן', category: 'בטן', defaultReps: '12' },
+  'זוקפי גב — פשיטת גב': { category: 'גב תחתון', defaultReps: '12' },
+  'פלאנק': { category: 'בטן' },
+  'טרפז — הרמת כתפיים עם משקולות (Shrugs)': { newName: 'טרפז', category: 'טרפז', defaultReps: '12' },
+};
+// every exercise still showing a '12-15'/'15-20' style range gets its reps unified to '12'
+// (applied generically below, in addition to the named overrides above)
+
 /* ---------------- state ---------------- */
 let exercises = [];
 let settings = db.getSettings();
@@ -124,6 +148,43 @@ function init() {
         migrated = true;
       }
     });
+    // one-time content patch (names/categories/reps corrections) for installs that
+    // already had an exercises list saved before this update
+    if (!settings.exerciseContentPatchV2) {
+      exercises.forEach((ex) => {
+        const patch = EXERCISE_CONTENT_PATCH_V2[ex.name];
+        if (patch) {
+          if (patch.newName) ex.name = patch.newName;
+          if (patch.category) ex.category = patch.category;
+          if (patch.defaultReps) ex.defaultReps = patch.defaultReps;
+          migrated = true;
+        }
+        if (/^\d+\s*-\s*\d+$/.test((ex.defaultReps || '').trim())) {
+          ex.defaultReps = '12';
+          migrated = true;
+        }
+      });
+      // add warm-up / cool-down as real exercise-list entries (previously lived only
+      // in settings.warmupName/warmupMinutes etc.)
+      if (!exercises.some((e) => e.id === 'warmup')) {
+        exercises.unshift({
+          id: 'warmup', name: settings.warmupName || DEFAULT_WARMUP_NAME, category: 'קרדיו',
+          inputType: 'cardio', durationMinutes: settings.warmupMinutes || 5, pace: DEFAULT_CARDIO_PACE, active: true,
+          defaultSets: 1, defaultReps: '', restSeconds: 0, notes: '', images: [],
+        });
+        migrated = true;
+      }
+      if (!exercises.some((e) => e.id === 'cooldown')) {
+        exercises.push({
+          id: 'cooldown', name: settings.cooldownName || DEFAULT_COOLDOWN_NAME, category: 'קרדיו',
+          inputType: 'cardio', durationMinutes: settings.cooldownMinutes || 5, pace: DEFAULT_CARDIO_PACE, active: true,
+          defaultSets: 1, defaultReps: '', restSeconds: 0, notes: '', images: [],
+        });
+        migrated = true;
+      }
+      settings.exerciseContentPatchV2 = true;
+      db.saveSettings(settings);
+    }
     if (migrated) db.saveExercises(exercises);
     // Exercises are never auto-added after first install. The user's saved list is the
     // source of truth — renamed, deleted, or custom-named exercises are respected forever.
@@ -235,14 +296,16 @@ function startLiveClock() {
 /* ================= WORKOUT TAB ================= */
 function buildDraftSession() {
   const lastByExercise = getLastCompletedValuesByExercise();
+  const warmupEx = exercises.find((ex) => ex.id === 'warmup' && ex.active !== false);
+  const cooldownEx = exercises.find((ex) => ex.id === 'cooldown' && ex.active !== false);
   return {
     id: db.uid(),
     startedAt: null,
     accumulatedSec: 0,
     running: false,
     entries: [
-      makeCardioEntry('warmup'),
-      ...exercises.filter((ex) => ex.active !== false).map((ex) => ({
+      ...(warmupEx ? [makeCardioEntry('warmup')] : []),
+      ...exercises.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ({
         exerciseId: ex.id,
         exerciseName: ex.name,
         sets: Array.from({ length: setsForWeek(ex) }, (_, i) => {
@@ -254,15 +317,16 @@ function buildDraftSession() {
           };
         }),
       })),
-      makeCardioEntry('cooldown'),
+      ...(cooldownEx ? [makeCardioEntry('cooldown')] : []),
     ],
   };
 }
 
 function makeCardioEntry(kind) {
-  return kind === 'warmup'
-    ? { exerciseId: 'warmup', exerciseName: settings.warmupName, type: 'cardio', durationSec: settings.warmupMinutes * 60, startedAt: null, completed: false, location: '', pace: '' }
-    : { exerciseId: 'cooldown', exerciseName: settings.cooldownName, type: 'cardio', durationSec: settings.cooldownMinutes * 60, startedAt: null, completed: false, location: '', pace: '' };
+  const ex = exercises.find((e) => e.id === kind) || {};
+  const name = ex.name || (kind === 'warmup' ? DEFAULT_WARMUP_NAME : DEFAULT_COOLDOWN_NAME);
+  const minutes = ex.durationMinutes || 5;
+  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: 'treadmill', pace: ex.pace || DEFAULT_CARDIO_PACE };
 }
 
 function setsForWeek(ex) {
@@ -273,6 +337,7 @@ function setsForWeek(ex) {
 function applyProgramWeekToActiveSession() {
   if (!activeSession) return;
   activeSession.entries.forEach((entry) => {
+    if (entry.type === 'cardio') return;
     const ex = exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) return;
     const desired = setsForWeek(ex);
@@ -440,7 +505,8 @@ function renderWorkoutTab() {
 
   activeSession.entries.forEach((entry) => {
     if (entry.type === 'cardio') {
-      list.appendChild(renderCardioCard(entry));
+      exerciseNumber += 1;
+      list.appendChild(renderCardioCard(entry, exerciseNumber));
       return;
     }
     const ex = exercises.find((e) => e.id === entry.exerciseId);
@@ -518,7 +584,7 @@ function renderWorkoutTab() {
           updateProgress();
           card.classList.toggle('done', entry.sets.every((s) => s.completed));
           const exerciseDone = entry.sets.every((s) => s.completed);
-          startRestTimer(ex, exerciseDone);
+          startRestTimer(ex, exerciseDone, nextEntryName(entry));
         });
       } else {
         const repsInput = qs('.reps', tr);
@@ -538,7 +604,7 @@ function renderWorkoutTab() {
         if (set.completed) {
           ensureWorkoutStarted();
           const exerciseDone = entry.sets.every((s) => s.completed);
-          startRestTimer(ex, exerciseDone);
+          startRestTimer(ex, exerciseDone, nextEntryName(entry));
         }
       });
 
@@ -585,8 +651,10 @@ function updateProgress(total, done) {
   el('setsProgressText').textContent = `${done} / ${total} סטים הושלמו (${pct}%)`;
   el('setsProgressFill').style.width = `${pct}%`;
 
-  const totalEx = strengthEntries.length;
-  const doneEx = strengthEntries.filter((e) => e.sets.length && e.sets.every((s) => s.completed)).length;
+  const totalEx = activeSession.entries.length;
+  const doneEx = activeSession.entries.filter((e) => (
+    e.type === 'cardio' ? e.completed : (e.sets.length && e.sets.every((s) => s.completed))
+  )).length;
   const exPct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
   el('exProgressText').textContent = `${doneEx} / ${totalEx} תרגילים הושלמו (${exPct}%)`;
   el('exProgressFill').style.width = `${exPct}%`;
@@ -595,17 +663,16 @@ function updateProgress(total, done) {
   el('overallProgressBadge').textContent = `${pct}%`;
 }
 
-function renderCardioCard(entry) {
+function renderCardioCard(entry, number) {
   const card = document.createElement('div');
-  const isWarmup = entry.exerciseId === 'warmup';
-  card.className = 'exercise-card cardio-card' + (entry.completed ? ' done' : '');
-  const icon = isWarmup ? '🔥' : '🧘';
+  const ex = exercises.find((e) => e.id === entry.exerciseId) || {};
+  card.className = 'exercise-card' + (entry.completed ? ' done' : '');
   const minutes = Math.round(entry.durationSec / 60);
-  const fullDurationSec = (isWarmup ? settings.warmupMinutes : settings.cooldownMinutes) * 60;
+  const fullDurationSec = (ex.durationMinutes || 5) * 60;
   card.innerHTML = `
     <div class="exercise-card-head">
       <div style="display:flex;gap:8px;align-items:flex-start;">
-        <span class="exercise-num">${icon}</span>
+        <span class="exercise-num">${number}</span>
         <div>
           <div class="exercise-name">${escapeHtml(entry.exerciseName)}</div>
           <div class="exercise-meta">הליכה ${minutes} דקות</div>
@@ -750,13 +817,29 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
   });
 }
 
-function startRestTimer(ex, exerciseDone) {
+function nextEntryName(entry) {
+  const idx = activeSession.entries.indexOf(entry);
+  const next = idx >= 0 ? activeSession.entries[idx + 1] : null;
+  return next ? next.exerciseName : null;
+}
+
+function startRestTimer(ex, exerciseDone, nextExerciseName) {
   const seconds = ex.restSeconds || settings.restSeconds || 90;
   el('restExerciseName').textContent = ex.name;
   el('restOverlay').classList.remove('hidden');
-  restDoneMessage = exerciseDone ? 'אפשר להמשיך לתרגיל הבא' : 'אפשר להמשיך לסט הבא';
   playBeep();
-  if (settings.voiceAnnouncements) speak(exerciseDone ? `${ex.name} הושלם, זמן מנוחה` : 'סט הושלם, זמן מנוחה');
+  if (exerciseDone) {
+    restDoneMessage = nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!';
+    if (settings.voiceAnnouncements) {
+      // announce the next exercise FIRST, then that the rest period has started
+      speak(nextExerciseName
+        ? `${ex.name} הסתיים. התרגיל הבא: ${nextExerciseName}. עכשיו זמן מנוחה`
+        : `${ex.name} הסתיים. זה היה התרגיל האחרון. זמן מנוחה`);
+    }
+  } else {
+    restDoneMessage = 'אפשר להמשיך לסט הבא';
+    if (settings.voiceAnnouncements) speak('סט הושלם, זמן מנוחה');
+  }
   restTimer.start(seconds);
 }
 
@@ -951,7 +1034,7 @@ function buildWorkoutShareCanvas(workoutsArr) {
   const innerWidth = width - margin * 2;
   const COLORS = {
     bg: '#ffffff', text: '#1f2430', muted: '#6b7280', border: '#e1e5f0',
-    primary: '#2563eb', primarySoft: '#eef2ff', rowAlt: '#f7f9fc', success: '#16a34a',
+    primary: '#96751f', primarySoft: '#f6ecd2', rowAlt: '#f7f9fc', success: '#16a34a',
   };
   const who = profile && profile.name ? ` — ${profile.name}` : '';
 
@@ -1199,6 +1282,16 @@ function openHealthSyncHelp() {
   qs('.btnCloseHealthHelp', overlay).addEventListener('click', () => overlay.remove());
 }
 
+// Simple format checks — not deliverability checks, just "does this look like a
+// real email / Israeli mobile number" so the user catches typos before sharing.
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+function isValidIsraeliPhone(value) {
+  const digits = value.trim().replace(/[\s-]/g, '');
+  return /^(0|\+972|972)5\d{8}$/.test(digits);
+}
+
 function openShareModal(workoutsArr) {
   const list = Array.isArray(workoutsArr) ? workoutsArr : [workoutsArr];
   const title = list.length > 1 ? `שיתוף ${list.length} אימונים` : `שיתוף אימון — ${formatDate(list[0].dateISO)}`;
@@ -1207,13 +1300,19 @@ function openShareModal(workoutsArr) {
   overlay.innerHTML = `
     <div class="photo-modal">
       <div class="photo-modal-head"><b>${title}</b><button class="btn-icon btnCloseShare">✕</button></div>
+      <label class="field-label">כתובת מייל לשיתוף (אופציונלי)</label>
+      <input class="input" id="shareEmail" type="email" dir="ltr">
+      <label class="field-label">מספר טלפון לשיתוף בוואטסאפ (אופציונלי)</label>
+      <input class="input" id="sharePhone" type="tel" dir="ltr">
+      <div class="field-hint">אם תמלא שדה — נוודא שהוא תקין, ואז תוכל לבחור את איש הקשר הזה בתפריט השיתוף שייפתח (לא ניתן לשלוח אוטומטית בגלל מגבלת אפל על צירוף קבצים).</div>
       <div class="settings-actions" style="flex-direction:column;">
         <button class="btn btn-primary" id="sharePdf">📄 שתף כ-PDF (למייל/וואטסאפ)</button>
         <button class="btn btn-secondary" id="shareImage">🖼️ שתף כתמונה (למייל/וואטסאפ)</button>
+        ${native.isNative() ? '' : `
         <div style="display:flex; gap:6px;">
-          <button class="btn btn-secondary" id="sendHealth" style="flex:1;">${native.isNative() ? '⌚ שמור בבריאות' : '⌚ שלח ל-Shortcuts (לבריאות)'}</button>
-          ${native.isNative() ? '' : '<button class="btn-icon btnHealthHelp" title="איך זה עובד?">ℹ️</button>'}
-        </div>
+          <button class="btn btn-secondary" id="sendHealth" style="flex:1;">⌚ שלח ל-Shortcuts (לבריאות)</button>
+          <button class="btn-icon btnHealthHelp" title="איך זה עובד?">ℹ️</button>
+        </div>`}
       </div>
     </div>
   `;
@@ -1221,21 +1320,38 @@ function openShareModal(workoutsArr) {
   const close = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseShare', overlay).addEventListener('click', close);
+
+  // Returns the validated recipient to remind the user about, or false if an
+  // entered field is invalid (blocks sharing until fixed or cleared).
+  function getValidatedRecipient() {
+    const email = qs('#shareEmail', overlay).value.trim();
+    const phone = qs('#sharePhone', overlay).value.trim();
+    if (email && !isValidEmail(email)) { showToast('כתובת המייל לא תקינה'); return false; }
+    if (phone && !isValidIsraeliPhone(phone)) { showToast('מספר הטלפון לא תקין (פורמט ישראלי: 05XXXXXXXX)'); return false; }
+    return email || phone || null;
+  }
+
   qs('#sharePdf', overlay).addEventListener('click', async () => {
+    const recipient = getValidatedRecipient();
+    if (recipient === false) return;
     const blob = buildWorkoutSharePdf(list);
     await shareFile(blob, `autofit-${Date.now()}.pdf`, 'application/pdf');
+    if (recipient) showToast(`בחר את ${recipient} בתפריט השיתוף ✅`);
     close();
   });
   qs('#shareImage', overlay).addEventListener('click', async () => {
+    const recipient = getValidatedRecipient();
+    if (recipient === false) return;
     const blob = await buildWorkoutShareImage(list);
     await shareFile(blob, `autofit-${Date.now()}.png`, 'image/png');
-    close();
-  });
-  qs('#sendHealth', overlay).addEventListener('click', () => {
-    syncWorkoutToHealth(list);
+    if (recipient) showToast(`בחר את ${recipient} בתפריט השיתוף ✅`);
     close();
   });
   if (!native.isNative()) {
+    qs('#sendHealth', overlay).addEventListener('click', () => {
+      syncWorkoutToHealth(list);
+      close();
+    });
     qs('.btnHealthHelp', overlay).addEventListener('click', (e) => {
       e.stopPropagation();
       openHealthSyncHelp();
@@ -1351,7 +1467,7 @@ function renderVolumeChart() {
   if (volumeChartInstance) volumeChartInstance.destroy();
   volumeChartInstance = new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'נפח (ק"ג)', data, backgroundColor: '#2563eb' }] },
+    data: { labels, datasets: [{ label: 'נפח (ק"ג)', data, backgroundColor: '#96751f' }] },
     options: chartBaseOptions(),
   });
 }
@@ -1422,67 +1538,54 @@ function chartBaseOptions() {
 /* ================= EXERCISES TAB ================= */
 function wireExercisesTab() {
   el('btnAddExercise').addEventListener('click', () => {
-    const draft = { id: db.uid(), name: '', category: 'כללי', defaultSets: 3, defaultReps: '12-15', restSeconds: 120, notes: '', images: [], active: true };
+    const draft = { id: db.uid(), name: '', category: 'כללי', defaultSets: 3, defaultReps: '12', restSeconds: 120, notes: '', images: [], active: true };
     openExerciseEditModal(draft, { isNew: true });
   });
-  loadWarmupCooldownFields();
-  el('btnSaveWarmupCooldown').addEventListener('click', () => {
-    const warmupName = el('warmupNameInput').value.trim() || DEFAULT_WARMUP_NAME;
-    const cooldownName = el('cooldownNameInput').value.trim() || DEFAULT_COOLDOWN_NAME;
-    const warmupMinutes = Math.max(1, parseInt(el('warmupMinutesInput').value, 10) || 5);
-    const cooldownMinutes = Math.max(1, parseInt(el('cooldownMinutesInput').value, 10) || 5);
-    settings.warmupName = warmupName;
-    settings.cooldownName = cooldownName;
-    settings.warmupMinutes = warmupMinutes;
-    settings.cooldownMinutes = cooldownMinutes;
-    db.saveSettings(settings);
-    loadWarmupCooldownFields();
-    showToast('החימום והשחרור עודכנו ✅');
-  });
 }
 
-const DEFAULT_WARMUP_NAME = 'חימום — הליכה';
-const DEFAULT_COOLDOWN_NAME = 'שחרור — הליכה';
-
-function loadWarmupCooldownFields() {
-  el('warmupNameInput').value = settings.warmupName;
-  el('warmupMinutesInput').value = settings.warmupMinutes;
-  el('cooldownNameInput').value = settings.cooldownName;
-  el('cooldownMinutesInput').value = settings.cooldownMinutes;
-}
+const DEFAULT_WARMUP_NAME = 'חימום-הליכה';
+const DEFAULT_COOLDOWN_NAME = 'שחרור-הליכה';
+const DEFAULT_CARDIO_PACE = 'קצב 6 בהליכון';
 
 function renderExercisesTab() {
   const list = el('exerciseManageList');
   list.innerHTML = '';
-  exercises.forEach((ex) => {
+  exercises.forEach((ex, index) => {
+    const isCardio = ex.inputType === 'cardio';
     const item = document.createElement('div');
     item.className = 'exercise-manage-item sortable-item' + (ex.active === false ? ' inactive' : '');
     item.dataset.id = ex.id;
+    const metaLine = isCardio
+      ? `${escapeHtml(ex.category)} &middot; ${ex.durationMinutes || 5} דקות`
+      : `${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × ${escapeHtml(ex.defaultReps)}`;
     item.innerHTML = `
       <div class="exercise-manage-head">
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="drag-handle" title="גרור לשינוי סדר">⠿</span>
+          <span class="exercise-num">${index + 1}</span>
           <div>
             <b>${escapeHtml(ex.name)}</b>
-            <div class="exercise-meta">${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × ${escapeHtml(ex.defaultReps)}</div>
+            <div class="exercise-meta">${metaLine}</div>
             <label class="checkbox-row ex-active-toggle"><input type="checkbox" class="exActiveCheck" ${ex.active !== false ? 'checked' : ''}> כלול באימון</label>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:4px;">
-          ${ex.images && ex.images.length ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
+          ${!isCardio && ex.images && ex.images.length ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
           <button class="btn-icon btnEditEx">✏️</button>
-          <button class="btn-icon btnDeleteEx">🗑️</button>
+          ${isCardio ? '' : '<button class="btn-icon btnDeleteEx">🗑️</button>'}
         </div>
       </div>
     `;
     qs('.btnEditEx', item).addEventListener('click', () => openExerciseEditModal(ex));
-    qs('.btnDeleteEx', item).addEventListener('click', () => {
-      if (!confirm(`למחוק את "${ex.name}"? אימוני עבר יישמרו.`)) return;
-      exercises = exercises.filter((e) => e.id !== ex.id);
-      db.saveExercises(exercises);
-      renderExercisesTab();
-      reorderActiveSessionToMatchExercises();
-    });
+    if (!isCardio) {
+      qs('.btnDeleteEx', item).addEventListener('click', () => {
+        if (!confirm(`למחוק את "${ex.name}"? אימוני עבר יישמרו.`)) return;
+        exercises = exercises.filter((e) => e.id !== ex.id);
+        db.saveExercises(exercises);
+        renderExercisesTab();
+        reorderActiveSessionToMatchExercises();
+      });
+    }
     qs('.exActiveCheck', item).addEventListener('change', (e) => {
       ex.active = e.target.checked;
       db.saveExercises(exercises);
@@ -1498,6 +1601,7 @@ function renderExercisesTab() {
     const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
     exercises = newOrderIds.map((id) => byId[id]).filter(Boolean);
     db.saveExercises(exercises);
+    renderExercisesTab();
     reorderActiveSessionToMatchExercises();
   });
 }
@@ -1531,6 +1635,7 @@ function fileToResizedDataUrl(file) {
 }
 
 function openExerciseEditModal(ex, options = {}) {
+  if (ex.inputType === 'cardio') return openCardioEditModal(ex);
   const isNew = !!options.isNew;
   let currentImages = [...(ex.images || [])];
   let inputType = ex.inputType || 'reps';
@@ -1648,6 +1753,48 @@ function openExerciseEditModal(ex, options = {}) {
   });
 }
 
+/* lightweight edit modal for the warm-up/cool-down cardio "exercises" — just a
+   name + duration (minutes), no sets/reps/images since their data is duration-based */
+function openCardioEditModal(ex) {
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-overlay';
+  overlay.innerHTML = `
+    <div class="photo-modal">
+      <div class="photo-modal-head"><b>עריכת תרגיל</b><button class="btn-icon btnCloseExEdit">✕</button></div>
+      <label class="field-label">שם</label>
+      <input class="input" id="editCardioName" value="${escapeAttr(ex.name)}">
+      <label class="field-label">משך (דקות)</label>
+      <input type="number" min="1" class="input" id="editCardioMinutes" value="${ex.durationMinutes || 5}">
+      <label class="field-label">קצב/מהירות ברירת מחדל</label>
+      <input class="input" id="editCardioPace" value="${escapeAttr(ex.pace || '')}" placeholder='לדוגמה: 6-10 קמ"ש'>
+      <label class="checkbox-row"><input type="checkbox" id="editCardioActive" ${ex.active !== false ? 'checked' : ''}> כלול באימונים הבאים</label>
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="btnSaveExEdit">שמור</button>
+        <button class="btn btn-secondary" id="btnCancelExEdit">ביטול</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  qs('.btnCloseExEdit', overlay).addEventListener('click', close);
+  qs('#btnCancelExEdit', overlay).addEventListener('click', close);
+  qs('#btnSaveExEdit', overlay).addEventListener('click', () => {
+    const name = qs('#editCardioName', overlay).value.trim();
+    if (!name) { showToast('נא להזין שם'); return; }
+    ex.name = name;
+    ex.durationMinutes = Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5);
+    ex.pace = qs('#editCardioPace', overlay).value.trim();
+    ex.active = qs('#editCardioActive', overlay).checked;
+    db.saveExercises(exercises);
+    syncExerciseNameEverywhere(ex);
+    renderExercisesTab();
+    reorderActiveSessionToMatchExercises();
+    close();
+    showToast('נשמר ✅');
+  });
+}
+
 function syncExerciseNameEverywhere(ex) {
   if (!activeSession) return;
   let changed = false;
@@ -1700,22 +1847,26 @@ function makeSortable(listEl, onReorder) {
 
 function reorderActiveSessionToMatchExercises() {
   if (!activeSession) return;
-  const warmup = activeSession.entries.find((e) => e.exerciseId === 'warmup');
-  const cooldown = activeSession.entries.find((e) => e.exerciseId === 'cooldown');
+  const warmupEx = exercises.find((e) => e.id === 'warmup');
+  const cooldownEx = exercises.find((e) => e.id === 'cooldown');
   const byExId = Object.fromEntries(activeSession.entries.map((e) => [e.exerciseId, e]));
+  const strengthExercises = exercises.filter((ex) => ex.id !== 'warmup' && ex.id !== 'cooldown');
   const hasProgress = activeSession.entries.some((e) => e.type !== 'cardio' && e.sets.some((s) => s.completed));
+
+  const warmup = warmupEx && warmupEx.active !== false ? (byExId['warmup'] || makeCardioEntry('warmup')) : null;
+  const cooldown = cooldownEx && cooldownEx.active !== false ? (byExId['cooldown'] || makeCardioEntry('cooldown')) : null;
 
   if (hasProgress) {
     // mid-workout: never drop logged data — just reorder to match the exercise list,
     // keeping any already-logged entries (even now-inactive/deleted ones) at the end.
-    const reordered = exercises.map((ex) => byExId[ex.id]).filter(Boolean);
+    const reordered = strengthExercises.map((ex) => byExId[ex.id]).filter(Boolean);
     const orphan = activeSession.entries.filter((e) =>
       e.exerciseId !== 'warmup' && e.exerciseId !== 'cooldown' && !exercises.some((ex) => ex.id === e.exerciseId));
     activeSession.entries = [warmup, ...reordered, ...orphan, cooldown].filter(Boolean);
   } else {
     // fresh draft: fully sync to the currently-active exercise list (add new, drop deselected)
     const lastByExercise = getLastCompletedValuesByExercise();
-    const synced = exercises.filter((ex) => ex.active !== false).map((ex) => {
+    const synced = strengthExercises.filter((ex) => ex.active !== false).map((ex) => {
       if (byExId[ex.id]) return byExId[ex.id];
       const last = lastByExercise[ex.id];
       return {
@@ -1843,9 +1994,9 @@ function renderProfileTab() {
   el('profileWeight').value = profile.weightKg || '';
 }
 function renderBrand() {
-  el('appBrand').textContent = '💪 AutoFit';
+  el('appBrand').textContent = 'AutoFit';
   const greetingEl = el('greetingText');
-  if (greetingEl) greetingEl.textContent = profile.name ? `שלום, ${profile.name} 👋` : 'שלום! 👋';
+  if (greetingEl) greetingEl.textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
 }
 
 /* ================= CONTACT TAB ================= */
@@ -1894,7 +2045,7 @@ function registerServiceWorker() {
 
 document.addEventListener('DOMContentLoaded', bootstrap);
 const splashStartTime = Date.now();
-const SPLASH_MIN_MS = 2000; // keep the branded splash on screen for at least 2s on native launches
+const SPLASH_MIN_MS = 2500; // keep the branded splash on screen ~2.5s: logo pop + delayed tagline/loader reveal
 
 // Native-only bootstrap: restore iCloud data (if any), gate behind Face ID for
 // returning users who enabled it, then either launch onboarding (first run)
@@ -1924,15 +2075,26 @@ async function bootstrap() {
   await waitForSplashMinimum();
   hideSplash();
 
+  const previewParams = new URLSearchParams(location.search);
+  if (!settings.onboardingComplete && !native.isNative() && previewParams.has('previewSkip')) {
+    profile.name = profile.name || 'משתמש בדיקה';
+    db.saveProfile(profile);
+    settings.onboardingComplete = true;
+    db.saveSettings(settings);
+  }
+
   if (!settings.onboardingComplete) {
     runOnboarding();
   } else {
     init();
+    const jumpTab = previewParams.get('tab');
+    if (jumpTab) switchTab(jumpTab);
   }
 }
 
 function waitForSplashMinimum() {
-  if (!native.isNative()) return Promise.resolve();
+  const previewForced = new URLSearchParams(location.search).has('previewSplash');
+  if (!native.isNative() && !previewForced) return Promise.resolve();
   const remaining = Math.max(0, SPLASH_MIN_MS - (Date.now() - splashStartTime));
   return new Promise((resolve) => setTimeout(resolve, remaining));
 }

@@ -18,8 +18,11 @@
 
 <!-- SPLASH SCREEN (shown briefly on every native launch) -->
 <div id="splashScreen" class="splash-screen">
-  <img src="icons/icon-512.png" alt="AutoFit" class="splash-logo">
+  <div class="splash-logo-wrap">
+    <img src="icons/icon-512.png" alt="AutoFit" class="splash-logo">
+  </div>
   <div class="splash-tagline">אפליקציית הכושר שלך</div>
+  <div class="splash-loader"><span></span><span></span><span></span></div>
 </div>
 
 <!-- ONBOARDING (first launch only) -->
@@ -67,7 +70,7 @@
 
 <header class="topbar">
   <img src="icons/icon-192.png" alt="AutoFit" class="header-logo">
-  <div id="appBrand" class="brand">💪 AutoFit</div>
+  <div id="appBrand" class="brand">AutoFit</div>
   <div id="liveClock" class="live-clock"></div>
 </header>
 
@@ -150,19 +153,6 @@
   <section id="tab-exercises" class="tab-panel">
     <h2 class="section-title">ניהול תרגילים</h2>
 
-    <div class="card">
-      <div class="card-title">🔥 חימום ושחרור</div>
-      <label class="field-label">שם החימום</label>
-      <input id="warmupNameInput" class="input" type="text">
-      <label class="field-label">משך החימום (דקות)</label>
-      <input id="warmupMinutesInput" class="input" type="number" min="1" max="60">
-      <label class="field-label">שם השחרור</label>
-      <input id="cooldownNameInput" class="input" type="text">
-      <label class="field-label">משך השחרור (דקות)</label>
-      <input id="cooldownMinutesInput" class="input" type="number" min="1" max="60">
-      <button id="btnSaveWarmupCooldown" class="btn btn-primary btn-small">שמור</button>
-    </div>
-
     <button id="btnAddExercise" class="btn btn-secondary" style="margin-bottom:12px;">+ הוסף תרגיל</button>
     <div id="exerciseManageList" class="exercise-manage-list"></div>
   </section>
@@ -234,11 +224,12 @@
 
     <div class="card">
       <div class="card-title">📱 AutoFit — מעקב אימוני כוח</div>
-      <p class="about-desc">אפליקציית מעקב כושר אישית לאימוני כוח: ניהול תרגילים, סטים וחזרות, טיימר מנוחה ואימון, היסטוריה ודשבורד התקדמות. מחוברת ל-Apple Health, גיבוי iCloud ונעילת Face ID.</p>
+      <p class="about-desc">אפליקציית מעקב כושר אישית לאימוני כוח: ניהול תרגילים, סטים וחזרות, טיימר מנוחה ואימון, היסטוריה ודשבורד התקדמות.</p>
       <div class="about-meta">
         <div class="about-meta-row"><span>גרסה</span><strong id="aboutVersion">1.0.0</strong></div>
         <div class="about-meta-row"><span>תאריך יצירה</span><strong id="aboutCreated">2026</strong></div>
       </div>
+      <p class="about-author">נוצר על ידי ששי דניאל</p>
     </div>
 
     <div class="card">
@@ -264,7 +255,7 @@
       <div class="settings-actions">
         <button id="btnSendContact" class="btn btn-primary">📤 שלח</button>
       </div>
-      <div class="field-hint">הלחיצה על שליחה תפתח את אפליקציית המייל שלך עם הפנייה מוכנה לשליחה אליי.</div>
+      <div class="field-hint contact-send-hint">הלחיצה על שליחה תפתח את אפליקציית המייל שלך עם הפנייה מוכנה לשליחה אליי.</div>
     </div>
   </section>
 
