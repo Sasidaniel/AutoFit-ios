@@ -6,3 +6,4 @@ certs/
 *.mobileprovision
 *.p8
 p12_password.txt
+PROJECT-NOTES.md
