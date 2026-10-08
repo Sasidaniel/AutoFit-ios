@@ -90,9 +90,8 @@
       <div id="homeGreeting" class="home-greeting">שלום! 👋</div>
     </div>
 
-    <div class="home-stats-grid" id="homeStatsGrid"></div>
-
-    <button id="btnHomeToDashboard" class="btn btn-secondary home-dashboard-btn">📊 לדשבורד המלא</button>
+    <button id="btnHomeProgress" class="btn btn-primary home-progress-btn">📊 ההתקדמות שלי</button>
+    <button id="btnHomeToDashboard" class="btn btn-secondary home-dashboard-btn">📈 לדשבורד המלא</button>
   </section>
 
   <!-- WORKOUT TAB -->
@@ -157,12 +156,18 @@
     </div>
 
     <div class="card">
+      <div class="card-title">סה"כ סטים לאימון — לאורך זמן</div>
+      <canvas id="setsChart" height="160"></canvas>
+    </div>
+
+    <div class="card">
       <div class="card-title">התקדמות לפי תרגיל</div>
       <div class="chart-controls-row">
         <select id="exercisePickerChart" class="select"></select>
         <select id="exerciseMetricPicker" class="select">
           <option value="weight">משקל מקסימלי</option>
           <option value="reps">חזרות מקסימליות</option>
+          <option value="sets">מספר סטים</option>
           <option value="volume">נפח (משקל × חזרות)</option>
         </select>
       </div>
@@ -238,6 +243,18 @@
         <button id="btnEnableNotifications" class="btn btn-secondary">🔊 בדוק צליל והכרזה קולית</button>
       </div>
       <div class="field-hint">באייפון/ספארי אין תמיכה בהתראות מערכת כשהמסך נעול או שיצאת לגמרי מהאפליקציה (זו מגבלת אפל וללא שרת Push ייעודי אי אפשר לעקוף אותה). מה שכן עובד: צליל + הכרזה קולית ישמיעו אוטומטית בסיום מנוחה/חימום/החזקה כל עוד האתר פתוח — גם אם עברת רגע לאפליקציה אחרת. לחץ כאן כדי לוודא שהצליל מופעל במכשיר שלך.</div>
+    </div>
+
+    <div id="permissionsSettingsCard" class="card hidden">
+      <div class="card-title">הרשאות מערכת</div>
+      <div class="field-hint">אפל מציגה את חלון האישור הרשמי רק בפעם הראשונה שאפליקציה מבקשת הרשאה. אם פספסת את זה או שינית דעתך — אפשר לבקש שוב כאן בכל רגע.</div>
+      <div class="settings-actions">
+        <button id="btnEnableHealthSettings" class="btn btn-secondary">🩺 אפשר גישה לאפליקציית בריאות</button>
+      </div>
+      <div class="settings-actions">
+        <button id="btnVerifyFaceIdSettings" class="btn btn-secondary">🔐 בדוק Face ID עכשיו</button>
+      </div>
+      <div class="field-hint">אם ההרשאה כבר נדחתה בעבר, אייפון לא יציג את החלון שוב — יש לאשר ידנית ב: הגדרות האייפון ⟵ פרטיות ואבטחה ⟵ בריאות / Face ID, ולבחור את AutoFit.</div>
     </div>
   </section>
 

@@ -171,7 +171,15 @@ body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 .home-stat-value { font-size: 18px; font-weight: 700; color: var(--primary); }
 .home-stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .home-stat-sub { font-size: 11px; margin-top: 2px; }
-.home-dashboard-btn { width: 100%; }
+.home-dashboard-btn { width: 100%; margin-top: 8px; }
+.home-progress-btn { width: 100%; margin-top: 16px; font-size: 16px; padding: 14px; }
+.home-stat-card-tap { cursor: pointer; transition: transform .1s ease, background .15s ease; }
+.home-stat-card-tap:active { transform: scale(0.97); background: var(--surface-alt); }
+.home-detail-list { list-style: none; padding: 0; margin: 10px 0 0; max-height: 50vh; overflow-y: auto; }
+.home-detail-list li {
+  background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 8px; font-size: 13px; color: var(--text);
+}
 
 .tab-panel { display: none; animation: fadeIn .15s ease; }
 .tab-panel.active { display: block; }

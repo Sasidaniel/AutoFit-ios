@@ -1400,6 +1400,7 @@ function formatDate(iso) {
 
 /* ================= DASHBOARD TAB ================= */
 let volumeChartInstance = null;
+let setsChartInstance = null;
 let exerciseChartInstance = null;
 let consistencyChartInstance = null;
 let bodyWeightChartInstance = null;
@@ -1408,6 +1409,7 @@ function renderDashboard() {
   workouts = db.getWorkouts();
   renderStatsGrid();
   renderVolumeChart();
+  renderSetsChart();
   renderExercisePicker();
   renderConsistencyChart();
   renderBodyWeightChart();
@@ -1473,8 +1475,23 @@ function renderVolumeChart() {
 
   if (volumeChartInstance) volumeChartInstance.destroy();
   volumeChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets: [{ label: 'נפח (ק"ג)', data, backgroundColor: '#96751f' }] },
+    type: 'line',
+    data: { labels, datasets: [{ label: 'נפח (ק"ג)', data, borderColor: '#96751f', backgroundColor: '#96751f33', tension: 0.3, fill: true }] },
+    options: chartBaseOptions(),
+  });
+}
+
+function renderSetsChart() {
+  if (!window.Chart) return;
+  const ctx = el('setsChart');
+  const sorted = [...workouts].sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
+  const labels = sorted.map((w) => new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }));
+  const data = sorted.map((w) => w.entries.reduce((b, e) => b + (e.type === 'cardio' ? 0 : e.sets.length), 0));
+
+  if (setsChartInstance) setsChartInstance.destroy();
+  setsChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ label: 'סטים', data, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.3, fill: true }] },
     options: chartBaseOptions(),
   });
 }
@@ -1493,6 +1510,7 @@ function renderExercisePicker() {
 const EXERCISE_METRIC_LABELS = {
   weight: 'משקל מקסימלי (ק"ג)',
   reps: 'חזרות מקסימליות',
+  sets: 'מספר סטים',
   volume: 'נפח (משקל × חזרות)',
 };
 function renderExerciseChart() {
@@ -1509,6 +1527,8 @@ function renderExerciseChart() {
     let value;
     if (metric === 'reps') {
       value = Math.max(...completedSets.map((s) => Number(s.reps) || 0));
+    } else if (metric === 'sets') {
+      value = completedSets.length;
     } else if (metric === 'volume') {
       value = completedSets.reduce((sum, s) => sum + (Number(s.weightKg) || 0) * (Number(s.reps) || 0), 0);
     } else {
@@ -1964,9 +1984,36 @@ function wireSettings() {
   });
   if (native.isNative()) {
     el('faceIdSettingRow').classList.remove('hidden');
-    el('settingFaceId').addEventListener('change', (e) => {
-      settings.faceIdEnabled = e.target.checked;
+    el('permissionsSettingsCard').classList.remove('hidden');
+    el('settingFaceId').addEventListener('change', async (e) => {
+      const wantsOn = e.target.checked;
+      if (wantsOn) {
+        const available = await native.biometricIsAvailable();
+        if (!available) {
+          showToast('Face ID/Touch ID לא זמין במכשיר זה');
+          e.target.checked = false;
+          return;
+        }
+        const ok = await native.biometricVerify();
+        if (!ok) {
+          showToast('האימות נכשל — נסה שוב');
+          e.target.checked = false;
+          return;
+        }
+        showToast('Face ID הופעל ✅');
+      }
+      settings.faceIdEnabled = wantsOn;
       db.saveSettings(settings);
+    });
+    el('btnEnableHealthSettings').addEventListener('click', async () => {
+      const res = await native.healthRequestAuthorization();
+      showToast(res.granted ? 'החיבור ל-Apple Health אושר ✅' : 'ההרשאה לא אושרה — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > בריאות');
+    });
+    el('btnVerifyFaceIdSettings').addEventListener('click', async () => {
+      const available = await native.biometricIsAvailable();
+      if (!available) { showToast('Face ID/Touch ID לא זמין במכשיר זה'); return; }
+      const ok = await native.biometricVerify();
+      showToast(ok ? 'האימות הצליח ✅' : 'האימות נכשל');
     });
   }
   el('btnEnableNotifications').addEventListener('click', requestNotificationPermission);
@@ -2052,11 +2099,14 @@ function wireHomeTab() {
     }
   });
   el('btnHomeToDashboard').addEventListener('click', () => switchTab('dashboard'));
+  el('btnHomeProgress').addEventListener('click', openHomeProgressModal);
 }
 function renderHomeTab() {
   el('homePhoto').src = profile.photoDataUrl || 'icons/icon-192.png';
   el('homeGreeting').textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
+}
 
+function buildHomeStatCards() {
   workouts = db.getWorkouts();
   const weekCount = countThisWeek();
   const streak = computeStreak();
@@ -2081,20 +2131,112 @@ function renderHomeTab() {
     weightNow = `${profile.weightKg} ק"ג`;
   }
 
-  const cards = [
-    { icon: '🏋️', value: `${weekCount}/${settings.weeklyGoal}`, label: 'אימונים השבוע', sub: `אימון אחרון: ${lastWorkoutText}` },
-    { icon: '📈', value: weightNow, label: 'משקל נוכחי', subHtml: weightDeltaHtml },
-    { icon: '🔥', value: streak, label: 'רצף שבועות' },
-    { icon: '📋', value: exercises.filter((e) => e.active !== false).length, label: 'תרגילים פעילים' },
+  return [
+    {
+      icon: '🏋️', value: `${weekCount}/${settings.weeklyGoal}`, label: 'אימונים השבוע', sub: `אימון אחרון: ${lastWorkoutText}`,
+      detailTitle: 'אימונים השבוע',
+      detailHtml: buildWeekWorkoutsDetailHtml(),
+    },
+    {
+      icon: '📈', value: weightNow, label: 'משקל נוכחי', subHtml: weightDeltaHtml,
+      detailTitle: 'היסטוריית משקל',
+      detailHtml: buildWeightHistoryDetailHtml(),
+    },
+    {
+      icon: '🔥', value: streak, label: 'רצף שבועות',
+      detailTitle: 'רצף שבועי',
+      detailHtml: buildStreakDetailHtml(),
+    },
+    {
+      icon: '📋', value: exercises.filter((e) => e.active !== false).length, label: 'תרגילים פעילים',
+      detailTitle: 'תרגילים פעילים',
+      detailHtml: buildActiveExercisesDetailHtml(),
+    },
   ];
-  el('homeStatsGrid').innerHTML = cards.map((c) => `
-    <div class="home-stat-card">
+}
+
+function buildWeekWorkoutsDetailHtml() {
+  const key = isoWeekKey(new Date());
+  const thisWeek = workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key)
+    .sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
+  if (!thisWeek.length) return '<div class="card-hint">עדיין לא בוצע אימון השבוע</div>';
+  return `<ul class="home-detail-list">${thisWeek.map((w) => `
+    <li><b>${formatDate(w.dateISO)}</b><br>משך: ${formatHMS(w.durationSec)} &middot; נפח: ${Math.round(computeVolume(w)).toLocaleString()} ק"ג</li>
+  `).join('')}</ul>`;
+}
+function buildWeightHistoryDetailHtml() {
+  const history = [...(profile.weightHistory || [])].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO)).slice(0, 8);
+  if (!history.length) return '<div class="card-hint">אין עדיין נתוני משקל שמורים — עדכן בטאב "אישי"</div>';
+  return `<ul class="home-detail-list">${history.map((h) => `
+    <li><b>${new Date(h.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</b> — ${h.weightKg} ק"ג</li>
+  `).join('')}</ul>`;
+}
+function buildStreakDetailHtml() {
+  const now = new Date();
+  const rows = [];
+  for (let i = 7; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i * 7);
+    const key = isoWeekKey(d);
+    const count = workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key).length;
+    rows.push({ key: key.replace(/^\d+-/, ''), count });
+  }
+  return `<ul class="home-detail-list">${rows.map((r) => `
+    <li>${r.key} — ${r.count} אימון${r.count === 1 ? '' : 'ים'} ${r.count >= (settings.weeklyGoal || 3) ? '✅' : ''}</li>
+  `).join('')}</ul>`;
+}
+function buildActiveExercisesDetailHtml() {
+  const active = exercises.filter((e) => e.active !== false);
+  if (!active.length) return '<div class="card-hint">אין תרגילים פעילים</div>';
+  return `<ul class="home-detail-list">${active.map((e, i) => `<li>${i + 1}. ${escapeHtml(e.name)} <span class="card-hint">(${escapeHtml(e.category)})</span></li>`).join('')}</ul>`;
+}
+
+function openHomeProgressModal() {
+  const cards = buildHomeStatCards();
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-overlay';
+  overlay.innerHTML = `
+    <div class="photo-modal">
+      <div class="photo-modal-head"><b>ההתקדמות שלי</b><button class="btn-icon btnCloseHomeProgress">✕</button></div>
+      <div class="home-stats-grid" id="homeProgressGrid"></div>
+      <button class="btn btn-secondary home-dashboard-btn" id="btnHomeProgressToDashboard">📈 לדשבורד המלא</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const grid = qs('#homeProgressGrid', overlay);
+  grid.innerHTML = cards.map((c, i) => `
+    <div class="home-stat-card home-stat-card-tap" data-idx="${i}">
       <div class="home-stat-icon">${c.icon}</div>
       <div class="home-stat-value">${c.value}</div>
       <div class="home-stat-label">${c.label}</div>
       ${c.sub ? `<div class="home-stat-sub">${escapeHtml(c.sub)}</div>` : (c.subHtml || '')}
     </div>
   `).join('');
+  qsa('.home-stat-card-tap', grid).forEach((cardEl) => {
+    cardEl.addEventListener('click', () => {
+      const c = cards[Number(cardEl.dataset.idx)];
+      openHomeDetailModal(c.detailTitle, c.detailHtml);
+    });
+  });
+  const close = () => overlay.remove();
+  qs('.btnCloseHomeProgress', overlay).addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  qs('#btnHomeProgressToDashboard', overlay).addEventListener('click', () => { close(); switchTab('dashboard'); });
+}
+
+function openHomeDetailModal(title, bodyHtml) {
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-overlay';
+  overlay.innerHTML = `
+    <div class="photo-modal">
+      <div class="photo-modal-head"><b>${escapeHtml(title)}</b><button class="btn-icon btnCloseHomeDetail">✕</button></div>
+      ${bodyHtml}
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  qs('.btnCloseHomeDetail', overlay).addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 }
 
 /* ================= UTIL ================= */
