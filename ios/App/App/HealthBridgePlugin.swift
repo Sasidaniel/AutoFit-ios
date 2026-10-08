@@ -34,8 +34,8 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         let toRead: Set<HKObjectType> = [workoutType, energyType]
 
         healthStore.requestAuthorization(toShare: toShare, read: toRead) { success, error in
-            if let error = error {
-                call.reject("Authorization failed: \(error.localizedDescription)")
+            if let error = error as NSError? {
+                call.reject("Authorization failed: \(error.localizedDescription) [\(error.domain)#\(error.code)]")
             } else {
                 call.resolve(["granted": success])
             }

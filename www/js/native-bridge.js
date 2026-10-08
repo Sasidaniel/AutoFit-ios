@@ -94,12 +94,12 @@ export async function keepAwakeDisable() {
 /* ---------------- Face ID / Touch ID ---------------- */
 export async function biometricIsAvailable() {
   const NativeBiometric = plugin('NativeBiometric');
-  if (!NativeBiometric) return false;
+  if (!NativeBiometric) return { available: false, reason: 'not-native' };
   try {
     const res = await NativeBiometric.isAvailable();
-    return !!(res && res.isAvailable);
+    return { available: !!(res && res.isAvailable), biometryType: res && res.biometryType, errorCode: res && res.errorCode };
   } catch (e) {
-    return false;
+    return { available: false, reason: String(e) };
   }
 }
 

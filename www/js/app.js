@@ -1988,9 +1988,9 @@ function wireSettings() {
     el('settingFaceId').addEventListener('change', async (e) => {
       const wantsOn = e.target.checked;
       if (wantsOn) {
-        const available = await native.biometricIsAvailable();
-        if (!available) {
-          showToast('Face ID/Touch ID לא זמין במכשיר זה');
+        const bio = await native.biometricIsAvailable();
+        if (!bio.available) {
+          showToast('Face ID/Touch ID לא זמין או לא מוגדר במכשיר זה' + (bio.reason ? ` (${bio.reason})` : ''));
           e.target.checked = false;
           return;
         }
@@ -2007,11 +2007,13 @@ function wireSettings() {
     });
     el('btnEnableHealthSettings').addEventListener('click', async () => {
       const res = await native.healthRequestAuthorization();
-      showToast(res.granted ? 'החיבור ל-Apple Health אושר ✅' : 'ההרשאה לא אושרה — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > בריאות');
+      showToast(res.granted
+        ? 'החיבור ל-Apple Health אושר ✅'
+        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > בריאות`);
     });
     el('btnVerifyFaceIdSettings').addEventListener('click', async () => {
-      const available = await native.biometricIsAvailable();
-      if (!available) { showToast('Face ID/Touch ID לא זמין במכשיר זה'); return; }
+      const bio = await native.biometricIsAvailable();
+      if (!bio.available) { showToast('Face ID/Touch ID לא זמין או לא מוגדר במכשיר זה' + (bio.reason ? ` (${bio.reason})` : '')); return; }
       const ok = await native.biometricVerify();
       showToast(ok ? 'האימות הצליח ✅' : 'האימות נכשל');
     });
@@ -2282,8 +2284,8 @@ async function bootstrap() {
     profile = db.getProfile();
 
     if (settings.onboardingComplete && settings.faceIdEnabled !== false) {
-      const available = await native.biometricIsAvailable();
-      if (available) {
+      const bio = await native.biometricIsAvailable();
+      if (bio.available) {
         const ok = await native.biometricVerify();
         if (!ok) {
           document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:18px;background:#000;color:#fff;">🔒 האימות נכשל — רענן כדי לנסות שוב</div>';
@@ -2358,12 +2360,14 @@ function runOnboarding() {
       const res = await native.healthRequestAuthorization();
       healthCard.textContent = res.granted ? '✓ אושר' : 'אפשר';
       healthCard.disabled = false;
-      showToast(res.granted ? 'החיבור ל-Apple Health אושר ✅' : 'ההרשאה לא אושרה — ניתן לשנות בהגדרות האייפון');
+      showToast(res.granted
+        ? 'החיבור ל-Apple Health אושר ✅'
+        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — ניתן לשנות בהגדרות האייפון`);
     });
 
     const faceIdBtn = el('btnEnableFaceIdOnboarding');
-    const available = await native.biometricIsAvailable();
-    if (!available) {
+    const bio = await native.biometricIsAvailable();
+    if (!bio.available) {
       faceIdBtn.closest('.onboarding-permission-card').classList.add('hidden');
       return;
     }
