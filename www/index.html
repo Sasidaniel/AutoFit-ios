@@ -29,14 +29,14 @@
     <h1 class="onboarding-title">ברוכים הבאים ל-AutoFit</h1>
     <p class="onboarding-subtitle">כמה פרטים כדי שנתחיל</p>
     <div class="onboarding-form">
-      <label class="field-label">שם המתאמן</label>
-      <input class="input" id="obName" placeholder="לדוגמה: ששי דניאל">
+      <label class="field-label">שם המתאמן <span class="required-mark">*</span></label>
+      <input class="input" id="obName">
       <label class="field-label">גיל</label>
-      <input type="number" min="1" class="input" id="obAge" placeholder="גיל">
+      <input type="number" min="1" class="input" id="obAge">
       <label class="field-label">גובה (ס"מ)</label>
-      <input type="number" min="1" class="input" id="obHeight" placeholder="גובה בס&quot;מ">
+      <input type="number" min="1" class="input" id="obHeight">
       <label class="field-label">משקל (ק"ג)</label>
-      <input type="number" min="1" step="0.1" class="input" id="obWeight" placeholder="משקל בק&quot;ג">
+      <input type="number" min="1" step="0.1" class="input" id="obWeight">
     </div>
     <button id="btnOnboardingNext" class="btn btn-primary onboarding-btn">המשך</button>
   </div>
@@ -171,17 +171,17 @@
   <section id="tab-profile" class="tab-panel">
     <h2 class="section-title">אזור אישי</h2>
     <div class="card">
-      <label class="field-label">שם המתאמן</label>
-      <input class="input" id="profileName" placeholder="לדוגמה: ששי דניאל">
+      <label class="field-label">שם המתאמן <span class="required-mark">*</span></label>
+      <input class="input" id="profileName">
 
       <label class="field-label">גיל</label>
-      <input type="number" min="1" class="input" id="profileAge" placeholder="גיל">
+      <input type="number" min="1" class="input" id="profileAge">
 
       <label class="field-label">גובה (ס"מ)</label>
-      <input type="number" min="1" class="input" id="profileHeight" placeholder="גובה בס&quot;מ">
+      <input type="number" min="1" class="input" id="profileHeight">
 
       <label class="field-label">משקל (ק"ג)</label>
-      <input type="number" min="1" step="0.1" class="input" id="profileWeight" placeholder="משקל בק&quot;ג">
+      <input type="number" min="1" step="0.1" class="input" id="profileWeight">
 
       <div class="settings-actions">
         <button id="btnSaveProfile" class="btn btn-primary">שמור</button>

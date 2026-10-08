@@ -1824,7 +1824,9 @@ function renderSettingsTab() {
 /* ================= PERSONAL AREA TAB ================= */
 function wireProfileTab() {
   el('btnSaveProfile').addEventListener('click', () => {
-    profile.name = el('profileName').value.trim();
+    const name = el('profileName').value.trim();
+    if (!name) { showToast('שם המתאמן הוא שדה חובה'); return; }
+    profile.name = name;
     profile.age = el('profileAge').value;
     profile.heightCm = el('profileHeight').value;
     profile.weightKg = el('profileWeight').value;
