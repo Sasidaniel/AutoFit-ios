@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>AutoFit</title>
+<meta name="theme-color" content="#101217">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AutoFit">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div id="appBrand" class="brand">💪 AutoFit</div>
+  <div id="liveClock" class="live-clock"></div>
+</header>
+
+<main id="app">
+
+  <!-- WORKOUT TAB -->
+  <section id="tab-workout" class="tab-panel active">
+    <div class="workout-header card">
+      <div class="workout-timer-row">
+        <div>
+          <div class="label">זמן אימון</div>
+          <div id="workoutTimerDisplay" class="big-timer">00:00</div>
+        </div>
+        <div class="workout-controls">
+          <button id="btnStartWorkout" class="btn btn-start">התחל אימון</button>
+          <button id="btnFinishWorkout" class="btn btn-danger hidden">סיים אימון</button>
+          <button id="btnCancelWorkout" class="btn btn-cancel">בטל אימון</button>
+        </div>
+      </div>
+      <div class="progress-summary">
+        <div class="progress-rows">
+          <div class="progress-row">
+            <span id="setsProgressText">0 / 0 סטים הושלמו (0%)</span>
+            <div class="progress-bar"><div id="setsProgressFill" class="progress-fill"></div></div>
+          </div>
+          <div class="progress-row">
+            <span id="exProgressText">0 / 0 תרגילים הושלמו (0%)</span>
+            <div class="progress-bar"><div id="exProgressFill" class="progress-fill"></div></div>
+          </div>
+        </div>
+        <div class="progress-overall" id="overallProgressBadge">0%</div>
+      </div>
+    </div>
+
+    <div id="exerciseList" class="exercise-list"></div>
+  </section>
+
+  <!-- HISTORY TAB -->
+  <section id="tab-history" class="tab-panel">
+    <h2 class="section-title">היסטוריית אימונים</h2>
+    <div id="historySelectBar" class="history-select-bar">
+      <span id="historySelectCount">0 נבחרו</span>
+      <div style="display:flex; gap:8px;">
+        <button id="btnShareSelected" class="btn btn-primary btn-small">📤 שיתוף</button>
+        <button id="btnClearSelection" class="btn btn-secondary btn-small">בטל בחירה</button>
+      </div>
+    </div>
+    <div id="historyList" class="history-list"></div>
+  </section>
+
+  <!-- DASHBOARD TAB -->
+  <section id="tab-dashboard" class="tab-panel">
+    <h2 class="section-title">דשבורד</h2>
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="card">
+      <div class="card-title">נפח אימון (ק"ג × חזרות) — לאורך זמן</div>
+      <div class="card-hint">נפח = סכום (משקל × חזרות) על פני כל הסטים שהושלמו באימון</div>
+      <canvas id="volumeChart" height="180"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-title">התקדמות לפי תרגיל</div>
+      <select id="exercisePickerChart" class="select"></select>
+      <canvas id="exerciseChart" height="180"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-title">עקביות שבועית</div>
+      <canvas id="consistencyChart" height="140"></canvas>
+    </div>
+  </section>
+
+  <!-- EXERCISES TAB -->
+  <section id="tab-exercises" class="tab-panel">
+    <h2 class="section-title">ניהול תרגילים</h2>
+
+    <div class="card">
+      <div class="card-title">🔥 חימום ושחרור</div>
+      <label class="field-label">שם החימום</label>
+      <input id="warmupNameInput" class="input" type="text">
+      <label class="field-label">משך החימום (דקות)</label>
+      <input id="warmupMinutesInput" class="input" type="number" min="1" max="60">
+      <label class="field-label">שם השחרור</label>
+      <input id="cooldownNameInput" class="input" type="text">
+      <label class="field-label">משך השחרור (דקות)</label>
+      <input id="cooldownMinutesInput" class="input" type="number" min="1" max="60">
+      <button id="btnSaveWarmupCooldown" class="btn btn-primary btn-small">שמור</button>
+    </div>
+
+    <button id="btnAddExercise" class="btn btn-secondary" style="margin-bottom:12px;">+ הוסף תרגיל</button>
+    <div id="exerciseManageList" class="exercise-manage-list"></div>
+  </section>
+
+  <!-- PERSONAL AREA TAB -->
+  <section id="tab-profile" class="tab-panel">
+    <h2 class="section-title">אזור אישי</h2>
+    <div class="card">
+      <label class="field-label">שם המתאמן</label>
+      <input class="input" id="profileName" placeholder="לדוגמה: ששי דניאל">
+
+      <label class="field-label">גיל</label>
+      <input type="number" min="1" class="input" id="profileAge" placeholder="גיל">
+
+      <label class="field-label">גובה (ס"מ)</label>
+      <input type="number" min="1" class="input" id="profileHeight" placeholder="גובה בס&quot;מ">
+
+      <label class="field-label">משקל (ק"ג)</label>
+      <input type="number" min="1" step="0.1" class="input" id="profileWeight" placeholder="משקל בק&quot;ג">
+
+      <div class="settings-actions">
+        <button id="btnSaveProfile" class="btn btn-primary">שמור</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS TAB -->
+  <section id="tab-settings" class="tab-panel">
+    <h2 class="section-title">הגדרות</h2>
+    <div class="card">
+      <label class="field-label">טיימר מנוחה ברירת מחדל (שניות)</label>
+      <input type="number" id="settingRestSeconds" class="input" min="10" step="5">
+
+      <label class="field-label">יעד אימונים בשבוע</label>
+      <input type="number" id="settingWeeklyGoal" class="input" min="1" max="7" step="1">
+
+      <label class="field-label">שבוע תוכנית נוכחי (קובע כמה סטים ברירת מחדל לכל תרגיל)</label>
+      <input type="number" id="settingProgramWeek" class="input" min="1" max="20" step="1">
+      <div class="field-hint">שבוע 1 = סט אחד לתרגיל, שבוע 2 = שני סטים, שבוע 3 ואילך = מלא (לפי הגדרת התרגיל). השינוי חל מיד על האימון הנוכחי ועל אימונים חדשים.</div>
+
+      <label class="checkbox-row"><input type="checkbox" id="settingVoice"> הודעה קולית בסיום מנוחה (באוזניות)</label>
+      <div class="field-hint">עובד רק כשהאפליקציה פתוחה ברקע הפעיל; ב-iOS ייתכן שההודעה לא תושמע אם המסך נעול לגמרי.</div>
+      <div class="field-hint">💡 המסך אמור להישאר דלוק אוטומטית כל עוד האתר פתוח (דורש iOS 16.4+ / דפדפן תומך). אם המסך עדיין נכבה, גע במסך פעם אחת כדי להפעיל זאת.</div>
+
+      <div id="faceIdSettingRow" class="hidden">
+        <label class="checkbox-row"><input type="checkbox" id="settingFaceId"> נעילת Face ID בפתיחת האפליקציה</label>
+        <div class="field-hint">כשמופעל, האפליקציה תבקש אימות Face ID/Touch ID בכל פתיחה.</div>
+      </div>
+
+      <div class="settings-actions">
+        <button id="btnEnableNotifications" class="btn btn-secondary">🔊 בדוק צליל והכרזה קולית</button>
+      </div>
+      <div class="field-hint">באייפון/ספארי אין תמיכה בהתראות מערכת כשהמסך נעול או שיצאת לגמרי מהאפליקציה (זו מגבלת אפל וללא שרת Push ייעודי אי אפשר לעקוף אותה). מה שכן עובד: צליל + הכרזה קולית ישמיעו אוטומטית בסיום מנוחה/חימום/החזקה כל עוד האתר פתוח — גם אם עברת רגע לאפליקציה אחרת. לחץ כאן כדי לוודא שהצליל מופעל במכשיר שלך.</div>
+
+      <div class="settings-actions">
+        <button id="btnExportData" class="btn btn-secondary">ייצוא גיבוי (JSON)</button>
+        <button id="btnImportData" class="btn btn-secondary">ייבוא גיבוי</button>
+        <input type="file" id="importFileInput" accept="application/json" class="hidden">
+      </div>
+      <div class="settings-actions">
+        <button id="btnResetAll" class="btn btn-danger">איפוס כל הנתונים</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- REST TIMER BAR (floating, non-blocking — the app stays usable while resting) -->
+<div id="restOverlay" class="rest-bar hidden">
+  <div class="rest-bar-info">
+    <div class="rest-label">מנוחה</div>
+    <div id="restTimeDisplay" class="rest-time">01:30</div>
+    <div id="restExerciseName" class="rest-exercise"></div>
+  </div>
+  <div class="rest-actions">
+    <button id="btnRestAdd15" class="btn btn-secondary btn-small">+15 שנ'</button>
+    <button id="btnSkipRest" class="btn btn-primary btn-small">דלג</button>
+  </div>
+</div>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-tab="workout"><span>🏋️</span><span>אימון</span></button>
+  <button class="tab-btn" data-tab="history"><span>📅</span><span>היסטוריה</span></button>
+  <button class="tab-btn" data-tab="dashboard"><span>📊</span><span>דשבורד</span></button>
+  <button class="tab-btn" data-tab="exercises"><span>📋</span><span>תרגילים</span></button>
+  <button class="tab-btn" data-tab="profile"><span>👤</span><span>אישי</span></button>
+  <button class="tab-btn" data-tab="settings"><span>⚙️</span><span>הגדרות</span></button>
+</nav>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

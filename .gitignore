@@ -1,0 +1,8 @@
+﻿node_modules/
+*.log
+.DS_Store
+certs/
+*.p12
+*.mobileprovision
+*.p8
+p12_password.txt
