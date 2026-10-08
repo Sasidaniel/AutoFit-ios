@@ -234,6 +234,7 @@ function init() {
   wireProfileTab();
   wireHistoryTab();
   wireContactTab();
+  wireHomeTab();
   renderBrand();
   startLiveClock();
   setInterval(tickCardioTimers, 1000);
@@ -243,6 +244,7 @@ function init() {
   renderExercisesTab();
   renderSettingsTab();
   renderProfileTab();
+  renderHomeTab();
 
   // keep the phone screen on the whole time the site is open, not just during a workout
   requestWakeLock();
@@ -273,14 +275,17 @@ function wireTabs() {
   qsa('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
+  el('btnOpenSettings').addEventListener('click', () => switchTab('settings'));
 }
 function switchTab(tab) {
   qsa('.tab-panel').forEach((p) => p.classList.remove('active'));
   qsa('.tab-btn').forEach((b) => b.classList.remove('active'));
   el(`tab-${tab}`).classList.add('active');
-  qs(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+  const btn = qs(`.tab-btn[data-tab="${tab}"]`);
+  if (btn) btn.classList.add('active');
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'history') renderHistoryTab();
+  if (tab === 'home') renderHomeTab();
 }
 
 /* ---------------- live clock ---------------- */
@@ -1397,6 +1402,7 @@ function formatDate(iso) {
 let volumeChartInstance = null;
 let exerciseChartInstance = null;
 let consistencyChartInstance = null;
+let bodyWeightChartInstance = null;
 
 function renderDashboard() {
   workouts = db.getWorkouts();
@@ -1404,6 +1410,7 @@ function renderDashboard() {
   renderVolumeChart();
   renderExercisePicker();
   renderConsistencyChart();
+  renderBodyWeightChart();
 }
 
 function renderStatsGrid() {
@@ -1475,29 +1482,46 @@ function renderVolumeChart() {
 function renderExercisePicker() {
   const select = el('exercisePickerChart');
   const prev = select.value;
-  select.innerHTML = exercises.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  select.innerHTML = exercises.filter((e) => e.inputType !== 'cardio').map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
   if (prev && exercises.some((e) => e.id === prev)) select.value = prev;
   select.onchange = renderExerciseChart;
+  const metricSelect = el('exerciseMetricPicker');
+  metricSelect.onchange = renderExerciseChart;
   renderExerciseChart();
 }
 
+const EXERCISE_METRIC_LABELS = {
+  weight: 'משקל מקסימלי (ק"ג)',
+  reps: 'חזרות מקסימליות',
+  volume: 'נפח (משקל × חזרות)',
+};
 function renderExerciseChart() {
   if (!window.Chart) return;
   const exId = el('exercisePickerChart').value;
+  const metric = el('exerciseMetricPicker').value;
   const ctx = el('exerciseChart');
   const points = [];
   [...workouts].sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO)).forEach((w) => {
     const entry = w.entries.find((e) => e.exerciseId === exId);
     if (!entry || !entry.sets.length) return;
-    const maxWeight = Math.max(...entry.sets.map((s) => s.weightKg));
-    points.push({ date: new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }), maxWeight });
+    const completedSets = entry.sets.filter((s) => s.weightKg !== '' && s.weightKg != null);
+    if (!completedSets.length) return;
+    let value;
+    if (metric === 'reps') {
+      value = Math.max(...completedSets.map((s) => Number(s.reps) || 0));
+    } else if (metric === 'volume') {
+      value = completedSets.reduce((sum, s) => sum + (Number(s.weightKg) || 0) * (Number(s.reps) || 0), 0);
+    } else {
+      value = Math.max(...completedSets.map((s) => Number(s.weightKg) || 0));
+    }
+    points.push({ date: new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }), value });
   });
   if (exerciseChartInstance) exerciseChartInstance.destroy();
   exerciseChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels: points.map((p) => p.date),
-      datasets: [{ label: 'משקל מקסימלי (ק"ג)', data: points.map((p) => p.maxWeight), borderColor: '#22c55e', backgroundColor: '#22c55e33', tension: 0.3, fill: true }],
+      datasets: [{ label: EXERCISE_METRIC_LABELS[metric] || EXERCISE_METRIC_LABELS.weight, data: points.map((p) => Math.round(p.value * 10) / 10), borderColor: '#22c55e', backgroundColor: '#22c55e33', tension: 0.3, fill: true }],
     },
     options: chartBaseOptions(),
   });
@@ -1520,6 +1544,23 @@ function renderConsistencyChart() {
   consistencyChartInstance = new Chart(ctx, {
     type: 'bar',
     data: { labels: weeks, datasets: [{ label: 'אימונים בשבוע', data: counts, backgroundColor: counts.map((c) => c >= settings.weeklyGoal ? '#16a34a' : '#eab308') }] },
+    options: chartBaseOptions(),
+  });
+}
+
+function renderBodyWeightChart() {
+  if (!window.Chart) return;
+  const ctx = el('bodyWeightChart');
+  const history = profile.weightHistory || [];
+  const labels = history.map((h) => new Date(h.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }));
+  const data = history.map((h) => h.weightKg);
+  if (bodyWeightChartInstance) bodyWeightChartInstance.destroy();
+  bodyWeightChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label: 'משקל גוף (ק"ג)', data, borderColor: '#f59e0b', backgroundColor: '#f59e0b33', tension: 0.3, fill: true }],
+    },
     options: chartBaseOptions(),
   });
 }
@@ -1928,38 +1969,6 @@ function wireSettings() {
       db.saveSettings(settings);
     });
   }
-  el('btnExportData').addEventListener('click', () => {
-    const data = db.exportAll();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `fitness-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-  el('btnImportData').addEventListener('click', () => el('importFileInput').click());
-  el('importFileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result);
-        db.importAll(data);
-        showToast('הייבוא הושלם — טוען מחדש...');
-        setTimeout(() => location.reload(), 1000);
-      } catch (err) {
-        alert('קובץ לא תקין');
-      }
-    };
-    reader.readAsText(file);
-  });
-  el('btnResetAll').addEventListener('click', () => {
-    if (!confirm('פעולה זו תמחק את כל הנתונים לצמיתות. להמשיך?')) return;
-    db.resetAll();
-    location.reload();
-  });
   el('btnEnableNotifications').addEventListener('click', requestNotificationPermission);
 }
 
@@ -1974,6 +1983,15 @@ function renderSettingsTab() {
 }
 
 /* ================= PERSONAL AREA TAB ================= */
+function recordWeightHistory(p) {
+  const w = Number(p.weightKg);
+  if (!w) return;
+  if (!Array.isArray(p.weightHistory)) p.weightHistory = [];
+  const last = p.weightHistory[p.weightHistory.length - 1];
+  if (!last || last.weightKg !== w) {
+    p.weightHistory.push({ dateISO: new Date().toISOString(), weightKg: w });
+  }
+}
 function wireProfileTab() {
   el('btnSaveProfile').addEventListener('click', () => {
     const name = el('profileName').value.trim();
@@ -1982,8 +2000,10 @@ function wireProfileTab() {
     profile.age = el('profileAge').value;
     profile.heightCm = el('profileHeight').value;
     profile.weightKg = el('profileWeight').value;
+    recordWeightHistory(profile);
     db.saveProfile(profile);
     renderBrand();
+    renderHomeTab();
     showToast('הפרטים האישיים נשמרו ✅');
   });
 }
@@ -2014,6 +2034,67 @@ function wireContactTab() {
     window.location.href = mailto;
     showToast('נפתחת אפליקציית המייל לשליחה ✉️');
   });
+}
+
+/* ================= HOME TAB ================= */
+function wireHomeTab() {
+  el('btnHomePhoto').addEventListener('click', () => el('homePhotoInput').click());
+  el('homePhotoInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      profile.photoDataUrl = await fileToResizedDataUrl(file);
+      db.saveProfile(profile);
+      renderHomeTab();
+      showToast('התמונה עודכנה ✅');
+    } catch (err) {
+      showToast('לא ניתן היה לטעון את התמונה');
+    }
+  });
+  el('btnHomeToDashboard').addEventListener('click', () => switchTab('dashboard'));
+}
+function renderHomeTab() {
+  el('homePhoto').src = profile.photoDataUrl || 'icons/icon-192.png';
+  el('homeGreeting').textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
+
+  workouts = db.getWorkouts();
+  const weekCount = countThisWeek();
+  const streak = computeStreak();
+  const sorted = [...workouts].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
+  const lastWorkoutText = sorted.length
+    ? new Date(sorted[0].dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })
+    : 'אין עדיין';
+
+  const history = profile.weightHistory || [];
+  let weightNow = '-';
+  let weightDeltaHtml = '';
+  if (history.length) {
+    const first = history[0].weightKg;
+    const lastW = history[history.length - 1].weightKg;
+    weightNow = `${lastW} ק"ג`;
+    const delta = round1(lastW - first);
+    if (delta !== 0) {
+      const isLoss = delta < 0;
+      weightDeltaHtml = `<div class="home-stat-sub" style="color:${isLoss ? '#22c55e' : '#ef4444'}">${isLoss ? '▼' : '▲'} ${Math.abs(delta)} ק"ג</div>`;
+    }
+  } else if (profile.weightKg) {
+    weightNow = `${profile.weightKg} ק"ג`;
+  }
+
+  const cards = [
+    { icon: '🏋️', value: `${weekCount}/${settings.weeklyGoal}`, label: 'אימונים השבוע', sub: `אימון אחרון: ${lastWorkoutText}` },
+    { icon: '📈', value: weightNow, label: 'משקל נוכחי', subHtml: weightDeltaHtml },
+    { icon: '🔥', value: streak, label: 'רצף שבועות' },
+    { icon: '📋', value: exercises.filter((e) => e.active !== false).length, label: 'תרגילים פעילים' },
+  ];
+  el('homeStatsGrid').innerHTML = cards.map((c) => `
+    <div class="home-stat-card">
+      <div class="home-stat-icon">${c.icon}</div>
+      <div class="home-stat-value">${c.value}</div>
+      <div class="home-stat-label">${c.label}</div>
+      ${c.sub ? `<div class="home-stat-sub">${escapeHtml(c.sub)}</div>` : (c.subHtml || '')}
+    </div>
+  `).join('');
 }
 
 /* ================= UTIL ================= */
@@ -2168,6 +2249,7 @@ function runOnboarding() {
     profile.age = el('obAge').value;
     profile.heightCm = el('obHeight').value;
     profile.weightKg = el('obWeight').value;
+    recordWeightHistory(profile);
     db.saveProfile(profile);
 
     if (!native.isNative()) {

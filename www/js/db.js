@@ -66,7 +66,7 @@ export function saveWorkouts(list) {
   write(KEYS.workouts, list);
 }
 
-export const DEFAULT_PROFILE = { name: '', age: '', heightCm: '', weightKg: '' };
+export const DEFAULT_PROFILE = { name: '', age: '', heightCm: '', weightKg: '', photoDataUrl: '', weightHistory: [] };
 export function getProfile() {
   return { ...DEFAULT_PROFILE, ...read(KEYS.profile, {}) };
 }
@@ -82,25 +82,4 @@ export function saveActiveSession(session) {
 }
 export function clearActiveSession() {
   localStorage.removeItem(KEYS.activeSession);
-}
-
-export function exportAll() {
-  return {
-    exportedAt: new Date().toISOString(),
-    exercises: getExercises(),
-    workouts: getWorkouts(),
-    settings: getSettings(),
-    profile: getProfile(),
-  };
-}
-
-export function importAll(data) {
-  if (data.exercises) saveExercises(data.exercises);
-  if (data.workouts) saveWorkouts(data.workouts);
-  if (data.settings) saveSettings(data.settings);
-  if (data.profile) saveProfile(data.profile);
-}
-
-export function resetAll() {
-  Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
 }

@@ -69,15 +69,34 @@
 </div>
 
 <header class="topbar">
+  <button id="btnOpenSettings" class="gear-btn" aria-label="הגדרות">⚙️</button>
   <img src="icons/icon-192.png" alt="AutoFit" class="header-logo">
-  <div id="appBrand" class="brand">AutoFit</div>
-  <div id="liveClock" class="live-clock"></div>
+  <div class="header-center">
+    <div id="appBrand" class="brand">AutoFit</div>
+    <div id="liveClock" class="live-clock"></div>
+  </div>
 </header>
 
 <main id="app">
 
+  <!-- HOME TAB -->
+  <section id="tab-home" class="tab-panel active">
+    <div class="home-header card">
+      <div class="home-photo-wrap">
+        <img id="homePhoto" src="icons/icon-192.png" alt="תמונת פרופיל" class="home-photo">
+        <button id="btnHomePhoto" class="home-photo-edit" aria-label="שינוי תמונה">📷</button>
+        <input type="file" id="homePhotoInput" accept="image/*" class="hidden">
+      </div>
+      <div id="homeGreeting" class="home-greeting">שלום! 👋</div>
+    </div>
+
+    <div class="home-stats-grid" id="homeStatsGrid"></div>
+
+    <button id="btnHomeToDashboard" class="btn btn-secondary home-dashboard-btn">📊 לדשבורד המלא</button>
+  </section>
+
   <!-- WORKOUT TAB -->
-  <section id="tab-workout" class="tab-panel active">
+  <section id="tab-workout" class="tab-panel">
     <div class="greeting-card card">
       <img src="icons/icon-192.png" alt="AutoFit" class="greeting-avatar">
       <div id="greetingText" class="greeting-text">שלום! 👋</div>
@@ -139,13 +158,26 @@
 
     <div class="card">
       <div class="card-title">התקדמות לפי תרגיל</div>
-      <select id="exercisePickerChart" class="select"></select>
+      <div class="chart-controls-row">
+        <select id="exercisePickerChart" class="select"></select>
+        <select id="exerciseMetricPicker" class="select">
+          <option value="weight">משקל מקסימלי</option>
+          <option value="reps">חזרות מקסימליות</option>
+          <option value="volume">נפח (משקל × חזרות)</option>
+        </select>
+      </div>
       <canvas id="exerciseChart" height="180"></canvas>
     </div>
 
     <div class="card">
-      <div class="card-title">עקביות שבועית</div>
+      <div class="card-title">עקביות שבועית — אימונים לשבוע</div>
       <canvas id="consistencyChart" height="140"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-title">מגמת משקל גוף</div>
+      <div class="card-hint">מבוסס על עדכוני המשקל שנשמרו בטאב "אישי"</div>
+      <canvas id="bodyWeightChart" height="160"></canvas>
     </div>
   </section>
 
@@ -206,15 +238,6 @@
         <button id="btnEnableNotifications" class="btn btn-secondary">🔊 בדוק צליל והכרזה קולית</button>
       </div>
       <div class="field-hint">באייפון/ספארי אין תמיכה בהתראות מערכת כשהמסך נעול או שיצאת לגמרי מהאפליקציה (זו מגבלת אפל וללא שרת Push ייעודי אי אפשר לעקוף אותה). מה שכן עובד: צליל + הכרזה קולית ישמיעו אוטומטית בסיום מנוחה/חימום/החזקה כל עוד האתר פתוח — גם אם עברת רגע לאפליקציה אחרת. לחץ כאן כדי לוודא שהצליל מופעל במכשיר שלך.</div>
-
-      <div class="settings-actions">
-        <button id="btnExportData" class="btn btn-secondary">ייצוא גיבוי (JSON)</button>
-        <button id="btnImportData" class="btn btn-secondary">ייבוא גיבוי</button>
-        <input type="file" id="importFileInput" accept="application/json" class="hidden">
-      </div>
-      <div class="settings-actions">
-        <button id="btnResetAll" class="btn btn-danger">איפוס כל הנתונים</button>
-      </div>
     </div>
   </section>
 
@@ -236,6 +259,7 @@
       <div class="card-title">✉️ פרטי יצירת קשר</div>
       <p class="about-desc">לשאלות, תקלות או הצעות לשיפור — ניתן לפנות ישירות במייל:</p>
       <a id="contactEmailLink" href="mailto:sasid5000@gmail.com" class="contact-email-link">sasid5000@gmail.com</a>
+      <a id="contactWhatsappLink" href="https://wa.me/972509144233" target="_blank" rel="noopener" class="contact-whatsapp-link">💬 וואטסאפ: 050-914-4233</a>
     </div>
 
     <div class="card">
@@ -275,12 +299,12 @@
 </div>
 
 <nav class="tabbar">
-  <button class="tab-btn active" data-tab="workout"><span>🏋️</span><span>אימון</span></button>
+  <button class="tab-btn active" data-tab="home"><span>🏠</span><span>ראשי</span></button>
+  <button class="tab-btn" data-tab="workout"><span>🏋️</span><span>אימון</span></button>
   <button class="tab-btn" data-tab="history"><span>📅</span><span>היסטוריה</span></button>
   <button class="tab-btn" data-tab="dashboard"><span>📊</span><span>דשבורד</span></button>
   <button class="tab-btn" data-tab="exercises"><span>📋</span><span>תרגילים</span></button>
   <button class="tab-btn" data-tab="profile"><span>👤</span><span>אישי</span></button>
-  <button class="tab-btn" data-tab="settings"><span>⚙️</span><span>הגדרות</span></button>
   <button class="tab-btn" data-tab="contact"><span>✉️</span><span>קשר</span></button>
 </nav>
 
