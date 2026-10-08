@@ -20,6 +20,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		E0CD47A18873BD4485441F3C /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAC4A4EBE0773B3BD9F2885 /* MainViewController.swift */; };
 		E94F48039F4F5675E600AB78 /* HealthBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D846D4BAD1580A7B46F93D /* HealthBridgePlugin.swift */; };
+		A1B2C3D4E5F607182930A1B2 /* KeepAwakeBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6071829A1B2C3D4 /* KeepAwakeBridgePlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		D3D846D4BAD1580A7B46F93D /* HealthBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HealthBridgePlugin.swift; path = App/HealthBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
+		B2C3D4E5F6071829A1B2C3D4 /* KeepAwakeBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KeepAwakeBridgePlugin.swift; path = App/KeepAwakeBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,6 +61,7 @@
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
 				D3D846D4BAD1580A7B46F93D /* HealthBridgePlugin.swift */,
+				B2C3D4E5F6071829A1B2C3D4 /* KeepAwakeBridgePlugin.swift */,
 				81DA4F5E9FAE9EE288858608 /* CloudBridgePlugin.swift */,
 				1FAC4A4EBE0773B3BD9F2885 /* MainViewController.swift */,
 				1EE245D98DC5F48CA08BC2E1 /* App.entitlements */,
@@ -174,6 +177,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				E94F48039F4F5675E600AB78 /* HealthBridgePlugin.swift in Sources */,
+				A1B2C3D4E5F607182930A1B2 /* KeepAwakeBridgePlugin.swift in Sources */,
 				5874418F8C87933C14FC3161 /* CloudBridgePlugin.swift in Sources */,
 				E0CD47A18873BD4485441F3C /* MainViewController.swift in Sources */,
 			);

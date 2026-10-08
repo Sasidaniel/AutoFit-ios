@@ -78,6 +78,19 @@ export function onCloudChanged(callback) {
   CloudBridge.addListener('iCloudChanged', callback);
 }
 
+/* ---------------- Keep screen awake ---------------- */
+export async function keepAwakeEnable() {
+  const KeepAwakeBridge = plugin('KeepAwakeBridge');
+  if (!KeepAwakeBridge) return false;
+  try { await KeepAwakeBridge.enable(); return true; } catch (e) { return false; }
+}
+
+export async function keepAwakeDisable() {
+  const KeepAwakeBridge = plugin('KeepAwakeBridge');
+  if (!KeepAwakeBridge) return false;
+  try { await KeepAwakeBridge.disable(); return true; } catch (e) { return false; }
+}
+
 /* ---------------- Face ID / Touch ID ---------------- */
 export async function biometricIsAvailable() {
   const NativeBiometric = plugin('NativeBiometric');

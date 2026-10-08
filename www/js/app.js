@@ -60,6 +60,8 @@ function notify(title, body) {
 
 let wakeLockRef = null;
 async function requestWakeLock() {
+  // Native iOS WKWebView doesn't support the Wake Lock API — use the native bridge instead.
+  if (native.isNative()) { native.keepAwakeEnable(); return; }
   try {
     if ('wakeLock' in navigator) {
       wakeLockRef = await navigator.wakeLock.request('screen');
@@ -68,6 +70,7 @@ async function requestWakeLock() {
   } catch (e) { /* wake lock not available / denied — timer still stays accurate */ }
 }
 function releaseWakeLock() {
+  if (native.isNative()) { native.keepAwakeDisable(); return; }
   if (wakeLockRef) {
     wakeLockRef.release().catch(() => {});
     wakeLockRef = null;
@@ -1837,7 +1840,9 @@ function renderProfileTab() {
   el('profileWeight').value = profile.weightKg || '';
 }
 function renderBrand() {
-  el('appBrand').textContent = profile.name ? `💪 AutoFit — ${profile.name}` : '💪 AutoFit';
+  el('appBrand').textContent = '💪 AutoFit';
+  const greetingEl = el('greetingText');
+  if (greetingEl) greetingEl.textContent = profile.name ? `שלום, ${profile.name} 👋` : 'שלום! 👋';
 }
 
 /* ================= UTIL ================= */
@@ -1868,27 +1873,131 @@ function registerServiceWorker() {
 }
 
 document.addEventListener('DOMContentLoaded', bootstrap);
+const splashStartTime = Date.now();
+const SPLASH_MIN_MS = 2000; // keep the branded splash on screen for at least 2s on native launches
 
-// Native-only bootstrap: optionally gate behind Face ID, then restore from
-// iCloud if this is a fresh install with no local data yet, before init().
+// Native-only bootstrap: restore iCloud data (if any), gate behind Face ID for
+// returning users who enabled it, then either launch onboarding (first run)
+// or the main app.
 async function bootstrap() {
   if (native.isNative()) {
-    const preSettings = db.getSettings();
-    if (preSettings.faceIdEnabled !== false) {
+    await restoreFromCloudIfEmpty();
+    // Cloud restore writes straight to localStorage — reload the in-memory
+    // copies so onboarding/Face ID checks below see the restored values.
+    settings = db.getSettings();
+    profile = db.getProfile();
+
+    if (settings.onboardingComplete && settings.faceIdEnabled !== false) {
       const available = await native.biometricIsAvailable();
       if (available) {
         const ok = await native.biometricVerify();
         if (!ok) {
-          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:18px;">🔒 האימות נכשל — רענן כדי לנסות שוב</div>';
+          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:18px;background:#000;color:#fff;">🔒 האימות נכשל — רענן כדי לנסות שוב</div>';
           return;
         }
       }
     }
-    await restoreFromCloudIfEmpty();
     db.setSyncHook((key, value) => { native.cloudSetItem(key, JSON.stringify(value)); });
     native.onCloudChanged(() => { window.location.reload(); });
   }
-  init();
+
+  await waitForSplashMinimum();
+  hideSplash();
+
+  if (!settings.onboardingComplete) {
+    runOnboarding();
+  } else {
+    init();
+  }
+}
+
+function waitForSplashMinimum() {
+  if (!native.isNative()) return Promise.resolve();
+  const remaining = Math.max(0, SPLASH_MIN_MS - (Date.now() - splashStartTime));
+  return new Promise((resolve) => setTimeout(resolve, remaining));
+}
+
+function hideSplash() {
+  const splash = el('splashScreen');
+  if (!splash) return;
+  splash.classList.add('fade-out');
+  setTimeout(() => splash.classList.add('hidden'), 550);
+}
+
+// First-run flow: collect name/age/height/weight, then (native only) offer
+// HealthKit + Face ID permission toggles, before handing off to init().
+function runOnboarding() {
+  const screen = el('onboardingScreen');
+  screen.classList.remove('hidden');
+
+  el('obName').value = profile.name || '';
+  el('obAge').value = profile.age || '';
+  el('obHeight').value = profile.heightCm || '';
+  el('obWeight').value = profile.weightKg || '';
+
+  const stepDetails = el('onboardingStepDetails');
+  const stepPermissions = el('onboardingStepPermissions');
+
+  function finishOnboarding() {
+    settings.onboardingComplete = true;
+    db.saveSettings(settings);
+    screen.classList.add('hidden');
+    init();
+  }
+
+  async function setupPermissionStep() {
+    const healthCard = el('btnEnableHealthOnboarding');
+    healthCard.addEventListener('click', async () => {
+      healthCard.disabled = true;
+      healthCard.textContent = '...';
+      const res = await native.healthRequestAuthorization();
+      healthCard.textContent = res.granted ? '✓ אושר' : 'אפשר';
+      healthCard.disabled = false;
+      showToast(res.granted ? 'החיבור ל-Apple Health אושר ✅' : 'ההרשאה לא אושרה — ניתן לשנות בהגדרות האייפון');
+    });
+
+    const faceIdBtn = el('btnEnableFaceIdOnboarding');
+    const available = await native.biometricIsAvailable();
+    if (!available) {
+      faceIdBtn.closest('.onboarding-permission-card').classList.add('hidden');
+      return;
+    }
+    faceIdBtn.addEventListener('click', async () => {
+      faceIdBtn.disabled = true;
+      faceIdBtn.textContent = '...';
+      const ok = await native.biometricVerify();
+      if (ok) {
+        settings.faceIdEnabled = true;
+        db.saveSettings(settings);
+        faceIdBtn.textContent = '✓ אושר';
+        showToast('Face ID הופעל ✅');
+      } else {
+        faceIdBtn.disabled = false;
+        faceIdBtn.textContent = 'אפשר';
+        showToast('האימות נכשל, נסה שוב');
+      }
+    });
+  }
+
+  el('btnOnboardingNext').addEventListener('click', () => {
+    const name = el('obName').value.trim();
+    if (!name) { showToast('נא להזין שם'); return; }
+    profile.name = name;
+    profile.age = el('obAge').value;
+    profile.heightCm = el('obHeight').value;
+    profile.weightKg = el('obWeight').value;
+    db.saveProfile(profile);
+
+    if (!native.isNative()) {
+      finishOnboarding();
+      return;
+    }
+    stepDetails.classList.remove('active');
+    stepPermissions.classList.add('active');
+    setupPermissionStep();
+  });
+
+  el('btnOnboardingFinish').addEventListener('click', finishOnboarding);
 }
 
 // On first native launch (local storage empty), pull any previously-synced

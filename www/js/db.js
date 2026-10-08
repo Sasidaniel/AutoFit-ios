@@ -41,7 +41,8 @@ export const DEFAULT_SETTINGS = {
   cooldownName: 'שחרור — הליכה',
   cooldownMinutes: 5,
   seedSynced: false,
-  faceIdEnabled: true,
+  faceIdEnabled: false,
+  onboardingComplete: false,
 };
 
 export function getSettings() {

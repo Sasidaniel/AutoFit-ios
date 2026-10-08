@@ -16,7 +16,57 @@
 </head>
 <body>
 
+<!-- SPLASH SCREEN (shown briefly on every native launch) -->
+<div id="splashScreen" class="splash-screen">
+  <img src="icons/icon-512.png" alt="AutoFit" class="splash-logo">
+  <div class="splash-tagline">אפליקציית הכושר שלך</div>
+</div>
+
+<!-- ONBOARDING (first launch only) -->
+<div id="onboardingScreen" class="onboarding-screen hidden">
+  <div class="onboarding-step active" id="onboardingStepDetails">
+    <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
+    <h1 class="onboarding-title">ברוכים הבאים ל-AutoFit</h1>
+    <p class="onboarding-subtitle">כמה פרטים כדי שנתחיל</p>
+    <div class="onboarding-form">
+      <label class="field-label">שם המתאמן</label>
+      <input class="input" id="obName" placeholder="לדוגמה: ששי דניאל">
+      <label class="field-label">גיל</label>
+      <input type="number" min="1" class="input" id="obAge" placeholder="גיל">
+      <label class="field-label">גובה (ס"מ)</label>
+      <input type="number" min="1" class="input" id="obHeight" placeholder="גובה בס&quot;מ">
+      <label class="field-label">משקל (ק"ג)</label>
+      <input type="number" min="1" step="0.1" class="input" id="obWeight" placeholder="משקל בק&quot;ג">
+    </div>
+    <button id="btnOnboardingNext" class="btn btn-primary onboarding-btn">המשך</button>
+  </div>
+
+  <div class="onboarding-step" id="onboardingStepPermissions">
+    <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
+    <h1 class="onboarding-title">הרשאות</h1>
+    <p class="onboarding-subtitle">כדי לקבל את החוויה המלאה</p>
+    <div class="onboarding-permission-card">
+      <div class="onboarding-permission-icon">❤️</div>
+      <div class="onboarding-permission-text">
+        <div class="onboarding-permission-title">חיבור ל-Apple Health</div>
+        <div class="onboarding-permission-desc">שמירת אימונים ישירות באפליקציית הבריאות</div>
+      </div>
+      <button id="btnEnableHealthOnboarding" class="btn btn-secondary btn-small">אפשר</button>
+    </div>
+    <div class="onboarding-permission-card">
+      <div class="onboarding-permission-icon">🔒</div>
+      <div class="onboarding-permission-text">
+        <div class="onboarding-permission-title">נעילת Face ID</div>
+        <div class="onboarding-permission-desc">הגנה על הנתונים האישיים שלך</div>
+      </div>
+      <button id="btnEnableFaceIdOnboarding" class="btn btn-secondary btn-small">אפשר</button>
+    </div>
+    <button id="btnOnboardingFinish" class="btn btn-primary onboarding-btn">סיום והתחלה</button>
+  </div>
+</div>
+
 <header class="topbar">
+  <img src="icons/icon-192.png" alt="AutoFit" class="header-logo">
   <div id="appBrand" class="brand">💪 AutoFit</div>
   <div id="liveClock" class="live-clock"></div>
 </header>
@@ -25,6 +75,11 @@
 
   <!-- WORKOUT TAB -->
   <section id="tab-workout" class="tab-panel active">
+    <div class="greeting-card card">
+      <img src="icons/icon-192.png" alt="AutoFit" class="greeting-avatar">
+      <div id="greetingText" class="greeting-text">שלום! 👋</div>
+    </div>
+
     <div class="workout-header card">
       <div class="workout-timer-row">
         <div>
