@@ -24,7 +24,7 @@ jobs:
         run: npx cap sync ios
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
       - name: Import signing certificate & provisioning profile
         env:
