@@ -39,6 +39,9 @@ jobs:
           # Decode cert + profile from the base64 secrets
           echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
           echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          echo "DEBUG dist.p12 size: $(wc -c < "$RUNNER_TEMP/dist.p12")"
+          echo "DEBUG dist.p12 sha256: $(shasum -a 256 "$RUNNER_TEMP/dist.p12")"
+          echo "DEBUG expected size: 3251, expected sha256: 8b3b221afd9d45f5e7af1005925d603d75d237603bac96b99747988b8292e931"
 
           # Create a fresh, throwaway keychain for this run only
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
