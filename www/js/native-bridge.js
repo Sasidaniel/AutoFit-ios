@@ -31,12 +31,12 @@ export async function healthRequestAuthorization() {
 
 // Saves one workout directly to Apple Health, using its real start time and
 // duration (not "now"), so it logs to Health on the correct day.
-export async function healthSaveWorkout({ startMillis, durationSec, calories }) {
+export async function healthSaveWorkout({ workoutID, startMillis, durationSec, calories, entries }) {
   const HealthBridge = plugin('HealthBridge');
   if (!HealthBridge) return { saved: false, reason: unavailableReason('HealthBridge') };
   try {
-    const res = await HealthBridge.saveWorkout({ startMillis, durationSec, calories: calories || 0 });
-    return { saved: !!res.saved };
+    const res = await HealthBridge.saveWorkout({ workoutID, startMillis, durationSec, calories: calories || 0, entries });
+    return { saved: !!res.saved, id: res.id };
   } catch (e) {
     return { saved: false, reason: String(e) };
   }
@@ -115,10 +115,10 @@ export async function bgStartKeepAlive() {
   }
 }
 
-export async function announce(text) {
+export async function announce(text, announcementID) {
   const announcer = plugin('BackgroundAnnouncer');
   if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
-  await announcer.speakNow({ text });
+  await announcer.speakNow({ text, announcementID });
 }
 
 export async function beep() {

@@ -4,15 +4,17 @@ import AVFoundation
 import UserNotifications
 
 enum WorkoutAudioSession {
-    static func activate(recording: Bool) throws {
+    static func activate(recording: Bool, ducking: Bool = false) throws {
         let session = AVAudioSession.sharedInstance()
         let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
         var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
+        if ducking { options.insert(.duckOthers) }
         if recording {
             options.formUnion([.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
         }
-        if session.category != category || session.mode != .default || session.categoryOptions != options {
-            try session.setCategory(category, mode: .default, options: options)
+        let mode: AVAudioSession.Mode = recording ? .voiceChat : .default
+        if session.category != category || session.mode != mode || session.categoryOptions != options {
+            try session.setCategory(category, mode: mode, options: options)
         }
         try session.setActive(true)
     }

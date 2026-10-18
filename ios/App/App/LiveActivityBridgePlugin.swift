@@ -64,11 +64,6 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     call.resolve(["active": false])
                     return
                 }
-                guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-                    call.reject("Live Activities are disabled. Enable them in iPhone Settings > AutoFit.",
-                                "ACTIVITIES_DISABLED")
-                    return
-                }
                 guard let sessionID = call.getString("sessionID"), !sessionID.isEmpty, sessionID.count <= 128,
                       let start = call.getDouble("startMillis"),
                       let name = call.getString("exerciseName"),
@@ -93,24 +88,29 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         phaseEndMillis: call.getDouble("phaseEndMillis"))
                     let content = ActivityContent(state: state, staleDate: state.phaseEndsAt)
                     let activities = Activity<WorkoutActivityAttributes>.activities
-                    for old in activities where old.attributes.sessionID != sessionID {
-                        await old.end(nil, dismissalPolicy: .immediate)
-                    }
-                    if let existing = activities.first(where: {
-                        $0.attributes.sessionID == sessionID &&
-                        ($0.activityState == .active || $0.activityState == .stale)
-                    }) {
+                    let existing = activities.first(where: {
+                        $0.attributes.sessionID == sessionID && ($0.activityState == .active || $0.activityState == .stale)
+                    }) ?? activities.first(where: { $0.activityState == .active || $0.activityState == .stale })
+                    if let existing = existing {
+                        for duplicate in activities where duplicate.id != existing.id {
+                            await duplicate.end(nil, dismissalPolicy: .immediate)
+                        }
                         await existing.update(content)
-                        self.observe(existing)
+                        self.observe(existing, sessionID: sessionID)
                     } else {
                         guard UIApplication.shared.applicationState == .active else {
-                            call.reject("Open AutoFit to start its Live Activity")
+                            call.resolve(["active": false, "pending": true])
+                            return
+                        }
+                        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+                            call.reject("Live Activities are disabled. Enable them in iPhone Settings > AutoFit.",
+                                        "ACTIVITIES_DISABLED")
                             return
                         }
                         let activity = try Activity.request(
                             attributes: WorkoutActivityAttributes(sessionID: sessionID),
                             content: content, pushType: nil)
-                        self.observe(activity)
+                        self.observe(activity, sessionID: sessionID)
                     }
                     call.resolve(["active": true])
                 } catch {
@@ -120,13 +120,14 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @MainActor private func observe(_ activity: Activity<WorkoutActivityAttributes>) {
+    @MainActor private func observe(_ activity: Activity<WorkoutActivityAttributes>, sessionID: String) {
         activityObserver?.cancel()
         activityObserver = Task { @MainActor in
             for await state in activity.activityStateUpdates {
                 if Task.isCancelled { return }
                 if state == .dismissed {
-                    UserDefaults.standard.set(activity.attributes.sessionID, forKey: "AutoFitDismissedActivitySession")
+                    UserDefaults.standard.set(sessionID, forKey: "AutoFitDismissedActivitySession")
+                    self.notifyListeners("activityAvailable", data: [:])
                     return
                 }
                 if state == .ended { return }

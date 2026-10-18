@@ -269,6 +269,12 @@ function voiceContext(entries = []) {
     rows: (entry.sets || []).map((set, index) => ({
       ...node(), set, reps: node(),
       holdButton: { click: () => {
+        if (holdTimers.has(`${entry.exerciseId}:${index}`)) {
+          holdTimers.delete(`${entry.exerciseId}:${index}`);
+          set.completed = true;
+          calls.push('stopHold', 'rest');
+          return;
+        }
         set.holdStartedAt = Date.now();
         holdTimers.set(`${entry.exerciseId}:${index}`, { startedAt: set.holdStartedAt });
         calls.push('startHold');
@@ -281,6 +287,9 @@ function voiceContext(entries = []) {
     })),
     button: { click: () => { entry.completed = !entry.completed; } },
     startButton: { click: () => {
+      if (entry.startedAt && !entry.completed) {
+        entry.startedAt = null; calls.push('stopCardio'); return;
+      }
       entry.startedAt = Date.now(); entry.completed = false; calls.push('startCardio');
     } },
   }));
@@ -690,7 +699,7 @@ test('pending background announcement delays do not repeat already spoken 30-sec
     Date: { now: () => 45000 },
     restTimer: { isRunning: () => true, endAt: 90000, totalSeconds: 90, lastAnnouncedElapsed: 30 },
     settings: { voiceAnnouncements: true, voiceIntervalAnnouncements: true },
-    restDoneMessage: 'done', holdTimers: new Map(), exercises: [],
+    restDoneMessage: 'done', holdTimers: new Map(), exercises: [], activeSession: { entries: [] },
   });
   vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
   const items = context.buildBackgroundAnnouncementItems();
@@ -781,6 +790,7 @@ for (const finish of [false, true]) {
         ] },
       ] },
       workouts: [], settings: { voiceAnnouncements: false }, voiceCountingState: {}, lastVoiceAction: {},
+      activityReadyEnabled: true,
       holdTimers: new Map([['bench:0', { intervalId: 42 }]]),
       restTimer: { stop: () => calls.push('restStop') },
       stopwatch: { stop: () => 120 },
@@ -799,6 +809,7 @@ for (const finish of [false, true]) {
     vm.runInContext(section('function finishWorkout()', 'function persistActiveSession()'), context);
     vm.runInContext(section('function stopWorkoutTimers()', 'function renderWorkoutTab()'), context);
     if (finish) context.finishWorkout(); else context.doCancelWorkout();
+    assert.equal(context.activityReadyEnabled, false);
     assert.ok(calls.includes('restStop') && calls.includes(42) && calls.includes('clearDraft'));
     assert.equal(context.holdTimers.size, 0);
     assert.equal(context.lastVoiceAction, null);
@@ -807,6 +818,7 @@ for (const finish of [false, true]) {
       assert.equal(saved[0].entries[0].sets.length, 1);
       assert.equal(saved[0].entries[0].sets[0].weightKg, 20);
       assert.ok(calls.includes('health'));
+      assert.equal(saved[0].healthSyncPending, true);
     } else {
       assert.equal(saved, null);
       assert.ok(!calls.includes('health'));
@@ -841,8 +853,9 @@ function activityContext() {
       calls.push(data); return { ok: true, active: data.running || data.preview };
     } },
     appInitialized: true, activitySyncQueued: false, activitySnapshotKey: '',
-    activitySyncChain: Promise.resolve(), activityError: '',
+    activitySyncChain: Promise.resolve(), activityError: '', activitySyncRevision: 0,
     activityPreviewStartedAt: 1234000,
+    activityReadyEnabled: true,
     queueMicrotask, console, el: () => null, showToast: (message) => messages.push(message),
     isEntryDone: (entry) => entry.type === 'cardio' ? entry.completed : entry.sets.every((set) => set.completed),
   });
@@ -921,9 +934,10 @@ test('Live Activity batches unchanged edits and serializes start, rest, extensio
   context.syncWorkoutActivity();
   await settleActivity(context);
   context.activeSession.running = false;
+  context.activityReadyEnabled = false;
   context.syncWorkoutActivity();
   await settleActivity(context);
-  assert.deepEqual(calls.map((data) => data.phase || 'ended'), ['workout', 'rest', 'rest', 'workout', 'ready']);
+  assert.deepEqual(calls.map((data) => data.phase || 'ended'), ['workout', 'rest', 'rest', 'workout', 'ended']);
   assert.equal(calls[2].phaseEndMillis - calls[1].phaseEndMillis, 15000);
 });
 
@@ -1118,7 +1132,10 @@ test('native announcements use system-managed speech, without permanently duckin
   assert.deepEqual(calls, ['test announcement']);
   assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /usesApplicationAudioSession = true/);
   assert.doesNotMatch(read('ios/App/App/VoiceCommandPlugin.swift'), /\.duckOthers/);
-  assert.doesNotMatch(read('ios/App/App/AppDelegate.swift'), /\.duckOthers/);
+  assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking \{ options.insert\(.duckOthers\) \}/);
+  const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  assert.match(announcer, /wantsMicrophone, ducking: true/);
+  assert.match(announcer, /audioEngine.stop\(\)[\s\S]*setActive\(false, options: .notifyOthersOnDeactivation\)/);
 });
 
 test('native beep and speech never create a WebView audio context that could interrupt Apple Music', async () => {
@@ -1142,7 +1159,7 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.match(delegate, /options: AVAudioSession.CategoryOptions = \[.mixWithOthers\]/);
   assert.match(delegate, /session.category != category/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
-  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.isListening\)/);
+  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.wantsMicrophone\)/);
   assert.match(voice, /WorkoutAudioSession.activate\(recording: true\)/);
   assert.match(voice, /!BackgroundAnnouncerPlugin.isAnnouncing/);
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
@@ -1158,7 +1175,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v41'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v42'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -1320,4 +1337,253 @@ test('local storage quota failures are visible, do not report cloud success, and
   assert.equal(synced, false);
   assert.equal(context.getWorkouts()[0].id, 'saved');
   assert.equal(events[0].type, 'autofit-storage-error');
+});
+
+test('voice stop pauses warmup and cooldown without accidentally restarting an already paused timer', () => {
+  for (const [name, stop] of [['חימום', 'עצור'], ['שחרור', 'שחרור עצור'], ['חימום', 'השהה חימום']]) {
+    const entry = { exerciseId: name, exerciseName: name, type: 'cardio', durationSec: 300 };
+    const { context, calls } = voiceContext([entry]);
+    context.handleVoiceTranscript(`התחל ${name}`);
+    assert.ok(entry.startedAt);
+    context.handleVoiceTranscript(stop);
+    assert.equal(entry.startedAt, null);
+    assert.equal(entry.completed, false);
+    context.handleVoiceTranscript(stop);
+    assert.equal(entry.startedAt, null);
+    assert.equal(calls.filter((call) => call === 'stopCardio').length, 1);
+    context.handleVoiceTranscript('התחל');
+    assert.ok(entry.startedAt);
+  }
+});
+
+test('voice stop uses the plank manual completion button and does not start an idle hold', () => {
+  const entry = { exerciseId: 'plank', exerciseName: 'פלאנק', inputType: 'hold', sets: [{ completed: false }] };
+  const { context, calls } = voiceContext([entry]);
+  context.handleVoiceTranscript('עצור');
+  assert.ok(!calls.includes('startHold'));
+  context.handleVoiceTranscript('פלאנק התחל');
+  context.handleVoiceTranscript('עצור פלאנק');
+  assert.equal(entry.sets[0].completed, true);
+  assert.ok(calls.includes('stopHold') && calls.includes('rest'));
+});
+
+test('voice stop ends rep counting without marking a set completed or starting rest', () => {
+  const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ completed: false }] };
+  const { context, calls } = voiceContext([entry]);
+  context.handleVoiceTranscript('התחל סט');
+  context.handleVoiceTranscript('חמש');
+  context.handleVoiceTranscript('עצור');
+  assert.equal(entry.sets[0].reps, 5);
+  assert.equal(entry.sets[0].completed, false);
+  assert.equal(vm.runInContext('voiceCountingState', context), null);
+  assert.ok(!calls.includes('rest'));
+});
+
+test('an obsolete activity failure cannot overwrite the latest state or display a false error', async () => {
+  const { context, messages } = activityContext();
+  let resolveFirst;
+  let requests = 0;
+  context.native.syncWorkoutActivity = async () => {
+    if (++requests === 1) return new Promise((resolve) => { resolveFirst = resolve; });
+    return { ok: true, active: true };
+  };
+  context.syncWorkoutActivity();
+  await new Promise((resolve) => setImmediate(resolve));
+  context.activeSession.currentExerciseId = 'hold';
+  context.syncWorkoutActivity();
+  await new Promise((resolve) => setImmediate(resolve));
+  resolveFirst({ ok: false, reason: 'old authorization failure' });
+  await settleActivity(context);
+  assert.equal(requests, 2);
+  assert.equal(messages.length, 0);
+  assert.ok(context.activitySnapshotKey);
+});
+
+test('an activity deferred while the app is inactive shows pending status, not a failure toast', async () => {
+  const { context, messages } = activityContext();
+  const status = { classList: { remove() {} } };
+  context.el = () => status;
+  context.native.syncWorkoutActivity = async () => ({ ok: true, active: false, pending: true });
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.equal(messages.length, 0);
+  assert.match(status.textContent, /כשחוזרים/);
+  const swift = read('ios/App/App/LiveActivityBridgePlugin.swift');
+  assert.match(swift, /existing.update\(content\)/);
+  assert.match(swift, /"pending": true/);
+  assert.ok(swift.indexOf('if let existing') < swift.indexOf('areActivitiesEnabled'));
+});
+
+test('a foreground retry of the exact same activity supersedes an older failed request', async () => {
+  const { context, messages } = activityContext();
+  let finishFirst, count = 0;
+  context.native.syncWorkoutActivity = async () => ++count === 1
+    ? new Promise((resolve) => { finishFirst = resolve; }) : { ok: true, active: true };
+  context.syncWorkoutActivity();
+  await new Promise((resolve) => setImmediate(resolve));
+  context.activitySnapshotKey = '';
+  context.syncWorkoutActivity();
+  await new Promise((resolve) => setImmediate(resolve));
+  finishFirst({ ok: false, reason: 'superseded' });
+  await settleActivity(context);
+  assert.equal(count, 2);
+  assert.equal(messages.length, 0);
+});
+
+test('voice capture uses processed mono audio and preserves the requested microphone state through announcements', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  assert.match(swift, /setVoiceProcessingEnabled\(true\)/);
+  assert.match(swift, /isVoiceProcessingAGCEnabled = true/);
+  assert.match(swift, /enableAdvancedDucking: true, duckingLevel: .mid/);
+  assert.match(swift, /channels: 1/);
+  assert.match(swift, /buffer.floatChannelData\?\[0\]/);
+  assert.match(swift, /announcementWillStart\(\)[\s\S]*if Self.wantsMicrophone \{ end\(\) \}/);
+  assert.match(swift, /announcementFinished\(\)[\s\S]*guard Self.wantsMicrophone/);
+  assert.match(swift, /Self.wantsMicrophone = false/);
+});
+
+function healthContext(records, overrides = {}) {
+  const writes = [], saved = [], messages = [];
+  const context = vm.createContext({
+    workouts: records, healthSyncInFlight: new Set(), console,
+    db: { saveWorkouts: (data) => saved.push(JSON.stringify(data)) },
+    showToast: (message) => messages.push(message),
+    sendWorkoutToHealthShortcut: () => assert.fail('Native sync must not open Shortcuts'),
+    native: {
+      isNative: () => true, healthRequestAuthorization: async () => ({ granted: true }),
+      healthSaveWorkout: async (data) => { writes.push(data); return { saved: true }; },
+      ...overrides,
+    },
+  });
+  vm.runInContext(section('async function syncWorkoutToHealth(', 'function openHealthSyncHelp('), context);
+  return { context, writes, saved, messages };
+}
+
+const healthRecord = () => ({
+  id: 'stable-workout-id', dateISO: '2026-10-18T08:00:00Z', durationSec: 123.4,
+  entries: [{ exerciseName: 'Bench', sets: [{ weightKg: 27.5, reps: 9, completed: true }] }],
+});
+
+test('Health persists pending delivery before native authorization and clears it only after confirmed saving', async () => {
+  const record = healthRecord();
+  const { context, writes, saved, messages } = healthContext([record]);
+  context.native.healthRequestAuthorization = async () => {
+    assert.equal(JSON.parse(saved[0])[0].healthSyncPending, true);
+    return { granted: true };
+  };
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(writes[0].workoutID, record.id);
+  assert.equal(writes[0].startMillis, Date.parse(record.dateISO));
+  assert.equal(writes[0].durationSec, 123);
+  assert.equal(writes[0].entries[0].sets[0].weightKg, 27.5);
+  assert.equal(JSON.parse(saved.at(-1))[0].healthSyncPending, false);
+  assert.ok(record.healthSyncedAt);
+  assert.match(messages.at(-1), /נשמר באפליקציית הבריאות/);
+});
+
+test('denied Health permission survives a reload and retries with the same stable identifier', async () => {
+  const record = healthRecord();
+  const first = healthContext([record], {
+    healthRequestAuthorization: async () => ({ granted: false, reason: 'write denied' }),
+  });
+
+  test('history/dashboard reloads during Health delivery cannot leave the current record pending', async () => {
+    const record = healthRecord();
+    let complete;
+    const { context, saved } = healthContext([record], {
+      healthSaveWorkout: () => new Promise((resolve) => { complete = resolve; }),
+    });
+    const syncing = context.syncWorkoutToHealth([record]);
+    await new Promise((resolve) => setImmediate(resolve));
+    context.workouts = JSON.parse(saved.at(-1));
+    assert.notEqual(context.workouts[0], record);
+    context.workouts[0].note = 'Keep concurrent changes';
+    complete({ saved: true });
+    await syncing;
+    const persisted = JSON.parse(saved.at(-1))[0];
+    assert.equal(persisted.healthSyncPending, false);
+    assert.equal(persisted.note, 'Keep concurrent changes');
+    assert.ok(persisted.healthSyncedAt);
+  });
+  await first.context.syncWorkoutToHealth([record]);
+  assert.equal(first.writes.length, 0);
+  assert.match(first.messages[0], /write denied/);
+  const restored = JSON.parse(first.saved.at(-1));
+  assert.equal(restored[0].healthSyncPending, true);
+  const second = healthContext(restored);
+  await second.context.syncWorkoutToHealth(restored.filter((workout) => workout.healthSyncPending));
+  assert.equal(second.writes[0].workoutID, record.id);
+  assert.equal(restored[0].healthSyncPending, false);
+  assert.match(app, /workouts.filter\(\(workout\) => workout.healthSyncPending === true\)/);
+});
+
+test('failed Health saves stay pending and concurrent manual taps cannot dispatch duplicate writes', async () => {
+  let complete;
+  const record = healthRecord();
+  const { context, messages } = healthContext([record], {
+    healthSaveWorkout: () => new Promise((resolve) => { complete = resolve; }),
+  });
+  const first = context.syncWorkoutToHealth([record]);
+  await new Promise((resolve) => setImmediate(resolve));
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(context.healthSyncInFlight.size, 1);
+  complete({ saved: false, reason: 'Health store unavailable' });
+  await first;
+  assert.equal(record.healthSyncPending, true);
+  assert.equal(context.healthSyncInFlight.size, 0);
+  assert.match(messages[0], /Health store unavailable/);
+  assert.ok(!messages.some((message) => message.includes('נשמר באפליקציית הבריאות')));
+});
+
+test('Health bridge carries workout identifiers and summary; native samples have stable deduplication metadata', async () => {
+  let payload;
+  const context = bridgeContext({ HealthBridge: {
+    saveWorkout: async (data) => { payload = data; return { saved: true, id: 'native-id' }; },
+  } });
+  const record = healthRecord();
+  const result = await context.healthSaveWorkout({
+    workoutID: record.id, startMillis: Date.parse(record.dateISO), durationSec: 123, entries: record.entries,
+  });
+  assert.equal(payload.workoutID, record.id);
+  assert.equal(payload.entries, record.entries);
+  assert.equal(payload.calories, 0);
+  assert.equal(result.id, 'native-id');
+  const swift = read('ios/App/App/HealthBridgePlugin.swift');
+  assert.match(swift, /HKMetadataKeySyncIdentifier: "autofit.\\\(workoutID\)"/);
+  assert.match(swift, /HKMetadataKeySyncVersion: 1/);
+  assert.match(swift, /"AutoFitExerciseSummary": summary/);
+  assert.match(swift, /builder.addMetadata\(metadata\)/);
+  assert.match(swift, /autofit.\\\(workoutID\).energy/);
+});
+
+test('background handoff includes banked warmup and cooldown completion without announcing paused cardio', () => {
+  const context = vm.createContext({
+    Date: { now: () => 100000 }, restTimer: { isRunning: () => false },
+    settings: { voiceAnnouncements: true }, holdTimers: new Map(), exercises: [],
+    activeSession: { entries: [
+      { exerciseId: 'warmup', type: 'cardio', startedAt: 90000, elapsedSec: 30, durationSec: 300 },
+      { exerciseId: 'cooldown', type: 'cardio', startedAt: null, durationSec: 300 },
+    ] },
+  });
+  vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
+  const items = context.buildBackgroundAnnouncementItems();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].delaySeconds, 260);
+  assert.equal(items[0].text, 'החימום הסתיים');
+  assert.equal(items[0].announcementID, 'cardio:warmup:90000');
+});
+
+test('timer speech carries the same stable identity through foreground and background native dispatch', async () => {
+  let payload;
+  const native = bridgeContext({ BackgroundAnnouncer: { speakNow: async (data) => { payload = data; } } });
+  const context = vm.createContext({ isNative: () => true, announce: native.announce });
+  vm.runInContext(read('www/js/timer.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  context.speak('rest complete', 'he-IL', 'rest:12345:done');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(payload.announcementID, 'rest:12345:done');
+  const swift = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  assert.match(swift, /recentAnnouncementIDs.contains\(announcementID\)/);
+  assert.match(swift, /recentAnnouncementIDs.count > 512/);
+  assert.match(swift, /self\?\.speak\(text, announcementID: announcementID\)/);
+  assert.match(swift, /restorePlaybackAfterMicrophone/);
 });

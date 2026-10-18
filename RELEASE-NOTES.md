@@ -1,6 +1,58 @@
 # AutoFit release notes
 
-## Device feedback follow-up after build 21
+## Version 1.0 (23): Voice, media and completion reliability
+
+Release candidate; native archive/upload and Apple processing remain pending.
+
+- Announcements temporarily **duck** other audio instead of pausing it, as
+  explicitly selected. The mixed session is released after the final queued
+  sentence, restoring other audio rather than leaving it permanently ducked.
+  Opening AutoFit does not proactively activate audio.
+- Hebrew recognition now uses voice processing, echo cancellation, automatic
+  gain control, and a processed mono microphone channel. Capture pauses during
+  AutoFit speech and resumes if still requested. Leaving the foreground stops
+  capture and restores playback-only background audio. Bluetooth duplex input
+  can still change AirPods audio quality; real-device acceptance is required.
+- **"עצור" / "השהה"**, including named forms such as **"עצור חימום"** and
+  **"שחרור עצור"**, use existing manual controls. Cardio pauses and resumes
+  banked time. Stopping plank records the hold and starts rest. Stopping rep
+  counting does not silently mark the set completed.
+- Existing Live Activities are updated across readiness/workout transitions
+  instead of repeatedly requesting new activities. Inactive-app requests are
+  deferred, not shown as errors; stale failures cannot overwrite newer attempts,
+  including retries with identical payloads. iOS still controls authorization.
+- Per the user's explicit lifecycle choice, the activity **stays during
+  minimization and closes on workout finish/cancel**, without returning to a
+  ready activity until another workout or a fresh app launch. iOS does not
+  reliably report force-quit, so immediate removal on force-quit is not promised.
+- Manual and spoken workout finish use the same Health delivery path. Pending
+  delivery is stored with local history before native dispatch, retried on the
+  next launch, and cleared only after HealthKit confirms saving. Stable HealthKit
+  sync identifiers/versions prevent retry duplicates, including energy samples
+  when actual energy is supplied; no calories are fabricated.
+- Apple Health receives the actual workout date and active duration. Completed
+  exercise/set/weight details are included as custom workout metadata; Apple's
+  Health UI does not present these as native per-set charts. AutoFit retains its
+  complete local history even when permission or saving fails.
+- Background handoff covers rest, holds, and running warmup/cooldown. Stable
+  announcement identities prevent duplicate speech when foreground JavaScript
+  catches up after native background delivery. Force-quitting stops app audio.
+- 127 Node regressions and raw-byte JavaScript syntax checks pass. Browser
+  native-bridge simulations do not establish actual HealthKit, audio routing,
+  music/AirPods, or locked-screen behavior. Cache: `autofit-v42`.
+- Real DOM checks with simulated native APIs cover repeated cardio stop/resume,
+  plank stop and 90-second rest, strength completion and 120-second rest,
+  spoken finish/activity closure, and persisted Health retry after reload.
+  They also caught and fixed history/dashboard rerenders replacing record
+  references during asynchronous Health delivery.
+
+## Version 1.0 (22): Exercise-aware voice and ready activity
+
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING` for build `25c1a334-76a6-4b0b-b0fa-a084cbeb3565`.
+[Native release build](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39125682799)
+succeeded; released source: `4ca7607`. No external beta review or App Store
+submission was made.
 
 ### Automatic Live Activity
 

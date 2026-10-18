@@ -51,8 +51,10 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     // day it actually happened — even when synced later from history.
     @objc func saveWorkout(_ call: CAPPluginCall) {
         guard let startMillis = call.getDouble("startMillis"),
-              let durationSec = call.getDouble("durationSec") else {
-            call.reject("Missing startMillis or durationSec")
+              let durationSec = call.getDouble("durationSec"),
+              let workoutID = call.getString("workoutID"), !workoutID.isEmpty, workoutID.count <= 128,
+              let entries = call.getArray("entries"), JSONSerialization.isValidJSONObject(entries) else {
+            call.reject("Missing or invalid workout identifier, date, duration or exercise summary")
             return
         }
         let calories = call.getDouble("calories") ?? 0
@@ -73,43 +75,70 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
 
         if #available(iOS 17.0, *) {
             let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: workoutConfig, device: .local())
-            builder.beginCollection(withStart: startDate) { success, error in
-                guard success else {
-                    call.reject("beginCollection failed: \(error?.localizedDescription ?? "unknown")")
+            let summary: String
+            do {
+                let data = try JSONSerialization.data(withJSONObject: entries)
+                guard let text = String(data: data, encoding: .utf8) else {
+                    call.reject("Cannot encode exercise summary")
                     return
                 }
-                var samples: [HKSample] = []
-                if calories > 0, let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
-                    let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
-                    let energySample = HKQuantitySample(type: energyType, quantity: energyQuantity, start: startDate, end: endDate)
-                    samples.append(energySample)
+                summary = text
+            } catch {
+                call.reject("Cannot encode exercise summary: \(error.localizedDescription)")
+                return
+            }
+            let metadata: [String: Any] = [
+                HKMetadataKeySyncIdentifier: "autofit.\(workoutID)",
+                HKMetadataKeySyncVersion: 1,
+                HKMetadataKeyWorkoutBrandName: "AutoFit",
+                "AutoFitExerciseSummary": summary
+            ]
+            builder.addMetadata(metadata) { success, error in
+                guard success else {
+                    call.reject("Workout metadata failed: \(error?.localizedDescription ?? "unknown")")
+                    return
                 }
-                let addSamplesBlock: (Bool) -> Void = { _ in
-                    builder.endCollection(withEnd: endDate) { success, error in
-                        guard success else {
-                            call.reject("endCollection failed: \(error?.localizedDescription ?? "unknown")")
-                            return
-                        }
-                        builder.finishWorkout { workout, error in
-                            if let error = error {
-                                call.reject("finishWorkout failed: \(error.localizedDescription)")
-                            } else if let workout = workout {
-                                call.resolve(["saved": true, "id": workout.uuid.uuidString])
-                            } else {
-                                call.reject("HealthKit returned no saved workout")
+                builder.beginCollection(withStart: startDate) { success, error in
+                    guard success else {
+                        call.reject("beginCollection failed: \(error?.localizedDescription ?? "unknown")")
+                        return
+                    }
+                    var samples: [HKSample] = []
+                    if calories > 0, let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
+                        let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
+                        samples.append(HKQuantitySample(type: energyType, quantity: energyQuantity,
+                            start: startDate, end: endDate, metadata: [
+                                HKMetadataKeySyncIdentifier: "autofit.\(workoutID).energy",
+                                HKMetadataKeySyncVersion: 1
+                            ]))
+                    }
+                    let addSamplesBlock: (Bool) -> Void = { _ in
+                        builder.endCollection(withEnd: endDate) { success, error in
+                            guard success else {
+                                call.reject("endCollection failed: \(error?.localizedDescription ?? "unknown")")
+                                return
+                            }
+                            builder.finishWorkout { workout, error in
+                                if let error = error {
+                                    call.reject("finishWorkout failed: \(error.localizedDescription)")
+                                } else if let workout = workout {
+                                    call.resolve(["saved": true, "id": workout.uuid.uuidString])
+                                } else {
+                                    call.reject("HealthKit returned no saved workout")
+                                }
                             }
                         }
                     }
-                }
-                if samples.isEmpty {
-                    addSamplesBlock(true)
-                } else {
-                    builder.add(samples) { success, error in
-                        guard success else {
-                            call.reject("addSamples failed: \(error?.localizedDescription ?? "unknown")")
-                            return
+                    if samples.isEmpty {
+                        addSamplesBlock(true)
+                    } else {
+                        builder.add(samples) { success, error in
+                            guard success else {
+                                call.reject("addSamples failed: \(error?.localizedDescription ?? "unknown")")
+                                return
+                            }
+                            addSamplesBlock(success)
                         }
-                        addSamplesBlock(success)
                     }
                 }
             }

@@ -32,9 +32,12 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     private let speechSynthesizer = AVSpeechSynthesizer()
     private var pendingTimers: [Timer] = []
     private var pendingSpeechCount = 0
+    private var recentAnnouncementIDs: [String] = []
     static var isAnnouncing = false
     static var isKeepingAlive = false
+    static let announcementStarted = Notification.Name("AutoFitAnnouncementStarted")
     static let announcementEnded = Notification.Name("AutoFitAnnouncementEnded")
+    static let microphoneReleased = Notification.Name("AutoFitMicrophoneReleased")
 
     private let audioEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -45,6 +48,24 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     override public func load() {
         speechSynthesizer.usesApplicationAudioSession = true
         speechSynthesizer.delegate = self
+        NotificationCenter.default.addObserver(self, selector: #selector(restorePlaybackAfterMicrophone),
+            name: Self.microphoneReleased, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func restorePlaybackAfterMicrophone() {
+        guard Self.isKeepingAlive, !Self.isAnnouncing else { return }
+        playerNode.stop()
+        beepNode.stop()
+        audioEngine.stop()
+        do {
+            try startSilentLoop()
+        } catch {
+            notifyListeners("announcementError", data: ["reason": error.localizedDescription])
+        }
     }
 
     @objc func speakNow(_ call: CAPPluginCall) {
@@ -54,7 +75,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         }
         DispatchQueue.main.async {
             do {
-                try self.speak(text)
+                try self.speak(text, announcementID: call.getString("announcementID"))
                 call.resolve()
             } catch {
                 call.reject("Announcement audio failed: \(error.localizedDescription)")
@@ -99,7 +120,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             self.playerNode.stop()
             self.beepNode.stop()
             self.audioEngine.stop()
-            if !VoiceCommandPlugin.isListening && !Self.isAnnouncing {
+            if !VoiceCommandPlugin.wantsMicrophone && !Self.isAnnouncing {
                 do {
                     try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
                 } catch {
@@ -126,9 +147,10 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             }
             for item in items {
                 guard let delay = item["delaySeconds"] as? Double, let text = item["text"] as? String, !text.isEmpty else { continue }
+                let announcementID = item["announcementID"] as? String
                 let timer = Timer(timeInterval: max(0.05, delay), repeats: false) { [weak self] _ in
                     do {
-                        try self?.speak(text)
+                        try self?.speak(text, announcementID: announcementID)
                     } catch {
                         self?.notifyListeners("announcementError", data: ["reason": error.localizedDescription])
                     }
@@ -152,14 +174,27 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         pendingTimers.removeAll()
     }
 
-    private func speak(_ text: String) throws {
-        try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.isListening)
+    private func speak(_ text: String, announcementID: String? = nil) throws {
+        if let announcementID = announcementID, recentAnnouncementIDs.contains(announcementID) { return }
+        if pendingSpeechCount == 0 {
+            Self.isAnnouncing = true
+            NotificationCenter.default.post(name: Self.announcementStarted, object: nil)
+            do {
+                try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.wantsMicrophone, ducking: true)
+            } catch {
+                finishAnnouncement()
+                throw error
+            }
+        }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "he-IL")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         pendingSpeechCount += 1
-        Self.isAnnouncing = true
         speechSynthesizer.speak(utterance)
+        if let announcementID = announcementID {
+            recentAnnouncementIDs.append(announcementID)
+            if recentAnnouncementIDs.count > 512 { recentAnnouncementIDs.removeFirst() }
+        }
     }
 
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -173,25 +208,32 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     private func finishAnnouncement() {
         pendingSpeechCount = max(0, pendingSpeechCount - 1)
         guard pendingSpeechCount == 0 else { return }
+        playerNode.stop()
+        beepNode.stop()
+        audioEngine.stop()
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            notifyListeners("announcementError", data: ["reason": error.localizedDescription])
+        }
         Self.isAnnouncing = false
-        NotificationCenter.default.post(name: Self.announcementEnded, object: nil)
-        if !Self.isKeepingAlive && !VoiceCommandPlugin.isListening {
-            playerNode.stop()
-            beepNode.stop()
-            audioEngine.stop()
+        if Self.isKeepingAlive {
             do {
-                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                try startSilentLoop()
             } catch {
                 notifyListeners("announcementError", data: ["reason": error.localizedDescription])
             }
         }
+        NotificationCenter.default.post(name: Self.announcementEnded, object: nil)
     }
 
     // Generates and loops a silent audio buffer so the OS treats the app as
     // "actively playing audio" and keeps it alive in the background (required
     // for the scheduled timers above to actually fire while minimized).
     private func startSilentLoop() throws {
-        try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.isListening)
+        if !Self.isAnnouncing {
+            try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.wantsMicrophone)
+        }
         if silentBuffer == nil {
             guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1) else {
                 throw NSError(domain: "AutoFit.Audio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Audio format unavailable"])

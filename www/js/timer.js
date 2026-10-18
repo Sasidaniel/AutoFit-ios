@@ -69,9 +69,9 @@ export function playBeep() {
 
 // Voice announcement via Web Speech API (plays through connected headphones too).
 // Must first be triggered from a user gesture (tap) on iOS, otherwise it's silently blocked.
-export function speak(text, lang = 'he-IL') {
+export function speak(text, lang = 'he-IL', announcementID) {
   if (isNative()) {
-    announce(text).catch(reportAudioError);
+    announce(text, announcementID).catch(reportAudioError);
     return;
   }
   try {
@@ -147,9 +147,10 @@ export class RestTimer {
     if (this.endAt === null) return;
     const remaining = (this.endAt - Date.now()) / 1000;
     if (remaining <= 0) {
+      const endAt = this.endAt;
       this.onTick(0);
       this.stop();
-      this.onDone();
+      this.onDone(endAt);
       return;
     }
     this._checkIntervalAnnouncement(remaining);

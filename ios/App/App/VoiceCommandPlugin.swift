@@ -35,8 +35,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise)
     ]
 
-    // The announcer preserves recording while configuring the shared mixed session.
+    // Requested listening survives the temporary capture pause during app speech.
     @objc public static var isListening = false
+    @objc public static var wantsMicrophone = false
 
     private let audioEngine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
@@ -51,6 +52,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     override public func load() {
         NotificationCenter.default.addObserver(
+            self, selector: #selector(announcementWillStart),
+            name: BackgroundAnnouncerPlugin.announcementStarted, object: nil)
+        NotificationCenter.default.addObserver(
             self, selector: #selector(announcementFinished),
             name: BackgroundAnnouncerPlugin.announcementEnded, object: nil)
     }
@@ -59,8 +63,12 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         NotificationCenter.default.removeObserver(self)
     }
 
+    @objc private func announcementWillStart() {
+        if Self.wantsMicrophone { end() }
+    }
+
     @objc private func announcementFinished() {
-        guard Self.isListening else { return }
+        guard Self.wantsMicrophone else { return }
         generation = UUID()
         pendingUtterance?.cancel()
         utterance = SpeechUtteranceBuffer()
@@ -80,12 +88,14 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func startListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.consecutiveFailures = 0
+            Self.wantsMicrophone = true
             self.contextualPhrases = Array((call.getArray("contextualStrings") as? [String] ?? [])
                 .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
-                try self.begin()
+                if !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
                 call.resolve()
             } catch {
+                Self.wantsMicrophone = false
                 self.end()
                 call.reject("Voice recognition could not start: \(error.localizedDescription)")
             }
@@ -94,6 +104,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func stopListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            Self.wantsMicrophone = false
             self.end()
             if !BackgroundAnnouncerPlugin.isKeepingAlive && !BackgroundAnnouncerPlugin.isAnnouncing {
                 do {
@@ -125,23 +136,46 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        req.contextualStrings = [
+        req.contextualStrings = Array(([
             "התחל אימון", "סיים אימון", "בטל אימון", "התחל סט",
             "סט הושלם", "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא",
-            "התחל", "התחל חימום", "חימום", "שחרור", "פלאנק", "פלנק"
-        ] + contextualPhrases
+            "התחל", "התחל חימום", "חימום", "שחרור", "פלאנק", "פלנק",
+            "עצור", "השהה", "עצור חימום", "עצור שחרור"
+        ] + contextualPhrases).prefix(100))
         if recognizer.supportsOnDeviceRecognition {
             req.requiresOnDeviceRecognition = true
         }
         request = req
 
         let inputNode = audioEngine.inputNode
+        if !inputNode.isVoiceProcessingEnabled { try inputNode.setVoiceProcessingEnabled(true) }
+        inputNode.isVoiceProcessingAGCEnabled = true
+        inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: true, duckingLevel: .mid)
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
-            throw voiceError("No microphone input is available")
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0,
+              recordingFormat.commonFormat == .pcmFormatFloat32, !recordingFormat.isInterleaved,
+              let monoFormat = AVAudioFormat(standardFormatWithSampleRate: recordingFormat.sampleRate, channels: 1) else {
+            throw voiceError("No supported processed microphone input is available")
         }
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            req.append(buffer)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            if buffer.format.channelCount == 1 {
+                req.append(buffer)
+                return
+            }
+            guard let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength),
+                  let source = buffer.floatChannelData?[0], let target = mono.floatChannelData?[0] else {
+                DispatchQueue.main.async {
+                    guard let self = self, self.generation == currentGeneration else { return }
+                    Self.wantsMicrophone = false
+                    self.end()
+                    self.notifyListeners("voiceError", data: ["reason": "Cannot process microphone audio"])
+                }
+                return
+            }
+            mono.frameLength = buffer.frameLength
+            target.update(from: source, count: Int(buffer.frameLength))
+            req.append(mono)
         }
         tapInstalled = true
 
@@ -161,6 +195,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let error = error {
                     self.consecutiveFailures += 1
                     if self.consecutiveFailures >= 3 {
+                        Self.wantsMicrophone = false
                         self.end()
                         self.notifyListeners("voiceError", data: ["reason": error.localizedDescription])
                         return
@@ -190,6 +225,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
+        if !Self.wantsMicrophone {
+            NotificationCenter.default.post(name: BackgroundAnnouncerPlugin.microphoneReleased, object: nil)
+        }
     }
 
     private func voiceError(_ message: String) -> NSError {
@@ -199,11 +237,12 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private func restart(after delay: TimeInterval) {
         let currentGeneration = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard self.generation == currentGeneration, VoiceCommandPlugin.isListening,
+            guard self.generation == currentGeneration, Self.wantsMicrophone,
                   !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()
             } catch {
+                Self.wantsMicrophone = false
                 self.end()
                 self.notifyListeners("voiceError", data: ["reason": error.localizedDescription])
             }
