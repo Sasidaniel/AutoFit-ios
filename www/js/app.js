@@ -49,6 +49,11 @@ const restTimer = new RestTimer({
   onTick: (remaining) => {
     el('restTimeDisplay').textContent = formatHMS(remaining);
   },
+  onInterval: (elapsedSeconds) => {
+    if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
+      speak(`עברו ${elapsedSeconds} שניות`);
+    }
+  },
   onDone: () => {
     playBeep();
     if (settings.voiceAnnouncements) speak(`זמן המנוחה הסתיים. ${restDoneMessage}`);
@@ -58,26 +63,50 @@ const restTimer = new RestTimer({
   },
 });
 
+// Builds the list of still-pending voice announcements (rest-timer interval marks + final
+// "done", plus any running hold-timer completions) so they can be handed off to native code
+// right before the app is backgrounded — WKWebView JS timers aren't reliable once minimized.
+function buildBackgroundAnnouncementItems() {
+  const items = [];
+  const now = Date.now();
+  if (restTimer.isRunning() && restTimer.endAt) {
+    const remainingSec = (restTimer.endAt - now) / 1000;
+    if (remainingSec > 0) {
+      const elapsedNow = restTimer.totalSeconds - remainingSec;
+      if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
+        let nextThreshold = restTimer.lastAnnouncedElapsed + 30;
+        while (nextThreshold < restTimer.totalSeconds) {
+          const delay = nextThreshold - elapsedNow;
+          if (delay > 0.2) items.push({ delaySeconds: delay, text: `עברו ${nextThreshold} שניות` });
+          nextThreshold += 30;
+        }
+      }
+      if (settings.voiceAnnouncements) {
+        items.push({ delaySeconds: remainingSec, text: `זמן המנוחה הסתיים. ${restDoneMessage}` });
+      }
+    }
+  }
+  if (settings.voiceAnnouncements) {
+    holdTimers.forEach((state, key) => {
+      const exId = key.split(':')[0];
+      const ex = exercises.find((e) => e.id === exId);
+      if (!ex) return;
+      const target = ex.holdSeconds || 15;
+      const delay = target - (now - state.startedAt) / 1000;
+      if (delay > 0.2) items.push({ delaySeconds: delay, text: `${target} שניות הושלמו, אפשר לעצור` });
+    });
+  }
+  return items;
+}
+
 /* ---------------- notifications (best-effort background alerts) ----------------
    iOS/Safari suspends page JS when the app is fully backgrounded or the screen is
    locked, so a true "always fires on time" background alert needs a push server.
-   As a best effort: request permission up-front, fire a system Notification whenever
-   a timer completes (shows even if the user briefly switched apps/tabs), and
-   force every timer to re-check itself the instant the page becomes visible again. */
-function requestNotificationPermission() {
-  // This also acts as the one required user-gesture to unlock sound/speech on iOS Safari.
-  primeSpeech();
-  playBeep();
-  if (!('Notification' in window)) {
-    showToast('באייפון/ספארי אין תמיכה בהתראות מערכת לאתר כזה ללא שרת Push ייעודי — אבל צליל + הכרזה קולית הופעלו עכשיו ויישמעו אוטומטית כל עוד האתר פתוח 🔊');
-    return;
-  }
-  if (Notification.permission === 'granted') { showToast('התראות כבר מאושרות, וגם צליל/קול הופעלו ✅'); return; }
-  Notification.requestPermission().then((perm) => {
-    showToast(perm === 'granted' ? 'התראות אושרו ✅ (וגם צליל/קול הופעלו)' : 'התראות נחסמו, אך צליל/קול יעבדו כל עוד האתר פתוח');
-  }).catch(() => {});
-}
+   As a best effort: fire a system Notification whenever a timer completes (shows
+   even if the user briefly switched apps/tabs), and force every timer to re-check
+   itself the instant the page becomes visible again. */
 function notify(title, body) {
+  if (native.isNative()) { native.notificationsShow(title, body); return; }
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try { new Notification(title, { body, icon: 'icons/icon-192.png', tag: 'autofit-timer' }); } catch (e) { /* noop */ }
 }
@@ -108,7 +137,14 @@ document.addEventListener('visibilitychange', () => {
     if (restTimer.isRunning()) restTimer.forceTick();
     tickCardioTimers();
     requestWakeLock();
+    if (native.isNative()) native.bgCancelAnnouncements();
+  } else if (native.isNative()) {
+    // App is about to be minimized/backgrounded — hand off any pending voice
+    // announcements (rest timer, hold timers) to native code so they still fire.
+    const items = buildBackgroundAnnouncementItems();
+    if (items.length) native.bgScheduleAnnouncements(items);
   }
+  updateVoiceListeningState(); // pause/resume mic listening with app foreground state
 });
 // Some browsers only grant the wake lock from within a user gesture — retry on first tap.
 document.addEventListener('click', () => { if (!wakeLockRef) requestWakeLock(); }, { once: false });
@@ -143,11 +179,93 @@ function init() {
         ex.active = true;
         migrated = true;
       }
-      if (ex.restSeconds !== 120) {
-        ex.restSeconds = 120;
-        migrated = true;
-      }
     });
+    // one-time switch to the new 3-sets/90-seconds defaults (applied once so that any
+    // per-exercise customization made afterwards via the exercise editor is respected forever)
+    if (!settings.exerciseDefaultsV3Applied) {
+      exercises.forEach((ex) => {
+        if (ex.id !== 'warmup' && ex.id !== 'cooldown') {
+          ex.restSeconds = 90;
+          ex.defaultSets = 3;
+        }
+      });
+      settings.exerciseDefaultsV3Applied = true;
+      db.saveSettings(settings);
+      migrated = true;
+    }
+    // one-time override: these two exercises get 2 minutes rest instead of the
+    // 90-second default used by the rest of the program
+    if (!settings.restOverrideV1Applied) {
+      const longerRestNames = ['לחיצת חזה', 'כפיפת מרפקים בישיבה'];
+      exercises.forEach((ex) => {
+        if (longerRestNames.includes(ex.name)) ex.restSeconds = 120;
+      });
+      settings.restOverrideV1Applied = true;
+      db.saveSettings(settings);
+      migrated = true;
+    }
+    // one-time addition of 6 new exercises to installs that already had a saved
+    // exercises list (new installs get them directly from SEED_EXERCISES above)
+    if (!settings.newExercisesBatch1Applied) {
+      const newNames = [
+        'גרביטון', 'החזקה סטטית במתח', 'החזקה סטטית על מקבילים',
+        'לחיצת כתפיים בישיבה', 'סקוואט', 'כפיפות בטן לצדדים',
+      ];
+      newNames.forEach((name) => {
+        if (!exercises.some((ex) => ex.name === name)) {
+          const seedMatch = SEED_EXERCISES.find((s) => s.name === name);
+          if (seedMatch) {
+            const cooldownIdx = exercises.findIndex((ex) => ex.id === 'cooldown');
+            const newEx = { id: db.uid(), active: true, ...seedMatch };
+            if (cooldownIdx === -1) exercises.push(newEx);
+            else exercises.splice(cooldownIdx, 0, newEx);
+          }
+        }
+      });
+      settings.newExercisesBatch1Applied = true;
+      db.saveSettings(settings);
+      migrated = true;
+    }
+    // one-time text cleanup for the 6 newly-added exercises above (trims redundant
+    // duplicate wording and renames the unnamed shoulder-press machine)
+    if (!settings.exerciseTextCleanupV1Applied) {
+      exercises.forEach((ex) => {
+        if (ex.name === 'גרביטון') {
+          ex.notes = 'עליות מתח בסיוע מכונת גרביטון';
+          migrated = true;
+        } else if (ex.name === 'החזקה סטטית במתח') {
+          ex.defaultReps = '';
+          migrated = true;
+        } else if (ex.name === 'החזקה סטטית על מקבילים') {
+          ex.defaultReps = '';
+          migrated = true;
+        } else if (ex.name === 'מכשיר כתפיים למעלה') {
+          ex.name = 'לחיצת כתפיים בישיבה';
+          ex.notes = 'לחיצת כתפיים במכונה';
+          migrated = true;
+        }
+      });
+      settings.exerciseTextCleanupV1Applied = true;
+      db.saveSettings(settings);
+    }
+    // one-time cleanup: notes should only describe the exercise generically — rep/set
+    // counts and hold durations belong in the dedicated fields, not duplicated in notes
+    if (!settings.notesCleanupV1Applied) {
+      const notesFixes = {
+        'החזקה סטטית במתח': 'החזקת גוף בתלייה על המתח ללא תזוזה',
+        'פטישים': 'לכל יד',
+        'כפיפה ופשיטה של שורש כף היד': 'לכל תנועה לכל יד',
+        'פלאנק': 'החזקת גוף ישר על האמות ועל קצות האצבעות — ללא תזוזה',
+      };
+      exercises.forEach((ex) => {
+        if (notesFixes[ex.name] !== undefined) {
+          ex.notes = notesFixes[ex.name];
+          migrated = true;
+        }
+      });
+      settings.notesCleanupV1Applied = true;
+      db.saveSettings(settings);
+    }
     // one-time content patch (names/categories/reps corrections) for installs that
     // already had an exercises list saved before this update
     if (!settings.exerciseContentPatchV2) {
@@ -193,8 +311,15 @@ function init() {
       db.saveSettings(settings);
     }
   }
-  if (settings.restSeconds !== 120) {
-    settings.restSeconds = 120;
+  if (settings.restSeconds !== 90) {
+    settings.restSeconds = 90;
+    db.saveSettings(settings);
+  }
+  // one-time bump: program week now defaults to 3 (full sets) instead of the old
+  // ramp-up default of 1, since the program no longer needs a gradual sets ramp-up
+  if (!settings.programWeekV2Applied) {
+    settings.programWeek = 3;
+    settings.programWeekV2Applied = true;
     db.saveSettings(settings);
   }
   if (!activeSession) {
@@ -202,6 +327,7 @@ function init() {
   } else {
     // migrate existing active sessions that don't yet have the warm-up/cool-down walk entries
     let sessionMigrated = false;
+    const lastByExercise = getLastCompletedValuesByExercise();
     if (!activeSession.entries.some((e) => e.exerciseId === 'warmup')) {
       activeSession.entries.unshift(makeCardioEntry('warmup'));
       sessionMigrated = true;
@@ -214,13 +340,27 @@ function init() {
     exercises.filter((ex) => ex.active !== false).forEach((ex) => {
       if (!activeSession.entries.some((e) => e.exerciseId === ex.id)) {
         const cooldownIdx = activeSession.entries.findIndex((e) => e.exerciseId === 'cooldown');
+        const last = lastByExercise[ex.id];
         const newEntry = {
           exerciseId: ex.id,
           exerciseName: ex.name,
-          sets: Array.from({ length: setsForWeek(ex) }, () => ({ weightKg: '', reps: '', completed: false })),
+          sets: Array.from({ length: setsForWeek(ex) }, () => ({ weightKg: last ? last.weightKg : '', reps: last ? last.reps : '', completed: false })),
         };
         if (cooldownIdx === -1) activeSession.entries.push(newEntry);
         else activeSession.entries.splice(cooldownIdx, 0, newEntry);
+        sessionMigrated = true;
+      }
+    });
+    // backfill any exercise that's still completely untouched (no typed values, nothing
+    // checked off) with the weight/reps last logged for it — so the current weights are
+    // always restored from history, not just for brand-new sessions
+    activeSession.entries.forEach((entry) => {
+      if (entry.type === 'cardio') return;
+      const last = lastByExercise[entry.exerciseId];
+      if (!last) return;
+      const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
+      if (isBlank) {
+        entry.sets.forEach((s) => { s.weightKg = last.weightKg; s.reps = last.reps; });
         sessionMigrated = true;
       }
     });
@@ -246,8 +386,11 @@ function init() {
   renderProfileTab();
   renderHomeTab();
 
-  // keep the phone screen on the whole time the site is open, not just during a workout
+  // keep the phone screen on the whole time the site is open, not just during a workout.
+  // Also re-assert on a repeating interval (not just on init/click/visibilitychange) as
+  // defense-in-depth against any native-side reset the one-time call might miss.
   requestWakeLock();
+  setInterval(requestWakeLock, 15000);
 
   if (activeSession.running) {
     stopwatch.start(new Date(activeSession.startedAt).getTime());
@@ -286,6 +429,8 @@ function switchTab(tab) {
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'history') renderHistoryTab();
   if (tab === 'home') renderHomeTab();
+  currentTab = tab;
+  updateVoiceListeningState();
 }
 
 /* ---------------- live clock ---------------- */
@@ -335,7 +480,7 @@ function makeCardioEntry(kind) {
 }
 
 function setsForWeek(ex) {
-  const week = Math.max(1, Number(settings.programWeek) || 1);
+  const week = Math.max(1, Number(settings.programWeek) || 3);
   return Math.max(1, Math.min(week, ex.defaultSets || 1));
 }
 
@@ -352,7 +497,7 @@ function applyProgramWeekToActiveSession() {
     }
     while (entry.sets.length > desired) {
       const last = entry.sets.at(-1);
-      if (last.completed) break; // never discard a logged set
+      if (last.completed || last.weightKg || last.reps) break; // never discard logged or typed-in data
       entry.sets.pop();
     }
   });
@@ -405,21 +550,34 @@ function ensureWorkoutStarted() {
   requestWakeLock();
   el('btnStartWorkout').classList.add('hidden');
   el('btnFinishWorkout').classList.remove('hidden');
+  if (settings.voiceAnnouncements) speak('אימון מהנה ובהצלחה');
+  if (native.isNative()) native.bgStartKeepAlive();
 }
 
 // Cancels the current workout without saving anything to history, resetting
 // the draft back to a blank session (the opposite of finishWorkout's save path).
 function cancelWorkout() {
   if (!confirm('לבטל את האימון הנוכחי ולאפס את כל הנתונים שמולאו? פעולה זו לא ניתנת לביטול.')) return;
+  doCancelWorkout();
+}
+
+// The actual cancel logic, split out from the confirm() dialog above so the
+// "cancel workout" voice command can trigger it directly without a blocking
+// native dialog (the user already explicitly asked for the voice command to
+// act immediately, same as every other voice command).
+function doCancelWorkout() {
   stopwatch.stop();
   activeSession.running = false;
   db.clearActiveSession();
   activeSession = buildDraftSession();
+  voiceCountingState = null;
+  updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
   el('btnStartWorkout').classList.remove('hidden');
   el('btnFinishWorkout').classList.add('hidden');
   renderWorkoutTab();
   showToast('האימון בוטל ואופס 🔄');
+  if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
 }
 
 const CELEBRATION_MESSAGES = [
@@ -433,14 +591,17 @@ function showCelebration(record) {
   const msg = CELEBRATION_MESSAGES[Math.floor(Math.random() * CELEBRATION_MESSAGES.length)];
   const overlay = document.createElement('div');
   overlay.className = 'celebration-overlay';
+  // On native, the workout is already auto-synced to Apple Health (no button needed) —
+  // the manual "send" button is only needed for the web/PWA Shortcuts-based fallback.
+  const showHealthBtn = record && !native.isNative();
   overlay.innerHTML = `<div class="celebration-card">
     <div class="celebration-emoji">🎉</div>
     <div class="celebration-text">${escapeHtml(msg)}</div>
-    ${record ? `<button class="btn btn-secondary btn-small btnSendHealth" style="margin-top:14px;">${native.isNative() ? '⌚ שמור בבריאות' : '📲 שלח ל-Shortcuts (לבריאות)'}</button>` : ''}
+    ${showHealthBtn ? `<button class="btn btn-secondary btn-small btnSendHealth" style="margin-top:14px;">📲 שלח ל-Shortcuts (לבריאות)</button>` : ''}
   </div>`;
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
-  if (record) {
+  if (showHealthBtn) {
     qs('.btnSendHealth', overlay).addEventListener('click', (e) => {
       e.stopPropagation();
       syncWorkoutToHealth([record]);
@@ -483,18 +644,24 @@ function finishWorkout() {
     workouts.push(record);
     db.saveWorkouts(workouts);
     showToast('האימון נשמר בהיסטוריה ✅');
+    if (settings.voiceAnnouncements) speak('כל הכבוד על האימון');
     showCelebration(record);
+    // Auto-sync to Apple Health on native — no manual "save to Health" tap needed.
+    if (native.isNative()) syncWorkoutToHealth([record]);
   } else {
     showToast('האימון בוטל (לא הושלם אף סט)');
   }
 
   db.clearActiveSession();
   activeSession = buildDraftSession();
+  voiceCountingState = null;
+  updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
   el('btnStartWorkout').classList.remove('hidden');
   el('btnFinishWorkout').classList.add('hidden');
   renderWorkoutTab();
   renderHistoryTab();
+  if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
 }
 
 function persistActiveSession() {
@@ -504,14 +671,17 @@ function persistActiveSession() {
 function renderWorkoutTab() {
   const list = el('exerciseList');
   list.innerHTML = '';
+  const lastByExercise = getLastCompletedValuesByExercise();
 
   let totalSets = 0, completedSets = 0;
   let exerciseNumber = 0;
 
-  activeSession.entries.forEach((entry) => {
+  activeSession.entries.forEach((entry, entryIndex) => {
     if (entry.type === 'cardio') {
       exerciseNumber += 1;
-      list.appendChild(renderCardioCard(entry, exerciseNumber));
+      const cardioCard = renderCardioCard(entry, exerciseNumber);
+      cardioCard.dataset.entryIndex = entryIndex;
+      list.appendChild(cardioCard);
       return;
     }
     const ex = exercises.find((e) => e.id === entry.exerciseId);
@@ -522,6 +692,7 @@ function renderWorkoutTab() {
 
     const card = document.createElement('div');
     card.className = 'exercise-card' + (entry.sets.every((s) => s.completed) ? ' done' : '');
+    card.dataset.entryIndex = entryIndex;
 
     const head = document.createElement('div');
     head.className = 'exercise-card-head';
@@ -531,7 +702,7 @@ function renderWorkoutTab() {
         <div>
           <div class="exercise-name">${escapeHtml(ex.name)}</div>
           <div class="exercise-muscle-line">${escapeHtml(ex.category)}</div>
-          <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות` : `${escapeHtml(ex.defaultReps)} חזרות`}${ex.notes ? ' &middot; ' + escapeHtml(ex.notes) : ''}</div>
+          <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות${ex.notes ? ' &middot; ' + escapeHtml(ex.notes) : ''}` : escapeHtml(ex.notes || '')}</div>
         </div>
       </div>
       <div class="exercise-head-right">
@@ -623,9 +794,12 @@ function renderWorkoutTab() {
 
     const actions = document.createElement('div');
     actions.className = 'set-row-actions';
+    const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
+    const lastVals = lastByExercise[ex.id];
     actions.innerHTML = `
       <button class="btn btn-secondary btn-small btnAddSet">+ סט</button>
       <button class="btn btn-secondary btn-small btnRemoveSet">- סט</button>
+      ${isBlank && lastVals ? '<button class="btn btn-secondary btn-small btnRestoreLast">↺ שחזר מאימון קודם</button>' : ''}
     `;
     qs('.btnAddSet', actions).addEventListener('click', () => {
       entry.sets.push({ weightKg: entry.sets.at(-1)?.weightKg || '', reps: entry.sets.at(-1)?.reps || '', completed: false });
@@ -638,6 +812,15 @@ function renderWorkoutTab() {
       persistActiveSession();
       renderWorkoutTab();
     });
+    const restoreBtn = qs('.btnRestoreLast', actions);
+    if (restoreBtn) {
+      restoreBtn.addEventListener('click', () => {
+        entry.sets.forEach((s) => { s.weightKg = lastVals.weightKg; s.reps = lastVals.reps; });
+        persistActiveSession();
+        renderWorkoutTab();
+        showToast('הערכים משוחזרים מהאימון הקודם');
+      });
+    }
     card.appendChild(actions);
 
     list.appendChild(card);
@@ -656,10 +839,8 @@ function updateProgress(total, done) {
   el('setsProgressText').textContent = `${done} / ${total} סטים הושלמו (${pct}%)`;
   el('setsProgressFill').style.width = `${pct}%`;
 
-  const totalEx = activeSession.entries.length;
-  const doneEx = activeSession.entries.filter((e) => (
-    e.type === 'cardio' ? e.completed : (e.sets.length && e.sets.every((s) => s.completed))
-  )).length;
+  const totalEx = strengthEntries.length;
+  const doneEx = strengthEntries.filter((e) => e.sets.length && e.sets.every((s) => s.completed)).length;
   const exPct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
   el('exProgressText').textContent = `${doneEx} / ${totalEx} תרגילים הושלמו (${exPct}%)`;
   el('exProgressFill').style.width = `${exPct}%`;
@@ -822,11 +1003,217 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
   });
 }
 
+function isEntryDone(entry) {
+  return entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((s) => s.completed);
+}
+
+// Finds the name of the next NOT-YET-COMPLETED exercise after `entry` in the list,
+// skipping over any that are already done (e.g. when the user isn't working strictly
+// in order), so the rest-timer announcement always names the actual upcoming exercise.
 function nextEntryName(entry) {
   const idx = activeSession.entries.indexOf(entry);
-  const next = idx >= 0 ? activeSession.entries[idx + 1] : null;
-  return next ? next.exerciseName : null;
+  if (idx < 0) return null;
+  for (let i = idx + 1; i < activeSession.entries.length; i++) {
+    const candidate = activeSession.entries[i];
+    if (!isEntryDone(candidate)) return candidate.exerciseName;
+  }
+  return null;
 }
+
+/* ---------------- Voice commands: Hebrew number parsing ---------------- */
+// Apple's recognizer sometimes emits spoken numbers as literal digits and
+// sometimes as Hebrew words — handle both. Covers 0-39 (more than enough for
+// a set's rep count); longest phrase wins so "עשרים ואחת" doesn't get cut
+// short by the standalone "אחת" entry.
+const HE_NUM_WORDS = {
+  'אפס': 0, 'אחת': 1, 'אחד': 1, 'שתיים': 2, 'שניים': 2, 'שתים': 2, 'שנים': 2,
+  'שלוש': 3, 'שלושה': 3, 'ארבע': 4, 'ארבעה': 4, 'חמש': 5, 'חמישה': 5,
+  'שש': 6, 'שישה': 6, 'שבע': 7, 'שבעה': 7, 'שמונה': 8, 'תשע': 9, 'תשעה': 9,
+  'עשר': 10, 'עשרה': 10,
+  'אחת עשרה': 11, 'אחד עשר': 11, 'שתים עשרה': 12, 'שנים עשר': 12,
+  'שלוש עשרה': 13, 'שלושה עשר': 13, 'ארבע עשרה': 14, 'ארבעה עשר': 14,
+  'חמש עשרה': 15, 'חמישה עשר': 15, 'שש עשרה': 16, 'שישה עשר': 16,
+  'שבע עשרה': 17, 'שבעה עשר': 17, 'שמונה עשרה': 18, 'שמונה עשר': 18,
+  'תשע עשרה': 19, 'תשעה עשר': 19,
+  'עשרים': 20, 'שלושים': 30,
+};
+const HE_NUM_KEYS = Object.keys(HE_NUM_WORDS).sort((a, b) => b.length - a.length);
+function parseSpokenNumber(text) {
+  const digitMatch = text.match(/\d+/);
+  if (digitMatch) return parseInt(digitMatch[0], 10);
+  const tensMatch = text.match(/(עשרים|שלושים)\s*ו?\s*(אחת|אחד|שתיים|שניים|שלוש|ארבע|חמש|שש|שבע|שמונה|תשע)?/);
+  if (tensMatch && tensMatch[0].trim()) {
+    const base = HE_NUM_WORDS[tensMatch[1]];
+    if (!tensMatch[2]) return base;
+    return base + HE_NUM_WORDS[tensMatch[2]];
+  }
+  for (const k of HE_NUM_KEYS) {
+    if (text.includes(k)) return HE_NUM_WORDS[k];
+  }
+  return null;
+}
+
+/* ---------------- Voice commands: phrase classification ---------------- */
+// Order matters: more specific phrases (containing "אימון") are checked before
+// the short generic forms ("סיימתי"/"הסתיים" alone) used while counting reps.
+function classifyVoiceCommand(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  if ((t.includes('בטל') || t.includes('ביטול')) && t.includes('אימון')) return 'cancelWorkout';
+  if ((t.includes('סיים') || t.includes('סיום')) && t.includes('אימון')) return 'finishWorkout';
+  if ((t.includes('התחל') || t.includes('מתחיל')) && t.includes('אימון')) return 'startWorkout';
+  if ((t.includes('התחל') || t.includes('מתחיל') || t.includes('נספור') || t.includes('לספור')) && t.includes('סט')) return 'startSet';
+  if (t.includes('מנוח') && (t.includes('דלג') || t.includes('הסתיים') || t.includes('סיים'))) return 'skipRest';
+  if (t.includes('תרגיל') && t.includes('הבא')) return 'nextExercise';
+  if (t.includes('סט') && (t.includes('הסתיים') || t.includes('סיימתי') || t.includes('בוצע') || t.includes('הבא'))) return 'setDone';
+  if (t.includes('הסתיים') || t.includes('סיימתי') || t === 'סיום') return 'setDone'; // short form while counting reps
+  if (t.includes('בטל')) return 'undo';
+  return null;
+}
+
+/* ---------------- Voice commands dispatch ---------------- */
+// Remembers the single most recent voice-checked button so "undo" can click
+// it again (toggling it back off) if a command gets misrecognized — storing
+// the exact element (not just an index) means undo is unambiguous even if
+// other sets get checked manually in between.
+let lastVoiceButton = null;
+// While counting reps out loud after "התחל סט": { entryIndex, setIndex, count }.
+let voiceCountingState = null;
+
+function firstNotDoneEntryIndex() {
+  return activeSession.entries.findIndex((entry) => !isEntryDone(entry));
+}
+
+function setVoiceBadge(text, counting) {
+  const badge = el('voiceStatusBadge');
+  if (!badge) return;
+  if (!text) { badge.classList.add('hidden'); return; }
+  badge.textContent = text;
+  badge.classList.remove('hidden');
+  badge.classList.toggle('counting', !!counting);
+}
+
+function updateVoiceBadgeForListeningState() {
+  if (voiceCountingState) return; // counting badge takes priority, left as-is
+  setVoiceBadge(voiceListeningActive ? '🎙️ מקשיב לפקודות קוליות…' : '');
+}
+
+function handleVoiceTranscript(transcript) {
+  if (!transcript) return;
+  const t = transcript.trim();
+
+  // While actively counting reps out loud, any recognized number updates the
+  // live count instead of being treated as a command.
+  if (voiceCountingState && !/סט|אימון|תרגיל|מנוח|בטל/.test(t)) {
+    const n = parseSpokenNumber(t);
+    if (n !== null) {
+      voiceCountingState.count = n;
+      const entry = activeSession.entries[voiceCountingState.entryIndex];
+      const set = entry && entry.sets && entry.sets[voiceCountingState.setIndex];
+      if (set) {
+        set.reps = n;
+        persistActiveSession();
+        const card = qs(`.exercise-card[data-entry-index="${voiceCountingState.entryIndex}"]`, el('exerciseList'));
+        const repsInput = card && qsa('.set-row', card)[voiceCountingState.setIndex] && qs('.reps', qsa('.set-row', card)[voiceCountingState.setIndex]);
+        if (repsInput) repsInput.value = n;
+      }
+      setVoiceBadge(`🎙️ סופר: ${n}`, true);
+      return;
+    }
+  }
+
+  const command = classifyVoiceCommand(t);
+  if (!command) return;
+
+  if (command === 'startWorkout') {
+    if (activeSession.running) return;
+    primeSpeech();
+    ensureWorkoutStarted();
+    showToast('🎙️ האימון התחיל');
+  } else if (command === 'finishWorkout') {
+    if (!activeSession.running) return;
+    finishWorkout(); // already shows its own "saved" toast/celebration
+  } else if (command === 'cancelWorkout') {
+    if (!activeSession.running) return;
+    doCancelWorkout(); // already shows its own "cancelled" toast
+  } else if (command === 'startSet') {
+    const idx = firstNotDoneEntryIndex();
+    if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
+    const entry = activeSession.entries[idx];
+    if (entry.type === 'cardio') { showToast('🎙️ אי אפשר לספור חזרות בתרגיל קרדיו'); return; }
+    const setIdx = entry.sets.findIndex((s) => !s.completed);
+    if (setIdx < 0) { showToast('🎙️ כל הסטים בתרגיל זה כבר בוצעו'); return; }
+    ensureWorkoutStarted();
+    voiceCountingState = { entryIndex: idx, setIndex: setIdx, count: 0 };
+    setVoiceBadge('🎙️ סופר: 0 (תגיד את מספר החזרות, ו"סיימתי" לסיום)', true);
+  } else if (command === 'setDone') {
+    if (voiceCountingState) {
+      const { entryIndex, setIndex } = voiceCountingState;
+      const card = qs(`.exercise-card[data-entry-index="${entryIndex}"]`, el('exerciseList'));
+      voiceCountingState = null;
+      updateVoiceBadgeForListeningState();
+      if (!card) return;
+      const row = qsa('.set-row', card)[setIndex];
+      const btn = row && qs('.set-check:not(.checked)', row);
+      if (!btn) return;
+      btn.click();
+      lastVoiceButton = btn;
+      showToast('🎙️ סט סומן כבוצע');
+      return;
+    }
+    const idx = firstNotDoneEntryIndex();
+    if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
+    const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
+    if (!card) return;
+    const entry = activeSession.entries[idx];
+    const btn = entry.type === 'cardio' ? qs('.btnCardioDone', card) : qs('.set-check:not(.checked)', card);
+    if (!btn) return;
+    btn.click();
+    lastVoiceButton = btn;
+    showToast('🎙️ סט סומן כבוצע');
+  } else if (command === 'skipRest') {
+    if (el('restOverlay').classList.contains('hidden')) return;
+    el('btnSkipRest').click();
+    showToast('🎙️ דילוג על זמן מנוחה');
+  } else if (command === 'nextExercise') {
+    const idx = firstNotDoneEntryIndex();
+    if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
+    const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('voice-highlight');
+    setTimeout(() => card.classList.remove('voice-highlight'), 1600);
+  } else if (command === 'undo') {
+    if (!lastVoiceButton || !lastVoiceButton.isConnected) { showToast('🎙️ אין פעולה לביטול'); lastVoiceButton = null; return; }
+    lastVoiceButton.click();
+    lastVoiceButton = null;
+    showToast('🎙️ הפעולה האחרונה בוטלה');
+  }
+}
+
+/* ---------------- Voice commands: listening lifecycle ---------------- */
+// Listens for the whole time the Workout tab is open and the app is in the
+// foreground (not just once a workout is running — "start workout" itself is
+// a voice command), so this is gated purely on tab + visibility + setting +
+// permission, independent of activeSession.running.
+let voiceListeningActive = false;
+let currentTab = 'home';
+async function updateVoiceListeningState() {
+  if (!native.isNative()) return;
+  const should = currentTab === 'workout'
+    && document.visibilityState === 'visible'
+    && settings.voiceCommandsEnabled === true;
+  if (should === voiceListeningActive) return;
+  voiceListeningActive = should;
+  if (should) {
+    await native.voiceStartListening();
+  } else {
+    voiceCountingState = null;
+    await native.voiceStopListening();
+  }
+  updateVoiceBadgeForListeningState();
+}
+
 
 function startRestTimer(ex, exerciseDone, nextExerciseName) {
   const seconds = ex.restSeconds || settings.restSeconds || 90;
@@ -836,9 +1223,13 @@ function startRestTimer(ex, exerciseDone, nextExerciseName) {
   if (exerciseDone) {
     restDoneMessage = nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!';
     if (settings.voiceAnnouncements) {
+      const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
+      const totalEx = strengthEntries.length;
+      const doneEx = strengthEntries.filter((e) => e.sets.length && e.sets.every((s) => s.completed)).length;
+      const pct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
       // announce the next exercise FIRST, then that the rest period has started
       speak(nextExerciseName
-        ? `${ex.name} הסתיים. התרגיל הבא: ${nextExerciseName}. עכשיו זמן מנוחה`
+        ? `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. התרגיל הבא: ${nextExerciseName}. עכשיו זמן מנוחה`
         : `${ex.name} הסתיים. זה היה התרגיל האחרון. זמן מנוחה`);
     }
   } else {
@@ -1287,16 +1678,6 @@ function openHealthSyncHelp() {
   qs('.btnCloseHealthHelp', overlay).addEventListener('click', () => overlay.remove());
 }
 
-// Simple format checks — not deliverability checks, just "does this look like a
-// real email / Israeli mobile number" so the user catches typos before sharing.
-function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-function isValidIsraeliPhone(value) {
-  const digits = value.trim().replace(/[\s-]/g, '');
-  return /^(0|\+972|972)5\d{8}$/.test(digits);
-}
-
 function openShareModal(workoutsArr) {
   const list = Array.isArray(workoutsArr) ? workoutsArr : [workoutsArr];
   const title = list.length > 1 ? `שיתוף ${list.length} אימונים` : `שיתוף אימון — ${formatDate(list[0].dateISO)}`;
@@ -1305,14 +1686,9 @@ function openShareModal(workoutsArr) {
   overlay.innerHTML = `
     <div class="photo-modal">
       <div class="photo-modal-head"><b>${title}</b><button class="btn-icon btnCloseShare">✕</button></div>
-      <label class="field-label">כתובת מייל לשיתוף (אופציונלי)</label>
-      <input class="input" id="shareEmail" type="email" dir="ltr">
-      <label class="field-label">מספר טלפון לשיתוף בוואטסאפ (אופציונלי)</label>
-      <input class="input" id="sharePhone" type="tel" dir="ltr">
-      <div class="field-hint">אם תמלא שדה — נוודא שהוא תקין, ואז תוכל לבחור את איש הקשר הזה בתפריט השיתוף שייפתח (לא ניתן לשלוח אוטומטית בגלל מגבלת אפל על צירוף קבצים).</div>
       <div class="settings-actions" style="flex-direction:column;">
-        <button class="btn btn-primary" id="sharePdf">📄 שתף כ-PDF (למייל/וואטסאפ)</button>
-        <button class="btn btn-secondary" id="shareImage">🖼️ שתף כתמונה (למייל/וואטסאפ)</button>
+        <button class="btn btn-primary" id="sharePdf">📄 שתף כ-PDF</button>
+        <button class="btn btn-secondary" id="shareImage">🖼️ שתף כתמונה</button>
         ${native.isNative() ? '' : `
         <div style="display:flex; gap:6px;">
           <button class="btn btn-secondary" id="sendHealth" style="flex:1;">⌚ שלח ל-Shortcuts (לבריאות)</button>
@@ -1326,30 +1702,14 @@ function openShareModal(workoutsArr) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseShare', overlay).addEventListener('click', close);
 
-  // Returns the validated recipient to remind the user about, or false if an
-  // entered field is invalid (blocks sharing until fixed or cleared).
-  function getValidatedRecipient() {
-    const email = qs('#shareEmail', overlay).value.trim();
-    const phone = qs('#sharePhone', overlay).value.trim();
-    if (email && !isValidEmail(email)) { showToast('כתובת המייל לא תקינה'); return false; }
-    if (phone && !isValidIsraeliPhone(phone)) { showToast('מספר הטלפון לא תקין (פורמט ישראלי: 05XXXXXXXX)'); return false; }
-    return email || phone || null;
-  }
-
   qs('#sharePdf', overlay).addEventListener('click', async () => {
-    const recipient = getValidatedRecipient();
-    if (recipient === false) return;
     const blob = buildWorkoutSharePdf(list);
     await shareFile(blob, `autofit-${Date.now()}.pdf`, 'application/pdf');
-    if (recipient) showToast(`בחר את ${recipient} בתפריט השיתוף ✅`);
     close();
   });
   qs('#shareImage', overlay).addEventListener('click', async () => {
-    const recipient = getValidatedRecipient();
-    if (recipient === false) return;
     const blob = await buildWorkoutShareImage(list);
     await shareFile(blob, `autofit-${Date.now()}.png`, 'image/png');
-    if (recipient) showToast(`בחר את ${recipient} בתפריט השיתוף ✅`);
     close();
   });
   if (!native.isNative()) {
@@ -1424,7 +1784,7 @@ function renderStatsGrid() {
   const weekCount = countThisWeek();
 
   const stats = [
-    { label: 'שבוע תוכנית נוכחי', value: settings.programWeek || 1 },
+    { label: 'שבוע תוכנית נוכחי', value: settings.programWeek || 3 },
     { label: 'סה"כ אימונים', value: totalWorkouts },
     { label: 'נפח כולל (ק"ג)', value: Math.round(totalVolume).toLocaleString() },
     { label: 'זמן ממוצע', value: formatHMS(avgDuration) },
@@ -1599,7 +1959,7 @@ function chartBaseOptions() {
 /* ================= EXERCISES TAB ================= */
 function wireExercisesTab() {
   el('btnAddExercise').addEventListener('click', () => {
-    const draft = { id: db.uid(), name: '', category: 'כללי', defaultSets: 3, defaultReps: '12', restSeconds: 120, notes: '', images: [], active: true };
+    const draft = { id: db.uid(), name: '', category: 'כללי', defaultSets: 3, defaultReps: '12', restSeconds: 90, notes: '', images: [], active: true };
     openExerciseEditModal(draft, { isNew: true });
   });
 }
@@ -1618,7 +1978,9 @@ function renderExercisesTab() {
     item.dataset.id = ex.id;
     const metaLine = isCardio
       ? `${escapeHtml(ex.category)} &middot; ${ex.durationMinutes || 5} דקות`
-      : `${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × ${escapeHtml(ex.defaultReps)}`;
+      : ex.inputType === 'hold'
+        ? `${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × החזקה ${ex.holdSeconds || 15} שניות`
+        : `${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × ${escapeHtml(ex.defaultReps)}`;
     item.innerHTML = `
       <div class="exercise-manage-head">
         <div style="display:flex;align-items:center;gap:8px;">
@@ -1912,7 +2274,11 @@ function reorderActiveSessionToMatchExercises() {
   const cooldownEx = exercises.find((e) => e.id === 'cooldown');
   const byExId = Object.fromEntries(activeSession.entries.map((e) => [e.exerciseId, e]));
   const strengthExercises = exercises.filter((ex) => ex.id !== 'warmup' && ex.id !== 'cooldown');
-  const hasProgress = activeSession.entries.some((e) => e.type !== 'cardio' && e.sets.some((s) => s.completed));
+  // "progress" means any set was finished OR any weight/reps were typed in — not just
+  // completed sets. Otherwise editing the Exercises tab before checking off a single set
+  // would wipe out everything the user already typed in the Workout tab.
+  const hasProgress = activeSession.entries.some((e) =>
+    e.type !== 'cardio' && e.sets.some((s) => s.completed || s.weightKg || s.reps));
 
   const warmup = warmupEx && warmupEx.active !== false ? (byExId['warmup'] || makeCardioEntry('warmup')) : null;
   const cooldown = cooldownEx && cooldownEx.active !== false ? (byExId['cooldown'] || makeCardioEntry('cooldown')) : null;
@@ -1928,8 +2294,13 @@ function reorderActiveSessionToMatchExercises() {
     // fresh draft: fully sync to the currently-active exercise list (add new, drop deselected)
     const lastByExercise = getLastCompletedValuesByExercise();
     const synced = strengthExercises.filter((ex) => ex.active !== false).map((ex) => {
-      if (byExId[ex.id]) return byExId[ex.id];
       const last = lastByExercise[ex.id];
+      if (byExId[ex.id]) {
+        const entry = byExId[ex.id];
+        const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
+        if (isBlank && last) entry.sets.forEach((s) => { s.weightKg = last.weightKg; s.reps = last.reps; });
+        return entry;
+      }
       return {
         exerciseId: ex.id,
         exerciseName: ex.name,
@@ -1982,9 +2353,15 @@ function wireSettings() {
     db.saveSettings(settings);
     if (settings.voiceAnnouncements) { primeSpeech(); speak('ההודעות הקוליות הופעלו'); }
   });
+  el('settingVoiceInterval30').addEventListener('change', (e) => {
+    settings.voiceIntervalAnnouncements = e.target.checked;
+    db.saveSettings(settings);
+  });
   if (native.isNative()) {
     el('faceIdSettingRow').classList.remove('hidden');
     el('permissionsSettingsCard').classList.remove('hidden');
+    el('voiceCommandsSettingRow').classList.remove('hidden');
+    el('voiceCommandsHelpCard').classList.remove('hidden');
     el('settingFaceId').addEventListener('change', async (e) => {
       const wantsOn = e.target.checked;
       if (wantsOn) {
@@ -2017,17 +2394,51 @@ function wireSettings() {
       const ok = await native.biometricVerify();
       showToast(ok ? 'האימות הצליח ✅' : 'האימות נכשל');
     });
+    el('btnEnableNotificationsSettings').addEventListener('click', async () => {
+      const res = await native.notificationsRequestPermission();
+      showToast(res.granted
+        ? 'התראות אושרו ✅'
+        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > התראות`);
+    });
+    el('settingVoiceCommands').addEventListener('change', async (e) => {
+      const wantsOn = e.target.checked;
+      if (wantsOn) {
+        const res = await native.voiceRequestPermission();
+        if (!res.granted) {
+          showToast(`ההרשאה למיקרופון/זיהוי דיבור לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אשר ידנית בהגדרות האייפון > פרטיות > מיקרופון/זיהוי דיבור`);
+          e.target.checked = false;
+          return;
+        }
+        showToast('פקודות קוליות הופעלו ✅');
+      }
+      settings.voiceCommandsEnabled = wantsOn;
+      db.saveSettings(settings);
+      updateVoiceListeningState();
+    });
+    el('btnEnableVoiceSettings').addEventListener('click', async () => {
+      const res = await native.voiceRequestPermission();
+      showToast(res.granted
+        ? 'מיקרופון ופקודות קוליות אושרו ✅'
+        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > מיקרופון/זיהוי דיבור`);
+      if (res.granted) {
+        settings.voiceCommandsEnabled = true;
+        db.saveSettings(settings);
+        el('settingVoiceCommands').checked = true;
+        updateVoiceListeningState();
+      }
+    });
   }
-  el('btnEnableNotifications').addEventListener('click', requestNotificationPermission);
 }
 
 function renderSettingsTab() {
   el('settingRestSeconds').value = settings.restSeconds;
   el('settingWeeklyGoal').value = settings.weeklyGoal;
-  el('settingProgramWeek').value = settings.programWeek || 1;
+  el('settingProgramWeek').value = settings.programWeek || 3;
   el('settingVoice').checked = settings.voiceAnnouncements !== false;
+  el('settingVoiceInterval30').checked = settings.voiceIntervalAnnouncements !== false;
   if (native.isNative()) {
     el('settingFaceId').checked = settings.faceIdEnabled !== false;
+    el('settingVoiceCommands').checked = settings.voiceCommandsEnabled === true;
   }
 }
 
@@ -2071,17 +2482,38 @@ function renderBrand() {
 /* ================= CONTACT TAB ================= */
 const CONTACT_EMAIL = 'sasid5000@gmail.com';
 function wireContactTab() {
-  el('btnSendContact').addEventListener('click', () => {
+  el('btnSendContact').addEventListener('click', async () => {
     const name = el('contactName').value.trim();
     const phone = el('contactPhone').value.trim();
     const summary = el('contactSummary').value.trim();
     const message = el('contactMessage').value.trim();
     if (!name || !message) { showToast('נא למלא שם ובקשה לפני שליחה'); return; }
     const subject = summary || `פנייה חדשה מ-${name}`;
-    const body = `שם: ${name}\nטלפון: ${phone || '-'}\n\nבקשה:\n${message}`;
-    const mailto = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailto;
-    showToast('נפתחת אפליקציית המייל לשליחה ✉️');
+    const btn = el('btnSendContact');
+    btn.disabled = true;
+    try {
+      // Sends the message directly in the background via FormSubmit.co — no mail
+      // app opens, no user action needed beyond tapping "send" once here.
+      const res = await fetch(`https://formsubmit.co/ajax/${CONTACT_EMAIL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ name, phone: phone || '-', _subject: subject, message }),
+      });
+      const data = await res.json();
+      if (data && String(data.success) === 'false' && /activation/i.test(data.message || '')) {
+        showToast('הפנייה הראשונה נשלחה — יש לאשר פעם אחת קישור הפעלה שנשלח למייל, ואז הכל יעבוד אוטומטית ✅');
+      } else {
+        showToast('הפנייה נשלחה ✅');
+      }
+      el('contactName').value = '';
+      el('contactPhone').value = '';
+      el('contactSummary').value = '';
+      el('contactMessage').value = '';
+    } catch (e) {
+      showToast('השליחה נכשלה — ודא שיש חיבור לאינטרנט ונסה שוב');
+    } finally {
+      btn.disabled = false;
+    }
   });
 }
 
@@ -2295,6 +2727,7 @@ async function bootstrap() {
     }
     db.setSyncHook((key, value) => { native.cloudSetItem(key, JSON.stringify(value)); });
     native.onCloudChanged(() => { window.location.reload(); });
+    native.onVoiceTranscript((data) => handleVoiceTranscript(data && data.transcript));
   }
 
   await waitForSplashMinimum();
@@ -2352,40 +2785,41 @@ function runOnboarding() {
     init();
   }
 
+  // Automatically requests all native permissions in sequence (real iOS system dialogs),
+  // one after another — no in-app "tap to enable" buttons needed, matching how most
+  // iOS apps ask for permissions right after onboarding.
   async function setupPermissionStep() {
-    const healthCard = el('btnEnableHealthOnboarding');
-    healthCard.addEventListener('click', async () => {
-      healthCard.disabled = true;
-      healthCard.textContent = '...';
-      const res = await native.healthRequestAuthorization();
-      healthCard.textContent = res.granted ? '✓ אושר' : 'אפשר';
-      healthCard.disabled = false;
-      showToast(res.granted
-        ? 'החיבור ל-Apple Health אושר ✅'
-        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — ניתן לשנות בהגדרות האייפון`);
-    });
+    const healthStatus = el('healthPermStatus');
+    const faceIdStatus = el('faceIdPermStatus');
+    const notifStatus = el('notifPermStatus');
 
-    const faceIdBtn = el('btnEnableFaceIdOnboarding');
+    healthStatus.textContent = '⏳';
+    const healthRes = await native.healthRequestAuthorization();
+    healthStatus.textContent = healthRes.granted ? '✓' : '✗';
+
     const bio = await native.biometricIsAvailable();
     if (!bio.available) {
-      faceIdBtn.closest('.onboarding-permission-card').classList.add('hidden');
-      return;
-    }
-    faceIdBtn.addEventListener('click', async () => {
-      faceIdBtn.disabled = true;
-      faceIdBtn.textContent = '...';
+      faceIdStatus.closest('.onboarding-permission-card').classList.add('hidden');
+    } else {
+      faceIdStatus.textContent = '⏳';
       const ok = await native.biometricVerify();
+      faceIdStatus.textContent = ok ? '✓' : '✗';
       if (ok) {
         settings.faceIdEnabled = true;
         db.saveSettings(settings);
-        faceIdBtn.textContent = '✓ אושר';
-        showToast('Face ID הופעל ✅');
-      } else {
-        faceIdBtn.disabled = false;
-        faceIdBtn.textContent = 'אפשר';
-        showToast('האימות נכשל, נסה שוב');
       }
-    });
+    }
+
+    notifStatus.textContent = '⏳';
+    const notifRes = await native.notificationsRequestPermission();
+    notifStatus.textContent = notifRes.granted ? '✓' : '✗';
+
+    const voiceStatus = el('voicePermStatus');
+    voiceStatus.textContent = '⏳';
+    const voiceRes = await native.voiceRequestPermission();
+    voiceStatus.textContent = voiceRes.granted ? '✓' : '✗';
+    settings.voiceCommandsEnabled = !!voiceRes.granted;
+    db.saveSettings(settings);
   }
 
   el('btnOnboardingNext').addEventListener('click', () => {

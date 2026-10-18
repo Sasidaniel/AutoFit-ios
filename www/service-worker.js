@@ -1,5 +1,5 @@
 // service-worker.js — app shell caching for offline + installability
-const CACHE_NAME = 'autofit-v36';
+const CACHE_NAME = 'autofit-v37';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -20,8 +20,8 @@ const PRECACHE_URLS = [
   './images/p7_1.png', './images/p7_2.png', './images/p7_3.png',
   './images/p8_1.png', './images/p8_2.png', './images/p8_3.png',
   './images/ex_plank.png', './images/ex_shrugs.png', './images/ex_hammer.png',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+  './vendor/chart.umd.min.js',
+  './vendor/jspdf.umd.min.js',
 ];
 
 self.addEventListener('install', (event) => {

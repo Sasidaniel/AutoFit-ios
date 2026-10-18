@@ -1,14 +1,36 @@
 import UIKit
 import Capacitor
+import AVFoundation
+import UserNotifications
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+        configureAudioSessionForDucking()
+        UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    // Configures the shared audio session so that voice announcements (speech synthesis)
+    // and beep sounds played from the web view duck background audio (e.g. Apple Music,
+    // Spotify) instead of stopping it — same behavior as Siri/Maps spoken alerts.
+    // The music keeps playing at a lower volume during the announcement and returns to
+    // full volume right after, instead of being paused/killed for the rest of the session.
+    private func configureAudioSessionForDucking() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .voicePrompt,
+                options: [.mixWithOthers, .duckOthers, .interruptSpokenAudioAndMixWithOthers]
+            )
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            print("AudioSession configuration failed: \(error)")
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -27,6 +49,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // Re-activate in case the audio session was interrupted (e.g. an incoming phone call).
+        // Skip this while voice commands are actively listening — switching the
+        // session back to plain ".playback" here would silently kill the
+        // microphone input VoiceCommandPlugin relies on.
+        if !VoiceCommandPlugin.isListening {
+            configureAudioSessionForDucking()
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -40,5 +69,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                                           sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+
+    // Shows local notifications (banner + sound) even while the app is in the
+    // foreground — by default iOS silently suppresses them in that case.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
     }
 }

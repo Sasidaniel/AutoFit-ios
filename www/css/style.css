@@ -140,6 +140,7 @@ body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 .onboarding-permission-text { flex: 1; }
 .onboarding-permission-title { color: #fff; font-weight: 600; font-size: 14px; }
 .onboarding-permission-desc { color: #9a9aa3; font-size: 12px; margin-top: 2px; }
+.onboarding-permission-status { font-size: 20px; flex: none; min-width: 26px; text-align: center; }
 
 #app { padding: 12px; max-width: 720px; margin: 0 auto; }
 
@@ -365,6 +366,11 @@ input[type="tel"].input, input[type="email"].input, input[type="number"].input {
 .card-hint { font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 10px; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); margin-bottom: 6px; cursor: pointer; }
 .checkbox-row input { width: 18px; height: 18px; }
+.voice-commands-list { margin: 0 0 10px; padding-inline-start: 20px; font-size: 13px; color: var(--text); line-height: 1.7; }
+.voice-commands-list li { margin-bottom: 4px; }
+.voice-status-badge { background: var(--accent-soft, #eef4ff); color: var(--accent, #2a6df5); font-size: 12px; font-weight: 600; text-align: center; padding: 6px 10px; border-radius: 8px; margin-bottom: 10px; transition: background .2s; }
+.voice-status-badge.counting { background: #fff3cd; color: #8a6400; }
+.exercise-card.voice-highlight { box-shadow: 0 0 0 3px var(--accent, #2a6df5); transition: box-shadow .2s; }
 .settings-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 
 /* Rest timer floating bar (non-blocking — app stays usable while it runs) */

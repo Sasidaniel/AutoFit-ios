@@ -32,16 +32,17 @@ function write(key, value) {
 }
 
 export const DEFAULT_SETTINGS = {
-  restSeconds: 120,
+  restSeconds: 90,
   weeklyGoal: 3,
-  programWeek: 1, // week 1 = 1 set/exercise, week 2 = 2 sets, week 3+ = full (defaultSets)
+  programWeek: 3, // week 1 = 1 set/exercise, week 2 = 2 sets, week 3+ = full (defaultSets)
   voiceAnnouncements: true,
   warmupName: 'חימום — הליכה',
   warmupMinutes: 5,
   cooldownName: 'שחרור — הליכה',
   cooldownMinutes: 5,
   seedSynced: false,
-  faceIdEnabled: false,
+  faceIdEnabled: true,
+  voiceCommandsEnabled: true,
   onboardingComplete: false,
 };
 

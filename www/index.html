@@ -47,14 +47,14 @@
   <div class="onboarding-step" id="onboardingStepPermissions">
     <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
     <h1 class="onboarding-title">הרשאות</h1>
-    <p class="onboarding-subtitle">כדי לקבל את החוויה המלאה</p>
+    <p class="onboarding-subtitle">מבקשים כעת את ההרשאות הדרושות לחוויה המלאה</p>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">❤️</div>
       <div class="onboarding-permission-text">
         <div class="onboarding-permission-title">חיבור ל-Apple Health</div>
         <div class="onboarding-permission-desc">שמירת אימונים ישירות באפליקציית הבריאות</div>
       </div>
-      <button id="btnEnableHealthOnboarding" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="healthPermStatus" class="onboarding-permission-status">⏳</span>
     </div>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">🔒</div>
@@ -62,7 +62,23 @@
         <div class="onboarding-permission-title">נעילת Face ID</div>
         <div class="onboarding-permission-desc">הגנה על הנתונים האישיים שלך</div>
       </div>
-      <button id="btnEnableFaceIdOnboarding" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="faceIdPermStatus" class="onboarding-permission-status">⏳</span>
+    </div>
+    <div class="onboarding-permission-card">
+      <div class="onboarding-permission-icon">🔔</div>
+      <div class="onboarding-permission-text">
+        <div class="onboarding-permission-title">התראות</div>
+        <div class="onboarding-permission-desc">קבלת הכרזות וטיימרים גם כשהאפליקציה ברקע</div>
+      </div>
+      <span id="notifPermStatus" class="onboarding-permission-status">⏳</span>
+    </div>
+    <div class="onboarding-permission-card">
+      <div class="onboarding-permission-icon">🎙️</div>
+      <div class="onboarding-permission-text">
+        <div class="onboarding-permission-title">מיקרופון ופקודות קוליות</div>
+        <div class="onboarding-permission-desc">שימוש בפקודות קוליות באימון (לדוגמה: "סט הסתיים") במקום להזין הכל ידנית</div>
+      </div>
+      <span id="voicePermStatus" class="onboarding-permission-status">⏳</span>
     </div>
     <button id="btnOnboardingFinish" class="btn btn-primary onboarding-btn">סיום והתחלה</button>
   </div>
@@ -102,6 +118,7 @@
     </div>
 
     <div class="workout-header card">
+      <div id="voiceStatusBadge" class="voice-status-badge hidden">🎙️ מקשיב לפקודות קוליות…</div>
       <div class="workout-timer-row">
         <div>
           <div class="label">זמן אימון</div>
@@ -234,15 +251,33 @@
       <div class="field-hint">עובד רק כשהאפליקציה פתוחה ברקע הפעיל; ב-iOS ייתכן שההודעה לא תושמע אם המסך נעול לגמרי.</div>
       <div class="field-hint">💡 המסך אמור להישאר דלוק אוטומטית כל עוד האתר פתוח (דורש iOS 16.4+ / דפדפן תומך). אם המסך עדיין נכבה, גע במסך פעם אחת כדי להפעיל זאת.</div>
 
+      <label class="checkbox-row"><input type="checkbox" id="settingVoiceInterval30"> הכרזה קולית כל 30 שניות במהלך המנוחה</label>
+      <div class="field-hint">למשל בזמן מנוחה של דקה וחצי: "עברו 30 שניות", "עברו 60 שניות", ואז "נגמר זמן המנוחה" — כדי שלא תצטרך להסתכל בטלפון.</div>
+
       <div id="faceIdSettingRow" class="hidden">
         <label class="checkbox-row"><input type="checkbox" id="settingFaceId"> נעילת Face ID בפתיחת האפליקציה</label>
         <div class="field-hint">כשמופעל, האפליקציה תבקש אימות Face ID/Touch ID בכל פתיחה.</div>
       </div>
 
-      <div class="settings-actions">
-        <button id="btnEnableNotifications" class="btn btn-secondary">🔊 בדוק צליל והכרזה קולית</button>
+      <div id="voiceCommandsSettingRow" class="hidden">
+        <label class="checkbox-row"><input type="checkbox" id="settingVoiceCommands"> פקודות קוליות באימון (מיקרופון)</label>
+        <div class="field-hint">כשמופעל, אפשר להגיד "סט הסתיים", "דלג על מנוחה" ועוד במקום ללחוץ — ראה רשימה מלאה בכרטיס "פקודות קוליות" למטה. זו דרך נוספת, לא תחליף להזנה ידנית.</div>
       </div>
-      <div class="field-hint">באייפון/ספארי אין תמיכה בהתראות מערכת כשהמסך נעול או שיצאת לגמרי מהאפליקציה (זו מגבלת אפל וללא שרת Push ייעודי אי אפשר לעקוף אותה). מה שכן עובד: צליל + הכרזה קולית ישמיעו אוטומטית בסיום מנוחה/חימום/החזקה כל עוד האתר פתוח — גם אם עברת רגע לאפליקציה אחרת. לחץ כאן כדי לוודא שהצליל מופעל במכשיר שלך.</div>
+    </div>
+
+    <div id="voiceCommandsHelpCard" class="card hidden">
+      <div class="card-title">🎙️ פקודות קוליות זמינות</div>
+      <div class="field-hint">אומרים את המשפט בקול רגיל תוך כדי אימון (גם באוזניות בלוטות') — זו דרך נוספת, לא תחליף להזנה ידנית. המיקרופון מקשיב כל עוד טאב "אימון" פתוח:</div>
+      <ul class="voice-commands-list">
+        <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
+        <li><strong>"התחל סט"</strong> — מתחיל לספור חזרות עבור הסט הבא שטרם בוצע; אחר כך פשוט סופרים בקול ("אחת", "שתיים", "שלוש"...) והמספר מתעדכן בזמן אמת</li>
+        <li><strong>"סיימתי"</strong> / <strong>"סט הסתיים"</strong> — בזמן ספירה: שומר את מספר החזרות האחרון שנספר ומסמן את הסט כבוצע. שלא בזמן ספירה: מסמן את הסט הבא כבוצע ישירות</li>
+        <li><strong>"דלג על מנוחה"</strong> / <strong>"זמן מנוחה הסתיים"</strong> — מדלג על טיימר המנוחה הפעיל</li>
+        <li><strong>"תרגיל הבא"</strong> — גולל אל התרגיל הבא שטרם הושלם</li>
+        <li><strong>"סיים אימון"</strong> / <strong>"סיום אימון"</strong> — מסיים ושומר את האימון להיסטוריה, בדיוק כמו לחיצה על "סיים אימון"</li>
+        <li><strong>"בטל אימון"</strong> / <strong>"ביטול אימון"</strong> — מבטל ומאפס את האימון הנוכחי ללא שמירה (פעולה לא הפיכה — בדיוק כמו הכפתור הידני)</li>
+        <li><strong>"בטל"</strong> — מבטל את פעולת הקול האחרונה (אם סומן סט בטעות)</li>
+      </ul>
     </div>
 
     <div id="permissionsSettingsCard" class="card hidden">
@@ -254,7 +289,13 @@
       <div class="settings-actions">
         <button id="btnVerifyFaceIdSettings" class="btn btn-secondary">🔐 בדוק Face ID עכשיו</button>
       </div>
-      <div class="field-hint">אם ההרשאה כבר נדחתה בעבר, אייפון לא יציג את החלון שוב — יש לאשר ידנית ב: הגדרות האייפון ⟵ פרטיות ואבטחה ⟵ בריאות / Face ID, ולבחור את AutoFit.</div>
+      <div class="settings-actions">
+        <button id="btnEnableNotificationsSettings" class="btn btn-secondary">🔔 אפשר התראות</button>
+      </div>
+      <div class="settings-actions">
+        <button id="btnEnableVoiceSettings" class="btn btn-secondary">🎙️ אפשר מיקרופון ופקודות קוליות</button>
+      </div>
+      <div class="field-hint">אם ההרשאה כבר נדחתה בעבר, אייפון לא יציג את החלון שוב — יש לאשר ידנית ב: הגדרות האייפון ⟵ פרטיות ואבטחה / התראות ⟵ ולבחור את AutoFit.</div>
     </div>
   </section>
 
@@ -327,8 +368,11 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
+<!-- Vendored locally (not loaded from a CDN) so these work inside the native app
+     with no internet connection — a gym has notoriously unreliable wifi/cellular,
+     and a native app bundle must not depend on outside network access to function. -->
+<script src="vendor/chart.umd.min.js" defer></script>
+<script src="vendor/jspdf.umd.min.js" defer></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

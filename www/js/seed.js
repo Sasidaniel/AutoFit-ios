@@ -7,69 +7,87 @@ export const SEED_EXERCISES = [
     notes: "במשקולות חופשיות / בסמית' / במכונה / במוט",
     images: ['images/p2_1.png', 'images/p2_2.png'] },
 
-  { name: 'משיכה לפנים בפולי עליון', category: 'גב עליון', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'משיכה לפנים בפולי עליון', category: 'גב עליון', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'במכונה / מתח',
     images: ['images/p3_1.png'] },
 
-  { name: 'פרפר חזה', category: 'חזה', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'גרביטון', category: 'גב עליון', defaultSets: 3, defaultReps: '4', restSeconds: 90,
+    notes: 'עליות מתח בסיוע מכונת גרביטון' },
+
+  { name: 'החזקה סטטית במתח', category: 'גב עליון', inputType: 'hold', holdSeconds: 20, defaultSets: 1, defaultReps: '',
+    restSeconds: 90, notes: 'החזקת גוף בתלייה על המתח ללא תזוזה' },
+
+  { name: 'פרפר חזה', category: 'חזה', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'בקייבל קרוס / במשקולות יד בשכיבה / במכונה',
     images: ['images/p2_3.png', 'images/p2_4.png'] },
 
-  { name: 'הרחקה אופקית (פרפר הפוך)', category: 'כתפיים אחוריות', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'הרחקה אופקית (פרפר הפוך)', category: 'כתפיים אחוריות', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'במשקולות יד עם השענות על ספסל / בהטיית גב בעמידה / במכונה',
     images: ['images/p5_3.png', 'images/p5_4.png'] },
 
-  { name: 'חתירה צרה לבטן', category: 'גב אמצעי', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'חתירה צרה לבטן', category: 'גב אמצעי', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'בפולי תחתון / במשקולת יד בהטיית גב על ספסל / במכונה',
     images: ['images/p3_2.png', 'images/p3_3.png'] },
 
-  { name: 'זוקפי גב — פשיטת גב', category: 'גב תחתון', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'זוקפי גב — פשיטת גב', category: 'גב תחתון', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'על הרצפה / בכסא רומי / מכונת היפראקסטנשן',
     images: ['images/p8_2.png', 'images/p8_3.png'] },
 
-  { name: 'פשיטת מרפקים בפולי עליון', category: 'יד אחורית', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'פשיטת מרפקים בפולי עליון', category: 'יד אחורית', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'כנגד מוט/חבל, או פשיטת מרפק מאחורי העורף עם משקולת',
     images: ['images/p6_1.png', 'images/p6_2.png'] },
 
-  { name: 'כפיפת מרפקים בישיבה', category: 'יד קדמית', defaultSets: 2, defaultReps: '12', restSeconds: 120,
+  { name: 'החזקה סטטית על מקבילים', category: 'חזה', inputType: 'hold', holdSeconds: 15, defaultSets: 3, defaultReps: '', restSeconds: 90,
+    notes: 'החזקת גוף בתלייה על המקבילים ללא תזוזה' },
+
+  { name: 'כפיפת מרפקים בישיבה', category: 'יד קדמית', defaultSets: 3, defaultReps: '12', restSeconds: 120,
     notes: "כנגד משקולות יד / בכיסא כומר / במכונה",
     images: ['images/p7_1.png', 'images/p7_2.png'] },
 
-  { name: 'פטישים', category: 'אמות', defaultSets: 1, defaultReps: 'עד כשל', restSeconds: 120,
-    notes: 'סט אחד לכל יד עד כשל',
+  { name: 'פטישים', category: 'אמות', defaultSets: 3, defaultReps: 'עד כשל', restSeconds: 90,
+    notes: 'לכל יד',
     images: ['images/ex_hammer.png'] },
 
-  { name: 'כפיפה ופשיטה של שורש כף היד', category: 'מפרקי כף יד', defaultSets: 1, defaultReps: 'עד כשל', restSeconds: 120,
-    notes: 'סט אחד לכל תנועה לכל יד עד כשל',
+  { name: 'כפיפה ופשיטה של שורש כף היד', category: 'מפרקי כף יד', defaultSets: 3, defaultReps: 'עד כשל', restSeconds: 90,
+    notes: 'לכל תנועה לכל יד',
     images: ['images/p7_3.png'] },
 
-  { name: 'הרחקה לצדדים', category: 'כתפיים צדדיות', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'הרחקה לצדדים', category: 'כתפיים צדדיות', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'בישיבה / במכונה',
     images: ['images/p5_1.png', 'images/p5_2.png'] },
 
-  { name: 'טרפז', category: 'טרפז', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'לחיצת כתפיים בישיבה', category: 'כתפיים', defaultSets: 3, defaultReps: '12', restSeconds: 90,
+    notes: 'לחיצת כתפיים במכונה' },
+
+  { name: 'טרפז', category: 'טרפז', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: 'עומדים ואוחזים משקולות יד בצדי הגוף, מרימים את הכתפיים כלפי מעלה (לכיוון האוזניים) ומורידים בשליטה',
     images: ['images/ex_shrugs.png'] },
 
-  { name: 'לחיצת רגליים', category: 'רגליים - 4 ראשי', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'לחיצת רגליים', category: 'רגליים - 4 ראשי', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: "במכונה / האק / סקוואט בסמית' משין / סקוואט חופשי",
     images: ['images/p4_1.png'] },
 
-  { name: 'פשיטת ברכיים', category: 'רגליים - 4 ראשי', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'סקוואט', category: 'רגליים - 4 ראשי', defaultSets: 3, defaultReps: '10', restSeconds: 90,
+    notes: 'סקוואט חופשי / עם מוט / בסמית\' משין' },
+
+  { name: 'פשיטת ברכיים', category: 'רגליים - 4 ראשי', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: '(מכונה)',
     images: ['images/p4_2.png'] },
 
-  { name: 'כפיפת ברכיים', category: 'רגליים - המסטרינג', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'כפיפת ברכיים', category: 'רגליים - המסטרינג', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: '(מכונה)',
     images: ['images/p4_3.png'] },
 
-  { name: 'כפיפות בטן', category: 'בטן', defaultSets: 3, defaultReps: '12', restSeconds: 120,
+  { name: 'כפיפות בטן', category: 'בטן', defaultSets: 3, defaultReps: '12', restSeconds: 90,
     notes: '(Crunches) על הרצפה או עם גלגלת',
     images: ['images/p8_1.png'] },
 
-  { name: 'פלאנק', category: 'בטן', defaultSets: 3, defaultReps: '15 שניות החזקה', restSeconds: 120,
+  { name: 'כפיפות בטן לצדדים', category: 'בטן', defaultSets: 3, defaultReps: '10', restSeconds: 90,
+    notes: '(Side Crunches) על הרצפה, פנייה לכל צד לסירוגין' },
+
+  { name: 'פלאנק', category: 'בטן', defaultSets: 3, defaultReps: '15 שניות החזקה', restSeconds: 90,
     inputType: 'hold', holdSeconds: 15,
-    notes: 'החזקת גוף ישר על האמות ועל קצות האצבעות — ללא תזוזה במשך 15 שניות בכל סט',
+    notes: 'החזקת גוף ישר על האמות ועל קצות האצבעות — ללא תזוזה',
     images: ['images/ex_plank.png'] },
 
   { id: 'cooldown', name: 'שחרור-הליכה', category: 'קרדיו', inputType: 'cardio', durationMinutes: 5, pace: 'קצב 6 בהליכון', defaultSets: 0, defaultReps: '', restSeconds: 0, active: true },

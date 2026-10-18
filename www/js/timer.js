@@ -86,14 +86,19 @@ export function primeSpeech() {
 }
 
 export class RestTimer {
-  constructor({ onTick, onDone }) {
+  constructor({ onTick, onDone, onInterval }) {
     this.onTick = onTick;
     this.onDone = onDone;
+    this.onInterval = onInterval; // optional: called with elapsed seconds (30, 60, ...) as thresholds are crossed
     this.endAt = null;
+    this.totalSeconds = 0;
+    this.lastAnnouncedElapsed = 0;
     this.intervalId = null;
   }
   start(seconds) {
     this.stop();
+    this.totalSeconds = seconds;
+    this.lastAnnouncedElapsed = 0;
     this.endAt = Date.now() + seconds * 1000;
     this._tick();
     this.intervalId = setInterval(() => this._tick(), 250);
@@ -101,6 +106,7 @@ export class RestTimer {
   addSeconds(seconds) {
     if (!this.endAt) return;
     this.endAt += seconds * 1000;
+    this.totalSeconds += seconds;
     this._tick();
   }
   forceTick() { this._tick(); }
@@ -112,12 +118,26 @@ export class RestTimer {
       this.onDone();
       return;
     }
+    this._checkIntervalAnnouncement(remaining);
     this.onTick(remaining);
+  }
+  // Fires onInterval(30), onInterval(60), ... every time 30s of elapsed rest time
+  // passes, but never for the final full-duration mark (that's covered by onDone).
+  _checkIntervalAnnouncement(remaining) {
+    if (!this.onInterval) return;
+    const elapsed = this.totalSeconds - remaining;
+    const nextThreshold = this.lastAnnouncedElapsed + 30;
+    if (elapsed >= nextThreshold && nextThreshold < this.totalSeconds) {
+      this.lastAnnouncedElapsed = nextThreshold;
+      this.onInterval(nextThreshold);
+    }
   }
   stop() {
     if (this.intervalId) clearInterval(this.intervalId);
     this.intervalId = null;
     this.endAt = null;
+    this.totalSeconds = 0;
+    this.lastAnnouncedElapsed = 0;
   }
   isRunning() {
     return this.intervalId !== null;

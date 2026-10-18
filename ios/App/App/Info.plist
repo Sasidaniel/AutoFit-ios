@@ -10,6 +10,14 @@
 	<string>AutoFit saves your completed strength workouts to Health so they appear alongside your other activity.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>AutoFit can use Face ID to keep your workout data private.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AutoFit listens for spoken workout commands (like "set finished" or "skip rest") so you can keep your phone away during a workout.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>AutoFit recognizes spoken workout commands (like "set finished" or "skip rest") so you can keep your phone away during a workout.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

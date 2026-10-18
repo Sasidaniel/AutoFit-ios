@@ -91,12 +91,42 @@ export async function keepAwakeDisable() {
   try { await KeepAwakeBridge.disable(); return true; } catch (e) { return false; }
 }
 
+/* ---------------- Background voice announcements (while app is minimized) ----------------
+   WKWebView JS timers are unreliable once the app is backgrounded, so active rest/hold
+   timers hand off their remaining announcements to native code right before backgrounding,
+   and the native side cancels them again once the app returns to the foreground (so the
+   web page's own speech calls take back over without double-announcing). */
+export async function bgStartKeepAlive() {
+  const B = plugin('BackgroundAnnouncer');
+  if (!B) return false;
+  try { await B.startKeepAlive(); return true; } catch (e) { return false; }
+}
+
+export async function bgStopKeepAlive() {
+  const B = plugin('BackgroundAnnouncer');
+  if (!B) return false;
+  try { await B.stopKeepAlive(); return true; } catch (e) { return false; }
+}
+
+// items: [{ delaySeconds, text }]
+export async function bgScheduleAnnouncements(items) {
+  const B = plugin('BackgroundAnnouncer');
+  if (!B || !items || !items.length) return false;
+  try { await B.scheduleAnnouncements({ items }); return true; } catch (e) { return false; }
+}
+
+export async function bgCancelAnnouncements() {
+  const B = plugin('BackgroundAnnouncer');
+  if (!B) return false;
+  try { await B.cancelAnnouncements(); return true; } catch (e) { return false; }
+}
+
 /* ---------------- Face ID / Touch ID ---------------- */
 export async function biometricIsAvailable() {
-  const NativeBiometric = plugin('NativeBiometric');
-  if (!NativeBiometric) return { available: false, reason: 'not-native' };
+  const FaceIdBridge = plugin('FaceIdBridge');
+  if (!FaceIdBridge) return { available: false, reason: 'not-native' };
   try {
-    const res = await NativeBiometric.isAvailable();
+    const res = await FaceIdBridge.isAvailable();
     return { available: !!(res && res.isAvailable), biometryType: res && res.biometryType, errorCode: res && res.errorCode };
   } catch (e) {
     return { available: false, reason: String(e) };
@@ -104,17 +134,83 @@ export async function biometricIsAvailable() {
 }
 
 export async function biometricVerify() {
-  const NativeBiometric = plugin('NativeBiometric');
-  if (!NativeBiometric) return true; // no biometric plugin (web) — don't block access
+  const FaceIdBridge = plugin('FaceIdBridge');
+  if (!FaceIdBridge) return true; // no biometric plugin (web) — don't block access
   try {
-    await NativeBiometric.verifyIdentity({
-      reason: 'פתיחת AutoFit',
-      title: 'אימות',
-      subtitle: '',
-      description: '',
-    });
+    await FaceIdBridge.verifyIdentity({ reason: 'פתיחת AutoFit' });
     return true;
   } catch (e) {
     return false;
   }
+}
+
+/* ---------------- Local notifications ---------------- */
+export async function notificationsRequestPermission() {
+  const N = plugin('NotificationsBridge');
+  if (!N) return { granted: false, reason: 'not-native' };
+  try {
+    const res = await N.requestPermission();
+    return { granted: !!(res && res.granted) };
+  } catch (e) {
+    return { granted: false, reason: String(e) };
+  }
+}
+
+export async function notificationsIsGranted() {
+  const N = plugin('NotificationsBridge');
+  if (!N) return false;
+  try {
+    const res = await N.isGranted();
+    return !!(res && res.granted);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Shows a real OS local notification (works even while backgrounded), e.g. for a
+// finished rest timer — delaySeconds optional, defaults to immediate.
+export async function notificationsShow(title, body, delaySeconds) {
+  const N = plugin('NotificationsBridge');
+  if (!N) return false;
+  try {
+    await N.show({ title, body, delaySeconds: delaySeconds || 0 });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------------- Voice commands (hands-free during a workout) ----------------
+   An additional input method, not a replacement for manual taps: recognized
+   phrases ("set finished", "skip rest", "next exercise", "undo") trigger the
+   exact same actions a tap would. Safe no-op on web/no-plugin. */
+export async function voiceRequestPermission() {
+  const V = plugin('VoiceCommand');
+  if (!V) return { granted: false, reason: 'not-native' };
+  try {
+    const res = await V.requestPermission();
+    return { granted: !!(res && res.granted) };
+  } catch (e) {
+    return { granted: false, reason: String(e) };
+  }
+}
+
+export async function voiceStartListening() {
+  const V = plugin('VoiceCommand');
+  if (!V) return false;
+  try { await V.startListening(); return true; } catch (e) { return false; }
+}
+
+export async function voiceStopListening() {
+  const V = plugin('VoiceCommand');
+  if (!V) return false;
+  try { await V.stopListening(); return true; } catch (e) { return false; }
+}
+
+// callback receives { transcript } (raw recognized Hebrew phrase) — app.js does
+// all keyword/number matching and dispatch from there.
+export function onVoiceTranscript(callback) {
+  const V = plugin('VoiceCommand');
+  if (!V || !V.addListener) return;
+  V.addListener('voiceTranscript', callback);
 }
