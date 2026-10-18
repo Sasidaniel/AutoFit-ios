@@ -2,7 +2,14 @@
 
 ## Version 1.0 (24): Prearmed rest announcements and spoken progress
 
-Release candidate; native build/upload and Apple availability remain pending.
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING` for build `7309f2d0-536a-46b7-b6ee-ca6e9c4230c2`;
+export compliance is complete.
+[Native release run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39129963867)
+passed 137 Node regressions, all three standalone Swift suites, app/extension
+archive/signing, export and upload. Released source: `f6fe7ab`.
+Apple app build is **24**; no external beta review or App Store submission
+was made.
 
 - Native announcement deadlines are synchronized when rest starts, changes,
   skips or restores, not only from a WebView `visibilitychange` callback during
