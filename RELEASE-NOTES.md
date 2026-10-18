@@ -1,5 +1,76 @@
 # AutoFit release notes
 
+## Device feedback follow-up after build 21
+
+### Automatic Live Activity
+
+- Opening AutoFit now requests a Lock Screen / Dynamic Island activity in
+  **ready** mode, even before starting a workout. Its timer stays at zero;
+  this does not start the workout stopwatch or add anything to history.
+- Starting a workout replaces readiness with the actual workout, rest, hold,
+  and cardio timers. Finishing/cancelling ends that workout's activity and
+  returns to readiness.
+- Returning to the foreground retries activity synchronization after Face ID
+  or OS lifetime expiry. Disabled Live Activities and explicit user dismissal
+  are still respected and reported. This is not a Home Screen widget.
+
+### Exercise-aware voice commands
+
+- The primary completion phrase is now **"סט הושלם"**. Existing **"סיימתי"**
+  and the older wording remain compatibility aliases.
+- Saying a full exercise name, or a unique shortened name, selects the current
+  exercise. Examples: **"חימום"**, then **"התחל"**; **"התחל שחרור"**;
+  **"פלאנק התחל"**. **"פלנק"** is also recognized.
+- The same start command uses the existing manual controls: cardio countdown,
+  hold measurement, or rep counting. Repeating start does not pause a running
+  cardio timer. Ambiguous short names ask for a more precise name instead of
+  guessing.
+- Completing a strength set targets the selected/counting exercise and starts
+  rest. Without a selected exercise it no longer accidentally completes an
+  untouched warmup. Explicit cardio completion still behaves like its manual
+  completion button, without adding a strength rest period.
+- Selection follows manual touches, is persisted, appears in microphone status
+  and the Live Activity, and is not lost merely because the cards rerender.
+  **"תרגיל הבא"** now actually advances past the current exercise.
+- The Hebrew recognizer receives current exercise names as contextual hints.
+  Listening remains foreground-only in the Workout tab.
+
+### Opening announcement and Apple Music
+
+- The entire opening sentence waits **one second after workout start** before
+  speaking. There is no new pause inside the sentence. Ending/cancelling the
+  workout or beginning a rest announcement cancels a pending greeting.
+- App opening no longer proactively activates the audio session.
+- Native speech, microphone recording, background announcements, and timer
+  beeps use the same explicit `mixWithOthers` policy. Speech no longer delegates
+  to an independently managed system audio session.
+- iPhone timer beeps now use a native audio buffer instead of activating a
+  WKWebView AudioContext. Browser/PWA beeps retain their existing Web Audio path.
+- Speech is queued rather than repeatedly cutting off the previous utterance.
+  Recognition ignores AutoFit's announcements and resets after speech ends,
+  preventing its own **"סט הושלם"** announcement from completing another set.
+- Idle audio is released with `notifyOthersOnDeactivation`. AutoFit does not
+  attempt to start, pause, or remotely control the user's Apple Music player.
+  No MusicKit access or additional permissions were added.
+
+### Verification
+
+- 113 Node regressions pass, including exact greeting timing, contextual
+  selection, new completion wording, native beep dispatch, and ready activities.
+- The standalone Swift activity-state tests cover readiness and reject a
+  readiness payload containing a running phase timer.
+- Real DOM checks with **simulated native bridges** measured the opening
+  sentence at 1004 ms, strength completion starting the configured 120-second
+  rest without completing warmup, voiced warmup/cooldown starts, and a recorded
+  plank duration followed by its configured 90-second rest. Repeated cardio
+  start, manual focus, ambiguous names, foreground retry, undo, history saving,
+  and cancellation/readiness also passed without runtime errors.
+- Native compilation and physical-device acceptance are separate gates.
+  Actual Apple Music playback on both iPhone speaker and AirPods, audio routing,
+  and Lock Screen presentation cannot be proven by browser/native-bridge mocks.
+- Cache is `autofit-v41`; existing workout history and manual controls remain.
+  Distribution remains **TestFlight only**, with no App Store submission.
+
 ## Version 1.0 (21): Live Activity and reliability
 
 Available to internal TestFlight testers. Apple confirmed `VALID` and

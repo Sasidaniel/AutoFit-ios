@@ -11,7 +11,9 @@ private struct ActivityClock: View {
 
     var body: some View {
         Group {
-            if !elapsed, let start = state.phaseStartedAt, let end = state.phaseEndsAt {
+            if state.phase == .ready {
+                Text("00:00")
+            } else if !elapsed, let start = state.phaseStartedAt, let end = state.phaseEndsAt {
                 Text(timerInterval: start...end, countsDown: true)
             } else {
                 Text(state.workoutStartedAt, style: .timer)
@@ -27,6 +29,7 @@ private struct WorkoutSummary: View {
 
     private var phaseTitle: String {
         switch state.phase {
+        case .ready: return "מוכן לאימון"
         case .workout: return "זמן אימון"
         case .rest: return "מנוחה"
         case .hold: return "החזקה"
@@ -48,7 +51,7 @@ private struct WorkoutSummary: View {
                     Text(phaseTitle).font(.caption).foregroundStyle(.secondary)
                     ActivityClock(state: state).font(.system(size: 30, weight: .bold))
                 }
-                if state.phase != .workout {
+                if state.phase != .workout && state.phase != .ready {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("זמן אימון").font(.caption).foregroundStyle(.secondary)

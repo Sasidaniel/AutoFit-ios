@@ -19,6 +19,9 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     override public func load() {
         NotificationCenter.default.addObserver(
             self, selector: #selector(openWorkout), name: Self.workoutLinkOpened, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationBecameActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     deinit {
@@ -29,6 +32,10 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc private func openWorkout() {
         Self.pendingWorkoutLink = false
         notifyListeners("openWorkout", data: [:], retainUntilConsumed: true)
+    }
+
+    @objc private func applicationBecameActive() {
+        notifyListeners("activityAvailable", data: [:], retainUntilConsumed: true)
     }
 
     @objc func consumeWorkoutLink(_ call: CAPPluginCall) {
@@ -48,7 +55,8 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("Missing workout running state")
                     return
                 }
-                if !running {
+                let preview = call.getBool("preview") ?? false
+                if !running && !preview {
                     self.activityObserver?.cancel()
                     for activity in Activity<WorkoutActivityAttributes>.activities {
                         await activity.end(nil, dismissalPolicy: .immediate)
@@ -67,6 +75,11 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                       let completed = call.getInt("completedSets"), let total = call.getInt("totalSets"),
                       let phase = call.getString("phase") else {
                     call.reject("Missing workout Live Activity data")
+                    return
+                }
+                guard (preview && !running && phase == "ready") ||
+                        (!preview && running && phase != "ready") else {
+                    call.reject("Invalid Live Activity readiness state")
                     return
                 }
                 if UserDefaults.standard.string(forKey: "AutoFitDismissedActivitySession") == sessionID {
@@ -104,7 +117,6 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("Live Activity failed: \(error.localizedDescription)")
                 }
             }
-
         }
     }
 

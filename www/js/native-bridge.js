@@ -121,6 +121,17 @@ export async function announce(text) {
   await announcer.speakNow({ text });
 }
 
+export async function beep() {
+  const announcer = plugin('BackgroundAnnouncer');
+  if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
+  await announcer.playBeep();
+}
+
+export function onAnnouncementError(callback) {
+  const announcer = plugin('BackgroundAnnouncer');
+  if (announcer?.addListener) announcer.addListener('announcementError', callback);
+}
+
 export async function bgStopKeepAlive() {
   const B = plugin('BackgroundAnnouncer');
   if (!B) return false;
@@ -217,11 +228,11 @@ export async function voiceRequestPermission() {
   }
 }
 
-export async function voiceStartListening() {
+export async function voiceStartListening(contextualStrings = []) {
   const V = plugin('VoiceCommand');
   if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
   try {
-    await V.startListening();
+    await V.startListening({ contextualStrings });
     return { listening: true };
   } catch (e) {
     return { listening: false, reason: String(e) };
@@ -261,6 +272,11 @@ export async function syncWorkoutActivity(snapshot) {
 export function onWorkoutActivityOpen(callback) {
   const activity = plugin('LiveActivityBridge');
   if (activity && activity.addListener) activity.addListener('openWorkout', callback);
+}
+
+export function onWorkoutActivityAvailable(callback) {
+  const activity = plugin('LiveActivityBridge');
+  if (activity?.addListener) activity.addListener('activityAvailable', callback);
 }
 
 export async function consumeWorkoutActivityLink() {

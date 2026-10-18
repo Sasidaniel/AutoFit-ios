@@ -4,7 +4,7 @@ import ActivityKit
 #endif
 
 struct WorkoutActivityState: Codable, Hashable {
-    enum Phase: String, Codable { case workout, rest, hold, cardio }
+    enum Phase: String, Codable { case ready, workout, rest, hold, cardio }
 
     let workoutStartedAt: Date
     let exerciseName: String
@@ -25,7 +25,7 @@ struct WorkoutActivityState: Codable, Hashable {
             throw NSError(domain: "AutoFit.LiveActivity", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Invalid workout Live Activity data"])
         }
-        if phase == .workout {
+        if phase == .workout || phase == .ready {
             guard phaseStartMillis == nil, phaseEndMillis == nil else {
                 throw NSError(domain: "AutoFit.LiveActivity", code: 2,
                               userInfo: [NSLocalizedDescriptionKey: "Unexpected phase timer"])

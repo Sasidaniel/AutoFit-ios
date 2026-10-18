@@ -13,6 +13,10 @@ struct WorkoutActivityStateTests {
         let workout = try state()
         precondition(workout.workoutStartedAt.timeIntervalSince1970 == (now - 60000) / 1000)
         precondition(workout.phaseStartedAt == nil && workout.phaseEndsAt == nil)
+        let ready = try state("ready")
+        precondition(ready.phase == .ready && ready.phaseStartedAt == nil && ready.phaseEndsAt == nil)
+        let decodedReady = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(ready))
+        precondition(decodedReady == ready)
         for phase in ["rest", "hold", "cardio"] {
             let timed = try state(phase, start: now, end: now + 90000)
             precondition(timed.phaseEndsAt!.timeIntervalSince(timed.phaseStartedAt!) == 90)
@@ -29,6 +33,7 @@ struct WorkoutActivityStateTests {
             { try state("hold", start: now, end: .infinity) },
             { try state("cardio", start: now, end: now + 86400001) },
             { try state("workout", start: now, end: now + 1000) },
+            { try state("ready", start: now, end: now + 1000) },
             { try state(completed: -1) },
             { try state(completed: 7, total: 6) },
             { try state(total: 10001) },

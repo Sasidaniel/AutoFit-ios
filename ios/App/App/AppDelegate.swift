@@ -3,6 +3,21 @@ import Capacitor
 import AVFoundation
 import UserNotifications
 
+enum WorkoutAudioSession {
+    static func activate(recording: Bool) throws {
+        let session = AVAudioSession.sharedInstance()
+        let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
+        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
+        if recording {
+            options.formUnion([.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+        }
+        if session.category != category || session.mode != .default || session.categoryOptions != options {
+            try session.setCategory(category, mode: .default, options: options)
+        }
+        try session.setActive(true)
+    }
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
@@ -10,24 +25,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
-        configureAudioSessionForMixing()
         UNUserNotificationCenter.current().delegate = self
         return true
-    }
-
-    // Speech uses a separate, system-managed session for temporary ducking.
-    // The app's long-lived playback/recording session only mixes with music.
-    private func configureAudioSessionForMixing() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(
-                .playback,
-                mode: .default,
-                options: [.mixWithOthers]
-            )
-            try AVAudioSession.sharedInstance().setActive(true, options: [])
-        } catch {
-            print("AudioSession configuration failed: \(error)")
-        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -46,13 +45,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-        // Re-activate in case the audio session was interrupted (e.g. an incoming phone call).
-        // Skip this while voice commands are actively listening — switching the
-        // session back to plain ".playback" here would silently kill the
-        // microphone input VoiceCommandPlugin relies on.
-        if !VoiceCommandPlugin.isListening {
-            configureAudioSessionForMixing()
-        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

@@ -1,5 +1,5 @@
 // timer.js — workout stopwatch + rest countdown with sound/vibration
-import { isNative, announce } from './native-bridge.js';
+import { isNative, announce, beep } from './native-bridge.js';
 export function formatHMS(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -45,6 +45,10 @@ export class Stopwatch {
 
 let audioCtx = null;
 export function playBeep() {
+  if (isNative()) {
+    beep().catch(reportAudioError);
+    return;
+  }
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     const ctx = audioCtx;
@@ -67,10 +71,7 @@ export function playBeep() {
 // Must first be triggered from a user gesture (tap) on iOS, otherwise it's silently blocked.
 export function speak(text, lang = 'he-IL') {
   if (isNative()) {
-    announce(text).catch((error) => {
-      console.error('Native announcement failed', error);
-      window.dispatchEvent(new CustomEvent('autofit-audio-error', { detail: String(error) }));
-    });
+    announce(text).catch(reportAudioError);
     return;
   }
   try {
@@ -82,6 +83,11 @@ export function speak(text, lang = 'he-IL') {
     u.volume = 1;
     window.speechSynthesis.speak(u);
   } catch (e) { /* speech not available */ }
+}
+
+function reportAudioError(error) {
+  console.error('Native audio failed', error);
+  window.dispatchEvent(new CustomEvent('autofit-audio-error', { detail: String(error) }));
 }
 
 // Call once on a user gesture (e.g. the "start workout" tap) to unlock speech on iOS.

@@ -35,8 +35,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise)
     ]
 
-    // Checked by AppDelegate so it doesn't reset the shared audio session back
-    // to a plain, record-incapable category while this is actively listening.
+    // The announcer preserves recording while configuring the shared mixed session.
     @objc public static var isListening = false
 
     private let audioEngine = AVAudioEngine()
@@ -48,6 +47,25 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var generation = UUID()
     private var tapInstalled = false
     private var consecutiveFailures = 0
+    private var contextualPhrases: [String] = []
+
+    override public func load() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(announcementFinished),
+            name: BackgroundAnnouncerPlugin.announcementEnded, object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func announcementFinished() {
+        guard Self.isListening else { return }
+        generation = UUID()
+        pendingUtterance?.cancel()
+        utterance = SpeechUtteranceBuffer()
+        restart(after: 0.2)
+    }
 
     @objc func requestPermission(_ call: CAPPluginCall) {
         SFSpeechRecognizer.requestAuthorization { speechStatus in
@@ -62,6 +80,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func startListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.consecutiveFailures = 0
+            self.contextualPhrases = Array((call.getArray("contextualStrings") as? [String] ?? [])
+                .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
                 try self.begin()
                 call.resolve()
@@ -75,6 +95,14 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func stopListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.end()
+            if !BackgroundAnnouncerPlugin.isKeepingAlive && !BackgroundAnnouncerPlugin.isAnnouncing {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                } catch {
+                    call.reject("Cannot release microphone audio: \(error.localizedDescription)")
+                    return
+                }
+            }
             call.resolve()
         }
     }
@@ -87,14 +115,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let currentGeneration = generation
 
-        let session = AVAudioSession.sharedInstance()
-        // .playAndRecord is required for the microphone, including Bluetooth headsets.
-        try session.setCategory(
-            .playAndRecord,
-            mode: .default,
-            options: [.mixWithOthers, .allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
-        )
-        try session.setActive(true, options: [])
+        try WorkoutAudioSession.activate(recording: true)
 
         let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: "he-IL"))
         self.recognizer = recognizer
@@ -106,8 +127,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         req.shouldReportPartialResults = true
         req.contextualStrings = [
             "התחל אימון", "סיים אימון", "בטל אימון", "התחל סט",
-            "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא"
-        ]
+            "סט הושלם", "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא",
+            "התחל", "התחל חימום", "חימום", "שחרור", "פלאנק", "פלנק"
+        ] + contextualPhrases
         if recognizer.supportsOnDeviceRecognition {
             req.requiresOnDeviceRecognition = true
         }
@@ -130,7 +152,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                guard self.generation == currentGeneration, VoiceCommandPlugin.isListening else { return }
+                guard self.generation == currentGeneration, VoiceCommandPlugin.isListening,
+                      !BackgroundAnnouncerPlugin.isAnnouncing else { return }
                 if let result = result {
                     if !result.bestTranscription.formattedString.isEmpty { self.consecutiveFailures = 0 }
                     self.handle(transcript: result.bestTranscription.formattedString, isFinal: result.isFinal)
@@ -176,7 +199,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private func restart(after delay: TimeInterval) {
         let currentGeneration = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard self.generation == currentGeneration, VoiceCommandPlugin.isListening else { return }
+            guard self.generation == currentGeneration, VoiceCommandPlugin.isListening,
+                  !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()
             } catch {
@@ -196,7 +220,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let currentGeneration = generation
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, self.generation == currentGeneration, VoiceCommandPlugin.isListening else { return }
+            guard let self = self, self.generation == currentGeneration, VoiceCommandPlugin.isListening,
+                  !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             if let text = self.utterance.flush(at: ProcessInfo.processInfo.systemUptime) {
                 self.emit(text)
             }
