@@ -1,6 +1,12 @@
 # AutoFit release notes
 
-## Live Activity and reliability follow-up after build 19
+## Version 1.0 (21): Live Activity and reliability
+
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING`; export compliance is complete. The
+[release build](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39120928797)
+passed JavaScript and standalone Swift tests, compiled/signed the app and
+extension, and uploaded successfully. Released source: `ada43a8`.
 
 ### Lock Screen and Dynamic Island
 
@@ -97,6 +103,8 @@
 - A real DOM walkthrough with **simulated native plugins** exercised onboarding,
   spoken start/count/finish/undo, manual weights/kg-lb conversion, rest extension,
   history retention, Health dispatch, native export payloads, and all tabs.
+  Reloading preserved the original active rest deadline and hold start time;
+  cancelling cleared running timers/activity without deleting saved history.
   This verifies JS/UI integration, not the iPhone frameworks themselves.
 - Actual iPhone acceptance is still required for Live Activity presentation and
   tapping while locked, Bluetooth/Hebrew recognition, music ducking/background
