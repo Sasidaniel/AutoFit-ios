@@ -105,18 +105,19 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
 
-            @MainActor private func observe(_ activity: Activity<WorkoutActivityAttributes>) {
-                activityObserver?.cancel()
-                activityObserver = Task { @MainActor in
-                    for await state in activity.activityStateUpdates {
-                        if Task.isCancelled { return }
-                        if state == .dismissed {
-                            UserDefaults.standard.set(activity.attributes.sessionID, forKey: "AutoFitDismissedActivitySession")
-                            return
-                        }
-                        if state == .ended { return }
-                    }
+        }
+    }
+
+    @MainActor private func observe(_ activity: Activity<WorkoutActivityAttributes>) {
+        activityObserver?.cancel()
+        activityObserver = Task { @MainActor in
+            for await state in activity.activityStateUpdates {
+                if Task.isCancelled { return }
+                if state == .dismissed {
+                    UserDefaults.standard.set(activity.attributes.sessionID, forKey: "AutoFitDismissedActivitySession")
+                    return
                 }
+                if state == .ended { return }
             }
         }
     }
