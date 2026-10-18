@@ -1,5 +1,40 @@
 # AutoFit release notes
 
+## Version 1.0 (24): Prearmed rest announcements and spoken progress
+
+Release candidate; native build/upload and Apple availability remain pending.
+
+- Native announcement deadlines are synchronized when rest starts, changes,
+  skips or restores, not only from a WebView `visibilitychange` callback during
+  minimization. Returning to the foreground no longer cancels future native
+  announcements. Workout finish/cancel and disabled voice settings clear plans.
+- Plans use absolute deadlines rather than relative bridge delays, preserving
+  the real 30-second marks and rest completion time. Updates are batched,
+  deduplicated and serialized; failures are visible and retryable. Empty plans
+  cancel scheduled speech without activating idle audio.
+- Native background lifecycle stops microphone capture even if JavaScript is
+  suspended first, and selects playback-only audio in the background. The
+  background audio engine is recovered after configuration/route changes;
+  audio interruptions are respected. Temporary announcement ducking and stable
+  foreground/background speech identities are retained.
+- Exercise-completion speech now uses the same strength-set-weighted percentage
+  as the overall UI badge, rather than a separate exercise-count percentage.
+  The last completed exercise explicitly includes 100 percent. Ordinary set
+  completion retains its short rest cue without percentage spam. Manual/spoken
+  cardio completion includes the same percentage; warmup/cooldown do not add
+  strength sets to the existing progress metric.
+- 137 Node regressions cover prearming without visibility events, absolute
+  deadlines, extension/cancellation, voice settings, failures and percentage
+  boundaries. A standalone Swift suite exercises the production native timer
+  deadline type and is wired into CI alongside the existing Swift suites.
+- Real DOM with explicitly simulated native APIs verified a 120-second rest
+  plan already present while visible, +15-second deadline replacement, stable
+  plans across a simulated visibility cycle, skip/cancel clearing, and spoken
+  exercise completion matching the displayed 4 percent. No runtime errors.
+- Cache: `autofit-v43`. This remains internal TestFlight only. Native compilation
+  and simulated bridges cannot establish actual iPhone background playback;
+  physical-device acceptance after minimizing/locking is still required.
+
 ## Version 1.0 (23): Voice, media and completion reliability
 
 Available to internal TestFlight testers. Apple confirmed `VALID` and

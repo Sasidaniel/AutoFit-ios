@@ -52,6 +52,10 @@ let activityReadyEnabled = true;
 const healthSyncInFlight = new Set();
 let workoutGreetingTimer = null;
 let cloudBackupWarningShown = false;
+let announcementPlanQueued = false;
+let announcementPlanKey = '';
+let announcementPlanRevision = 0;
+let announcementPlanChain = Promise.resolve();
 
 const stopwatch = new Stopwatch((elapsed) => {
   el('workoutTimerDisplay').textContent = formatHMS(elapsed);
@@ -77,27 +81,24 @@ const restTimer = new RestTimer({
   },
 });
 
-// Builds the list of still-pending voice announcements (rest-timer interval marks + final
-// "done", plus any running hold-timer completions) so they can be handed off to native code
-// right before the app is backgrounded — WKWebView JS timers aren't reliable once minimized.
+// Native deadlines are armed while foregrounded, before WebView execution can stop.
 function buildBackgroundAnnouncementItems() {
   const items = [];
   const now = Date.now();
   if (restTimer.isRunning() && restTimer.endAt) {
     const remainingSec = (restTimer.endAt - now) / 1000;
     if (remainingSec > 0) {
-      const elapsedNow = restTimer.totalSeconds - remainingSec;
       if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
         let nextThreshold = restTimer.lastAnnouncedElapsed + 30;
         while (nextThreshold < restTimer.totalSeconds) {
-          const delay = nextThreshold - elapsedNow;
-          if (delay > 0.2) items.push({ delaySeconds: delay, text: `עברו ${nextThreshold} שניות`,
+          const fireAtMillis = restTimer.endAt - restTimer.totalSeconds * 1000 + nextThreshold * 1000;
+          if (fireAtMillis > now) items.push({ fireAtMillis, text: `עברו ${nextThreshold} שניות`,
             announcementID: `rest:${restTimer.endAt}:${nextThreshold}` });
           nextThreshold += 30;
         }
       }
       if (settings.voiceAnnouncements) {
-        items.push({ delaySeconds: remainingSec, text: `זמן המנוחה הסתיים. ${restDoneMessage}`,
+        items.push({ fireAtMillis: restTimer.endAt, text: `זמן המנוחה הסתיים. ${restDoneMessage}`,
           announcementID: `rest:${restTimer.endAt}:done` });
       }
     }
@@ -105,9 +106,9 @@ function buildBackgroundAnnouncementItems() {
   if (settings.voiceAnnouncements) {
     activeSession?.entries.filter((entry) => entry.type === 'cardio' && entry.startedAt && !entry.completed)
       .forEach((entry) => {
-        const delay = entry.durationSec - (entry.elapsedSec || 0) - (now - entry.startedAt) / 1000;
-        if (delay > 0.2) items.push({ delaySeconds: delay,
-          text: entry.exerciseId === 'warmup' ? 'החימום הסתיים' : 'השחרור הסתיים',
+        const fireAtMillis = entry.startedAt + (entry.durationSec - (entry.elapsedSec || 0)) * 1000;
+        if (fireAtMillis > now) items.push({ fireAtMillis,
+          text: cardioCompletionMessage(entry),
           announcementID: `cardio:${entry.exerciseId}:${entry.startedAt}` });
       });
     holdTimers.forEach((state, key) => {
@@ -115,12 +116,38 @@ function buildBackgroundAnnouncementItems() {
       const ex = exercises.find((e) => e.id === exId);
       if (!ex) return;
       const target = ex.holdSeconds || 15;
-      const delay = target - (now - state.startedAt) / 1000;
-      if (delay > 0.2) items.push({ delaySeconds: delay, text: `${target} שניות הושלמו, אפשר לעצור`,
+      const fireAtMillis = state.startedAt + target * 1000;
+      if (fireAtMillis > now) items.push({ fireAtMillis, text: `${target} שניות הושלמו, אפשר לעצור`,
         announcementID: `hold:${key}:${state.startedAt}` });
     });
   }
   return items;
+}
+
+function syncNativeAnnouncementPlan() {
+  if (!native.isNative() || !appInitialized || announcementPlanQueued) return;
+  announcementPlanQueued = true;
+  queueMicrotask(() => {
+    announcementPlanQueued = false;
+    const items = activeSession?.running ? buildBackgroundAnnouncementItems() : [];
+    const key = JSON.stringify(items);
+    if (key === announcementPlanKey) return;
+    announcementPlanKey = key;
+    const revision = ++announcementPlanRevision;
+    announcementPlanChain = announcementPlanChain.then(async () => {
+      if (revision !== announcementPlanRevision) return;
+      const scheduled = await native.bgScheduleAnnouncements(items);
+      if (!scheduled && revision === announcementPlanRevision) {
+        announcementPlanKey = '';
+        showToast('לא ניתן להכין הכרזות ברקע. חזור לאפליקציה ונסה שוב.');
+      }
+    }).catch((error) => {
+      if (revision !== announcementPlanRevision) return;
+      announcementPlanKey = '';
+      console.error('Native announcement plan failed', error);
+      showToast('הכנת ההכרזות ברקע נכשלה: ' + error.message);
+    });
+  });
 }
 
 /* ---------------- notifications (best-effort background alerts) ----------------
@@ -163,14 +190,9 @@ document.addEventListener('visibilitychange', () => {
     if (restTimer.isRunning()) restTimer.forceTick();
     tickCardioTimers();
     requestWakeLock();
-    if (native.isNative()) native.bgCancelAnnouncements();
     syncWorkoutActivity();
-  } else if (native.isNative()) {
-    // App is about to be minimized/backgrounded — hand off any pending voice
-    // announcements (rest timer, hold timers) to native code so they still fire.
-    const items = buildBackgroundAnnouncementItems();
-    if (items.length) native.bgScheduleAnnouncements(items);
   }
+  syncNativeAnnouncementPlan();
   updateVoiceListeningState(); // pause/resume mic listening with app foreground state
 });
 // Some browsers only grant the wake lock from within a user gesture — retry on first tap.
@@ -449,6 +471,7 @@ function init() {
 
   registerServiceWorker();
   appInitialized = true;
+  syncNativeAnnouncementPlan();
   syncWorkoutActivity();
   if (native.isNative()) {
     const pendingHealth = workouts.filter((workout) => workout.healthSyncPending === true);
@@ -662,6 +685,7 @@ function doCancelWorkout() {
   db.clearActiveSession();
   activeSession = buildDraftSession();
   syncWorkoutActivity();
+  syncNativeAnnouncementPlan();
   voiceCountingState = null;
   updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
@@ -750,6 +774,7 @@ function finishWorkout() {
   db.clearActiveSession();
   activeSession = buildDraftSession();
   syncWorkoutActivity();
+  syncNativeAnnouncementPlan();
   voiceCountingState = null;
   updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
@@ -763,6 +788,7 @@ function finishWorkout() {
 function persistActiveSession() {
   db.saveActiveSession(activeSession);
   syncWorkoutActivity();
+  syncNativeAnnouncementPlan();
 }
 
 function persistRestTimerState() {
@@ -774,6 +800,7 @@ function persistRestTimerState() {
   } : null;
   if (activeSession.running) db.saveActiveSession(activeSession);
   syncWorkoutActivity();
+  syncNativeAnnouncementPlan();
 }
 
 function buildWorkoutActivityPayload() {
@@ -874,7 +901,6 @@ function renderWorkoutTab() {
   list.innerHTML = '';
   const lastByExercise = getLastCompletedValuesByExercise();
 
-  let totalSets = 0, completedSets = 0;
   let exerciseNumber = 0;
 
   activeSession.entries.forEach((entry, entryIndex) => {
@@ -888,8 +914,6 @@ function renderWorkoutTab() {
     const ex = exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) return;
     exerciseNumber += 1;
-    totalSets += entry.sets.length;
-    completedSets += entry.sets.filter((s) => s.completed).length;
 
     const card = document.createElement('div');
     card.className = 'exercise-card' + (entry.sets.every((s) => s.completed) ? ' done' : '');
@@ -1040,7 +1064,7 @@ function renderWorkoutTab() {
     list.appendChild(card);
   });
 
-  updateProgress(totalSets, completedSets);
+  updateProgress();
   syncWorkoutActivity();
 }
 
@@ -1062,13 +1086,21 @@ function removeLastWorkoutSet(entry) {
   renderWorkoutTab();
 }
 
-function updateProgress(total, done) {
+function getWorkoutSetProgress() {
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
-  if (total === undefined) {
-    total = strengthEntries.reduce((a, e) => a + e.sets.length, 0);
-    done = strengthEntries.reduce((a, e) => a + e.sets.filter((s) => s.completed).length, 0);
-  }
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const total = strengthEntries.reduce((a, e) => a + e.sets.length, 0);
+  const done = strengthEntries.reduce((a, e) => a + e.sets.filter((s) => s.completed).length, 0);
+  return { total, done, percent: total ? Math.round((done / total) * 100) : 0 };
+}
+
+function cardioCompletionMessage(entry) {
+  const message = entry.exerciseId === 'warmup' ? 'החימום הסתיים' : 'השחרור הסתיים';
+  return `${message}. ${getWorkoutSetProgress().percent} אחוז מהאימון הושלמו`;
+}
+
+function updateProgress() {
+  const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
+  const { total, done, percent: pct } = getWorkoutSetProgress();
   el('setsProgressText').textContent = `${done} / ${total} סטים הושלמו (${pct}%)`;
   el('setsProgressFill').style.width = `${pct}%`;
 
@@ -1154,6 +1186,10 @@ function renderCardioCard(entry, number) {
     entry.startedAt = null;
     persistActiveSession();
     renderWorkoutTab();
+    if (entry.completed && settings.voiceAnnouncements) {
+      cancelWorkoutGreeting();
+      speak(cardioCompletionMessage(entry));
+    }
   });
   return card;
 }
@@ -1172,7 +1208,7 @@ function tickCardioTimers() {
       entry.startedAt = null;
       persistActiveSession();
       playBeep();
-      const msg = entry.exerciseId === 'warmup' ? 'החימום הסתיים' : 'השחרור הסתיים';
+      const msg = cardioCompletionMessage(entry);
       if (settings.voiceAnnouncements) speak(msg, 'he-IL', announcementID);
       showToast(`${msg} ✅`);
       notify('AutoFit', msg);
@@ -1675,14 +1711,11 @@ function startRestTimer(ex, exerciseDone, nextExerciseName) {
   if (exerciseDone) {
     restDoneMessage = nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!';
     if (settings.voiceAnnouncements) {
-      const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
-      const totalEx = strengthEntries.length;
-      const doneEx = strengthEntries.filter((e) => e.sets.length && e.sets.every((s) => s.completed)).length;
-      const pct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
+      const pct = getWorkoutSetProgress().percent;
       // announce the next exercise FIRST, then that the rest period has started
       speak(nextExerciseName
         ? `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. התרגיל הבא: ${nextExerciseName}. עכשיו זמן מנוחה`
-        : `${ex.name} הסתיים. זה היה התרגיל האחרון. זמן מנוחה`);
+        : `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. זה היה התרגיל האחרון. זמן מנוחה`);
     }
   } else {
     restDoneMessage = 'אפשר להמשיך לסט הבא';
@@ -2925,11 +2958,13 @@ function wireSettings() {
   el('settingVoice').addEventListener('change', (e) => {
     settings.voiceAnnouncements = e.target.checked;
     db.saveSettings(settings);
+    syncNativeAnnouncementPlan();
     if (settings.voiceAnnouncements) { primeSpeech(); speak('ההודעות הקוליות הופעלו'); }
   });
   el('settingVoiceInterval30').addEventListener('change', (e) => {
     settings.voiceIntervalAnnouncements = e.target.checked;
     db.saveSettings(settings);
+    syncNativeAnnouncementPlan();
   });
   if (native.isNative()) {
     el('faceIdSettingRow').classList.remove('hidden');

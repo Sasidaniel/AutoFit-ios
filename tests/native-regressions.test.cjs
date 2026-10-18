@@ -703,7 +703,7 @@ test('pending background announcement delays do not repeat already spoken 30-sec
   });
   vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
   const items = context.buildBackgroundAnnouncementItems();
-  assert.deepEqual(Array.from(items, (item) => item.delaySeconds), [15, 45]);
+  assert.deepEqual(Array.from(items, (item) => item.fireAtMillis), [60000, 90000]);
   context.settings.voiceAnnouncements = false;
   assert.equal(context.buildBackgroundAnnouncementItems().length, 0);
 });
@@ -800,6 +800,7 @@ for (const finish of [false, true]) {
       updateVoiceBadgeForListeningState() {}, renderWorkoutTab() {}, renderHistoryTab() {},
       showToast() {}, showCelebration() {},
       syncWorkoutActivity() {},
+      syncNativeAnnouncementPlan() {},
       cancelWorkoutGreeting() {},
       el: () => ({ classList: { add() {}, remove() {} } }),
       native: { isNative: () => true, bgCancelAnnouncements() {}, bgStopKeepAlive() {} },
@@ -1134,7 +1135,7 @@ test('native announcements use system-managed speech, without permanently duckin
   assert.doesNotMatch(read('ios/App/App/VoiceCommandPlugin.swift'), /\.duckOthers/);
   assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking \{ options.insert\(.duckOthers\) \}/);
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
-  assert.match(announcer, /wantsMicrophone, ducking: true/);
+  assert.match(announcer, /usesRecordingSession, ducking: true/);
   assert.match(announcer, /audioEngine.stop\(\)[\s\S]*setActive\(false, options: .notifyOthersOnDeactivation\)/);
 });
 
@@ -1159,7 +1160,7 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.match(delegate, /options: AVAudioSession.CategoryOptions = \[.mixWithOthers\]/);
   assert.match(delegate, /session.category != category/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
-  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.wantsMicrophone\)/);
+  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession\)/);
   assert.match(voice, /WorkoutAudioSession.activate\(recording: true\)/);
   assert.match(voice, /!BackgroundAnnouncerPlugin.isAnnouncing/);
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
@@ -1175,7 +1176,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v42'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -1202,7 +1203,7 @@ test('pausing and resuming cardio banks elapsed time without shortening the hist
   const callbacks = {};
   const entry = { exerciseId: 'warmup', type: 'cardio', exerciseName: 'Walk', durationSec: 300 };
   const context = vm.createContext({
-    Date: { now: () => now }, exercises: [], activeSession: { entries: [entry] },
+    Date: { now: () => now }, exercises: [], activeSession: { entries: [entry] }, settings: {},
     document: { createElement: () => ({}) }, formatHMS: String, escapeHtml: String,
     qs: (selector) => ({ addEventListener: (name, callback) => { callbacks[selector] = callback; } }),
     ensureWorkoutStarted() {}, persistActiveSession() {}, renderWorkoutTab() {},
@@ -1438,7 +1439,7 @@ test('voice capture uses processed mono audio and preserves the requested microp
   assert.match(swift, /channels: 1/);
   assert.match(swift, /buffer.floatChannelData\?\[0\]/);
   assert.match(swift, /announcementWillStart\(\)[\s\S]*if Self.wantsMicrophone \{ end\(\) \}/);
-  assert.match(swift, /announcementFinished\(\)[\s\S]*guard Self.wantsMicrophone/);
+  assert.match(swift, /announcementFinished\(\)[\s\S]*guard Self.usesRecordingSession/);
   assert.match(swift, /Self.wantsMicrophone = false/);
 });
 
@@ -1561,6 +1562,7 @@ test('background handoff includes banked warmup and cooldown completion without 
   const context = vm.createContext({
     Date: { now: () => 100000 }, restTimer: { isRunning: () => false },
     settings: { voiceAnnouncements: true }, holdTimers: new Map(), exercises: [],
+    cardioCompletionMessage: () => 'החימום הסתיים. 0 אחוז מהאימון הושלמו',
     activeSession: { entries: [
       { exerciseId: 'warmup', type: 'cardio', startedAt: 90000, elapsedSec: 30, durationSec: 300 },
       { exerciseId: 'cooldown', type: 'cardio', startedAt: null, durationSec: 300 },
@@ -1569,8 +1571,8 @@ test('background handoff includes banked warmup and cooldown completion without 
   vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
   const items = context.buildBackgroundAnnouncementItems();
   assert.equal(items.length, 1);
-  assert.equal(items[0].delaySeconds, 260);
-  assert.equal(items[0].text, 'החימום הסתיים');
+  assert.equal(items[0].fireAtMillis, 360000);
+  assert.equal(items[0].text, 'החימום הסתיים. 0 אחוז מהאימון הושלמו');
   assert.equal(items[0].announcementID, 'cardio:warmup:90000');
 });
 
@@ -1585,6 +1587,180 @@ test('timer speech carries the same stable identity through foreground and backg
   const swift = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(swift, /recentAnnouncementIDs.contains\(announcementID\)/);
   assert.match(swift, /recentAnnouncementIDs.count > 512/);
-  assert.match(swift, /self\?\.speak\(text, announcementID: announcementID\)/);
+  assert.match(swift, /self\?\.speak\(announcement.text, announcementID: announcement.identifier\)/);
   assert.match(swift, /restorePlaybackAfterMicrophone/);
+});
+
+function nativePlanContext() {
+  const clock = timerContext();
+  const { context } = clock;
+  const calls = [], messages = [];
+  Object.assign(context, {
+    queueMicrotask, console, appInitialized: true, announcementPlanQueued: false, announcementPlanKey: '',
+    announcementPlanRevision: 0, announcementPlanChain: Promise.resolve(),
+    activeSession: { running: true, entries: [] }, holdTimers: new Map(), exercises: [],
+    settings: { voiceAnnouncements: true, voiceIntervalAnnouncements: true },
+    restDoneMessage: 'continue', el: () => ({ textContent: 'Bench' }),
+    db: { saveActiveSession() {} }, syncWorkoutActivity() {},
+    native: { isNative: () => true, bgScheduleAnnouncements: async (items) => {
+      calls.push(JSON.parse(JSON.stringify(items))); return true;
+    } },
+    showToast: (text) => messages.push(text),
+  });
+  vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
+  vm.runInContext(section('function persistActiveSession()', 'function buildWorkoutActivityPayload()'), context);
+  context.restTimer = clock.rest({ onChange: () => context.persistRestTimerState(), onTick() {}, onDone() {} });
+  return { ...clock, calls, messages };
+}
+
+async function settlePlan(context) {
+  await new Promise((resolve) => setImmediate(resolve));
+  await context.announcementPlanChain;
+}
+
+test('rest start arms all native speech deadlines while foregrounded without a visibility event', async () => {
+  const { context, calls } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].map((item) => item.fireAtMillis), [31000, 61000, 91000]);
+  assert.deepEqual(calls[0].map((item) => item.announcementID), ['rest:91000:30', 'rest:91000:60', 'rest:91000:done']);
+  assert.equal(context.activeSession.rest.endAt, 91000);
+});
+
+test('native deadlines remain stable during bridge latency and unrelated workout edits', async () => {
+  const { context, calls, advance } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  advance(10);
+  context.persistActiveSession();
+  await settlePlan(context);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].at(-1).fireAtMillis, 91000);
+  advance(90); // No JS timer ticks or lifecycle events: native already owns the complete plan.
+  assert.equal(calls[0].filter((item) => item.fireAtMillis <= context.Date.now()).length, 3);
+});
+
+test('rest extension replaces native deadlines and skipping clears them with an empty plan', async () => {
+  const { context, calls } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  context.restTimer.addSeconds(15);
+  await settlePlan(context);
+  assert.equal(calls.at(-1).at(-1).fireAtMillis, 106000);
+  context.restTimer.stop();
+  await settlePlan(context);
+  assert.deepEqual(calls.at(-1), []);
+});
+
+test('disabling interval speech retains only completion; disabling all speech cancels native plans', async () => {
+  const { context, calls } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  context.settings.voiceIntervalAnnouncements = false;
+  context.syncNativeAnnouncementPlan();
+  await settlePlan(context);
+  assert.equal(calls.at(-1).length, 1);
+  assert.equal(calls.at(-1)[0].announcementID, 'rest:91000:done');
+  context.settings.voiceAnnouncements = false;
+  context.syncNativeAnnouncementPlan();
+  await settlePlan(context);
+  assert.deepEqual(calls.at(-1), []);
+});
+
+test('workout finish cancels a prearmed plan, and the bridge accepts empty cancellation plans', async () => {
+  const { context, calls } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  context.activeSession.running = false;
+  context.syncNativeAnnouncementPlan();
+  await settlePlan(context);
+  assert.deepEqual(calls.at(-1), []);
+  let received;
+  const bridge = bridgeContext({ BackgroundAnnouncer: {
+    scheduleAnnouncements: async ({ items }) => { received = items; },
+  } });
+  assert.equal(await bridge.bgScheduleAnnouncements([]), true);
+  assert.deepEqual(received, []);
+});
+
+test('background plan failures are visible and can be retried without changing the timer', async () => {
+  const { context, messages, calls } = nativePlanContext();
+  const schedule = context.native.bgScheduleAnnouncements;
+  context.native.bgScheduleAnnouncements = async () => false;
+  context.restTimer.start(90);
+  await settlePlan(context);
+  assert.equal(messages.length, 1);
+  assert.equal(context.announcementPlanKey, '');
+  context.native.bgScheduleAnnouncements = schedule;
+  context.syncNativeAnnouncementPlan();
+  await settlePlan(context);
+  assert.equal(calls[0].at(-1).fireAtMillis, 91000);
+});
+
+test('native lifecycle stops microphone input and recovers background playback without WebView callbacks', () => {
+  const voice = read('ios/App/App/VoiceCommandPlugin.swift');
+  const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  assert.match(voice, /UIApplication.didEnterBackgroundNotification/);
+  assert.match(voice, /applicationEnteredBackground\(\) \{\s*end\(\)/);
+  assert.match(voice, /wantsMicrophone && UIApplication.shared.applicationState != .background/);
+  assert.match(audio, /\.AVAudioEngineConfigurationChange, object: audioEngine/);
+  assert.match(audio, /UIApplication.didEnterBackgroundNotification/);
+  assert.match(audio, /!audioInterrupted/);
+  assert.match(audio, /try items.map \{ try ScheduledWorkoutAnnouncement\(\$0\) \}/);
+  assert.doesNotMatch(audio, /delaySeconds|max\(0.05, delay\)/);
+  const lifecycle = section("document.addEventListener('visibilitychange'", '// Some browsers');
+  assert.doesNotMatch(lifecycle, /bgCancelAnnouncements/);
+  assert.match(lifecycle, /syncNativeAnnouncementPlan\(\)/);
+  assert.match(read('ios/App/App.xcodeproj/project.pbxproj'), /ScheduledWorkoutAnnouncement.swift in Sources/);
+  assert.match(read('.github/workflows/ios-build.yml'), /Test native announcement deadlines/);
+});
+
+function progressSpeechContext(entries) {
+  const messages = [], nodes = new Map();
+  const context = vm.createContext({
+    activeSession: { entries }, settings: { voiceAnnouncements: true, restSeconds: 90 },
+    cancelWorkoutGreeting() {}, playBeep() {},
+    restTimer: { start() {} }, speak: (message) => messages.push(message),
+    el: (id) => {
+      if (!nodes.has(id)) nodes.set(id, { style: {}, classList: { remove() {} } });
+      return nodes.get(id);
+    },
+  });
+  vm.runInContext(section('function getWorkoutSetProgress()', 'function renderCardioCard('), context);
+  vm.runInContext(section('function startRestTimer(', '/* ================= HISTORY TAB'), context);
+  return { context, messages, nodes };
+}
+
+test('exercise completion speech matches the displayed set-weighted percentage, not exercise count', () => {
+  const { context, messages, nodes } = progressSpeechContext([
+    { sets: [{ completed: true }] },
+    { sets: [{ completed: false }, { completed: false }, { completed: false }] },
+  ]);
+  context.updateProgress();
+  context.startRestTimer({ name: 'Bench', restSeconds: 90 }, true, 'Next');
+  assert.equal(nodes.get('overallProgressBadge').textContent, '25%');
+  assert.match(messages[0], /25 אחוז מהאימון הושלמו/);
+  assert.match(messages[0], /התרגיל הבא: Next/);
+});
+
+test('last completed exercise explicitly announces 100 percent, while ordinary sets do not announce percentages', () => {
+  const { context, messages } = progressSpeechContext([{ sets: [{ completed: true }] }]);
+  context.startRestTimer({ name: 'Last' }, true, null);
+  assert.match(messages[0], /100 אחוז מהאימון הושלמו/);
+  context.startRestTimer({ name: 'Last' }, false, 'Next');
+  assert.equal(messages[1], 'סט הושלם, זמן מנוחה');
+  context.settings.voiceAnnouncements = false;
+  context.startRestTimer({ name: 'Last' }, true, null);
+  assert.equal(messages.length, 2);
+});
+
+test('cardio completion reports the same strength-set percentage and empty workouts never divide by zero', () => {
+  const { context } = progressSpeechContext([
+    { type: 'cardio', exerciseId: 'warmup', completed: true },
+    { sets: [{ completed: true }, { completed: false }] },
+  ]);
+  assert.match(context.cardioCompletionMessage({ exerciseId: 'warmup' }), /50 אחוז/);
+  context.activeSession.entries = [];
+  assert.equal(context.getWorkoutSetProgress().percent, 0);
 });

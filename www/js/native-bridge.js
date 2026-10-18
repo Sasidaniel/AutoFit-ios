@@ -141,7 +141,7 @@ export async function bgStopKeepAlive() {
 // items: [{ delaySeconds, text }]
 export async function bgScheduleAnnouncements(items) {
   const B = plugin('BackgroundAnnouncer');
-  if (!B || !items || !items.length) return false;
+  if (!B || !items) return false;
   try { await B.scheduleAnnouncements({ items }); return true; } catch (e) {
     console.error('Background announcement scheduling failed', e);
     return false;

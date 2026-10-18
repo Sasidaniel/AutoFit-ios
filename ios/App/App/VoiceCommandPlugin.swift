@@ -2,6 +2,7 @@ import Foundation
 import Speech
 import AVFoundation
 import Capacitor
+import UIKit
 
 /**
  * Hands-free voice commands for an entire workout — starting/finishing/cancelling
@@ -38,6 +39,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     // Requested listening survives the temporary capture pause during app speech.
     @objc public static var isListening = false
     @objc public static var wantsMicrophone = false
+    static var usesRecordingSession: Bool {
+        wantsMicrophone && UIApplication.shared.applicationState != .background
+    }
 
     private let audioEngine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
@@ -57,6 +61,12 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         NotificationCenter.default.addObserver(
             self, selector: #selector(announcementFinished),
             name: BackgroundAnnouncerPlugin.announcementEnded, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationEnteredBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationBecameActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     deinit {
@@ -68,11 +78,21 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func announcementFinished() {
-        guard Self.wantsMicrophone else { return }
+        guard Self.usesRecordingSession else { return }
         generation = UUID()
         pendingUtterance?.cancel()
         utterance = SpeechUtteranceBuffer()
         restart(after: 0.2)
+    }
+
+    @objc private func applicationEnteredBackground() {
+        end()
+    }
+
+    @objc private func applicationBecameActive() {
+        if Self.usesRecordingSession && !Self.isListening && !BackgroundAnnouncerPlugin.isAnnouncing {
+            restart(after: 0.2)
+        }
     }
 
     @objc func requestPermission(_ call: CAPPluginCall) {
@@ -92,7 +112,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             self.contextualPhrases = Array((call.getArray("contextualStrings") as? [String] ?? [])
                 .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
-                if !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
+                if Self.usesRecordingSession && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
                 call.resolve()
             } catch {
                 Self.wantsMicrophone = false
@@ -225,7 +245,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
-        if !Self.wantsMicrophone {
+        if !Self.usesRecordingSession {
             NotificationCenter.default.post(name: BackgroundAnnouncerPlugin.microphoneReleased, object: nil)
         }
     }
@@ -237,7 +257,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private func restart(after delay: TimeInterval) {
         let currentGeneration = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard self.generation == currentGeneration, Self.wantsMicrophone,
+            guard self.generation == currentGeneration, Self.usesRecordingSession,
                   !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()
