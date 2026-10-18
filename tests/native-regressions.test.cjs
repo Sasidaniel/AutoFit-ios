@@ -32,7 +32,7 @@ test('scene startup uses the controller that registers every custom native plugi
   const controller = read('ios/App/App/MainViewController.swift');
   const project = read('ios/App/App.xcodeproj/project.pbxproj');
   for (const plugin of ['HealthBridge', 'CloudBridge', 'KeepAwakeBridge', 'BackgroundAnnouncer',
-    'FaceIdBridge', 'NotificationsBridge', 'VoiceCommand', 'ShareBridge']) {
+    'FaceIdBridge', 'NotificationsBridge', 'VoiceCommand', 'ShareBridge', 'LiveActivityBridge']) {
     assert.ok(controller.includes(`registerPluginInstance(${plugin}Plugin())`), plugin);
     assert.ok(project.includes(`${plugin}Plugin.swift in Sources`), plugin);
     assert.ok(fs.existsSync(path.join(root, 'ios/App/App', `${plugin}Plugin.swift`)), plugin);
@@ -137,13 +137,21 @@ test('PDF generation returns real PDF bytes using the bundled library', async ()
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
   const context = vm.createContext({
     window: { jspdf: require('../www/vendor/jspdf.umd.min.js') },
-    buildWorkoutShareCanvas: () => ({ width: 100, height: 100, toDataURL: () => png }),
+    buildWorkoutShareCanvases: function* () {
+      for (let i = 0; i < 3; i++) yield { width: 1520, height: 2150, toDataURL: () => png };
+    },
   });
   vm.runInContext(section('function buildWorkoutSharePdf(', '// Shares a file'), context);
   const blob = context.buildWorkoutSharePdf([]);
   assert.equal(blob.type, 'application/pdf');
   assert.ok(blob.size > 500);
-  assert.match(await blob.text(), /^%PDF-/);
+  const text = await blob.text();
+  assert.match(text, /^%PDF-/);
+  assert.equal([...text.matchAll(/\/Type \/Page\b/g)].length, 3);
+  for (const page of text.matchAll(/\/MediaBox \[([^\]]+)\]/g)) {
+    const [, , width, height] = page[1].split(/\s+/).map(Number);
+    assert.ok(Math.abs(width - 595.28) < 0.01 && Math.abs(height - 841.89) < 0.01);
+  }
 });
 
 test('native sharing sends actual file bytes and filename to ShareBridge', async () => {
@@ -152,12 +160,17 @@ test('native sharing sends actual file bytes and filename to ShareBridge', async
     readAsDataURL() { this.result = 'data:application/pdf;base64,JVBERi0='; this.onload(); }
   }
   const context = bridgeContext({ ShareBridge: {
-    shareFile: async (data) => { payload = data; return { shared: true }; },
+    shareFiles: async (data) => { payload = data.files; return { shared: true }; },
   } }, true, { FileReader: Reader });
   const result = await context.shareFile(new Blob(['%PDF-']), 'workout.pdf');
   assert.equal(result.shared, true);
-  assert.equal(payload.filename, 'workout.pdf');
-  assert.equal(payload.base64, 'JVBERi0=');
+  assert.equal(payload[0].filename, 'workout.pdf');
+  assert.equal(payload[0].base64, 'JVBERi0=');
+  await context.shareFiles([
+    { blob: new Blob(['page 1']), filename: 'page-1.png' },
+    { blob: new Blob(['page 2']), filename: 'page-2.png' },
+  ]);
+  assert.deepEqual(Array.from(payload, (file) => file.filename), ['page-1.png', 'page-2.png']);
   await assert.rejects(bridgeContext().shareFile(new Blob(['%PDF-']), 'workout.pdf'), /ShareBridge/);
 });
 
@@ -176,7 +189,7 @@ for (const extension of ['pdf', 'png']) {
     let filename;
     const { context } = shareContext({
       isNative: () => true,
-      shareFile: async (_, name) => { filename = name; return { shared: true }; },
+      shareFiles: async (files) => { filename = files[0].filename; return { shared: true }; },
     });
     assert.equal(await context.shareFile(new Blob(['bytes']), `workout.${extension}`), true);
     assert.equal(filename, `workout.${extension}`);
@@ -186,7 +199,7 @@ for (const extension of ['pdf', 'png']) {
 test('native share rejection is visible and does not claim a download', async () => {
   const { context, messages } = shareContext({
     isNative: () => true,
-    shareFile: async () => { throw new Error('share sheet unavailable'); },
+    shareFiles: async () => { throw new Error('share sheet unavailable'); },
   });
   assert.equal(await context.shareFile(new Blob(['bytes']), 'workout.pdf'), false);
   assert.match(messages[0], /share sheet unavailable/);
@@ -211,4 +224,833 @@ test('contact submission is visibly unavailable and cannot falsely claim deliver
   assert.match(html, /href="mailto:/);
   assert.match(html, /href="https:\/\/wa.me\//);
   assert.doesNotMatch(app, /formsubmit\.co|wireContactTab|CONTACT_EMAIL/);
+});
+
+function voiceContext(entries = []) {
+  const messages = [];
+  const calls = [];
+  function node() {
+    const classes = new Set();
+    return {
+      value: '', textContent: '',
+      classList: {
+        add: (name) => classes.add(name),
+        remove: (name) => classes.delete(name),
+        contains: (name) => classes.has(name),
+        toggle: (name, force) => force ? classes.add(name) : classes.delete(name),
+      },
+      scrollIntoView: () => calls.push('scroll'),
+    };
+  }
+  const elements = new Map();
+  const el = (id) => {
+    if (!elements.has(id)) elements.set(id, node());
+    return elements.get(id);
+  };
+  const cards = entries.map((entry) => ({
+    ...node(),
+    entry,
+    rows: (entry.sets || []).map((set) => ({
+      ...node(), set, reps: node(), button: { click: () => { set.completed = !set.completed; } },
+    })),
+    button: { click: () => { entry.completed = !entry.completed; } },
+  }));
+  const session = { running: false, entries };
+  const context = vm.createContext({
+    activeSession: session,
+    exercises: entries.map((e) => ({ id: e.exerciseId, inputType: 'reps' })),
+    document: { visibilityState: 'visible' },
+    settings: { voiceCommandsEnabled: true },
+    native: { isNative: () => true },
+    el,
+    qs: (selector, parent) => {
+      const match = selector.match(/data-entry-index="(\d+)"/);
+      if (match) return cards[Number(match[1])];
+      if (selector === '.btnCardioDone') return parent.button;
+      if (selector === '.reps') return parent.reps;
+      if (selector.includes('.set-check')) {
+        if (parent.rows) return parent.rows.find((row) => !row.set.completed)?.button;
+        return parent.button;
+      }
+    },
+    qsa: (_, parent) => parent.rows,
+    primeSpeech: () => {},
+    ensureWorkoutStarted: () => { session.running = true; calls.push('start'); },
+    finishWorkout: () => { session.running = false; calls.push('finish'); },
+    doCancelWorkout: () => { session.running = false; calls.push('cancel'); },
+    showToast: (message) => messages.push(message),
+    persistActiveSession: () => calls.push('persist'),
+    syncWorkoutActivity: () => {},
+    renderWorkoutTab: () => calls.push('render'),
+    restTimer: { stop: () => calls.push('stopRest') },
+    holdTimers: new Map(),
+    db: { saveSettings: () => calls.push('saveSettings') },
+    setTimeout: () => 0,
+  });
+  vm.runInContext(section('function isEntryDone(', 'function startRestTimer('), context);
+  vm.runInContext("voiceListeningActive = true; currentTab = 'workout';", context);
+  return { context, calls, messages, session, el };
+}
+
+for (const [phrase, expected] of [
+  ['התחל אימון', 'startWorkout'], ['התחל את האימון!', 'startWorkout'],
+  ['תתחיל אימון', 'startWorkout'], ['סיים אימון', 'finishWorkout'],
+  ['סיימתי את האימון', 'finishWorkout'], ['סיום אימון', 'finishWorkout'],
+  ['בטל אימון', 'cancelWorkout'], ['ביטול האימון', 'cancelWorkout'],
+  ['התחל סט', 'startSet'], ['סיימתי', 'setDone'], ['סט הסתיים', 'setDone'],
+  ['חזרה אחת הסתיימה', 'setDone'], ['חזרה שנייה הסתיימה', 'setDone'],
+  ['דלג על מנוחה', 'skipRest'], ['זמן המנוחה הסתיים', 'skipRest'],
+  ['תרגיל הבא', 'nextExercise'], ['בטל', 'undo'],
+  ['לא התחל אימון', null], ['אל תבטל אימון', null],
+  ['זמן המנוחה הסתיים אפשר להמשיך לסט הבא', null],
+  ['אימון מהנה ובהצלחה', null], ['כל הכבוד על האימון', null],
+]) {
+  test(`Hebrew command classification: ${phrase}`, () => {
+    assert.equal(voiceContext().context.classifyVoiceCommand(phrase), expected);
+  });
+}
+
+for (const [phrase, expected] of [
+  ['0', 0], ['אפס', 0], ['אחת', 1], ['שתיים', 2], ['שניים עשר', 12],
+  ['שתיים עשרה', 12], ['שישה עשר', 16], ['עשרים ואחת', 21],
+  ['שלושים ותשע', 39], ['אחת שתיים שלוש', 3], ['1, 2, 3, 4', 4],
+  ['אחת, שתיים ושלוש', 3], ['עשרים ואחת עשרים ושתיים', 22],
+  ['מספר לא מוכר', null],
+]) {
+  test(`Spoken rep parsing: ${phrase}`, () => {
+    assert.equal(voiceContext().context.parseSpokenNumber(phrase), expected);
+  });
+}
+
+test('spoken start works before any set is completed and does not start twice', () => {
+  const { context, calls, session } = voiceContext();
+  context.handleVoiceTranscript('התחל אימון');
+  context.handleVoiceTranscript('התחל אימון');
+  assert.equal(session.running, true);
+  assert.equal(calls.filter((call) => call === 'start').length, 1);
+});
+
+test('spoken counts save the last number and ending a set works within the same utterance', () => {
+  const entry = { exerciseId: 'bench', sets: [{ reps: '', completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('התחל סט');
+  context.handleVoiceTranscript('אחת שתיים שלוש');
+  assert.equal(entry.sets[0].reps, 3);
+  context.handleVoiceTranscript('עברו 30 שניות');
+  assert.equal(entry.sets[0].reps, 3);
+  context.handleVoiceTranscript('ארבע חמש סיימתי');
+  assert.equal(entry.sets[0].reps, 5);
+  assert.equal(entry.sets[0].completed, true);
+});
+
+test('voice undo targets the newly completed set even after rendering and manual completion', () => {
+  const entry = { exerciseId: 'bench', sets: [
+    { completed: true }, { completed: false }, { completed: false },
+  ] };
+  const { context, calls } = voiceContext([entry]);
+  context.handleVoiceTranscript('סט הסתיים');
+  entry.sets[2].completed = true;
+  context.renderWorkoutTab();
+  context.handleVoiceTranscript('בטל');
+  assert.deepEqual(entry.sets.map((set) => set.completed), [true, false, true]);
+  assert.ok(calls.includes('stopRest'));
+});
+
+test('late transcripts cannot control workouts outside the visible listening tab', () => {
+  for (const disable of [
+    "voiceListeningActive = false",
+    "currentTab = 'home'",
+    "document.visibilityState = 'hidden'",
+  ]) {
+    const { context, calls } = voiceContext();
+    vm.runInContext(disable, context);
+    context.handleVoiceTranscript('התחל אימון');
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('voice finish and cancel stay distinct and cancel does not require a dialog', () => {
+  const { context, session, calls } = voiceContext();
+  session.running = true;
+  context.handleVoiceTranscript('סיים אימון');
+  session.running = true;
+  context.handleVoiceTranscript('בטל אימון');
+  assert.deepEqual(calls, ['finish', 'cancel']);
+});
+
+test('workout-tab microphone activation repairs an older persisted off setting without starting a workout', async () => {
+  const { context, session, calls } = voiceContext();
+  context.native.voiceRequestPermission = async () => ({ granted: true });
+  context.native.voiceStartListening = async () => ({ listening: true });
+  vm.runInContext('voiceListeningActive = false; settings.voiceCommandsEnabled = false;', context);
+  await context.requestVoiceActivation();
+  assert.equal(context.settings.voiceCommandsEnabled, true);
+  assert.equal(vm.runInContext('voiceListeningActive', context), true);
+  assert.equal(session.running, false);
+  assert.ok(calls.includes('saveSettings'));
+});
+
+test('next exercise skips completed strength and cardio entries', () => {
+  const { context } = voiceContext([
+    { exerciseName: 'current', sets: [{ completed: true }] },
+    { exerciseName: 'already done', sets: [{ completed: true }] },
+    { exerciseName: 'walk', type: 'cardio', completed: true },
+    { exerciseName: 'next', sets: [{ completed: false }] },
+  ]);
+  assert.equal(context.nextEntryName(context.activeSession.entries[0]), 'next');
+  assert.equal(context.nextEntryName(context.activeSession.entries[3]), null);
+});
+
+test('share pages stay high-resolution and bounded, with every logged set rendered exactly once', () => {
+  const drawn = [];
+  let pageIndex = 0;
+  const context = vm.createContext({
+    profile: { name: 'Test' }, computeVolume: () => 0,
+    formatDate: () => '2026-10-18', formatHMS: () => '60:00', formatCardioExtra: () => '',
+    document: { createElement: () => {
+      const id = pageIndex++;
+      return { getContext: () => new Proxy({}, {
+        get: (_, key) => key === 'fillText'
+          ? (text, x, y) => { assert.ok(y <= 1047); drawn.push({ id, text }); }
+          : () => {},
+        set: () => true,
+      }) };
+    } },
+  });
+  vm.runInContext(section('function* buildWorkoutShareCanvases(', 'async function buildWorkoutShareImages('), context);
+  const sample = [{ entries: Array.from({ length: 25 }, (_, exercise) => ({
+    exerciseName: `Exercise ${exercise}`,
+    sets: Array.from({ length: exercise === 0 ? 70 : 3 }, (_, index) => ({
+      weightKg: 10, reps: `rep-${exercise}-${index}`,
+    })),
+  })) }];
+  const pages = [...context.buildWorkoutShareCanvases(sample)];
+  assert.ok(pages.length > 4);
+  for (const page of pages) assert.deepEqual([page.width, page.height], [1520, 2150]);
+  const reps = drawn.map((item) => item.text).filter((text) => /^rep-/.test(text));
+  const expected = sample[0].entries.flatMap((entry) => entry.sets.map((set) => set.reps));
+  assert.deepEqual(reps, expected);
+  const continuation = drawn.filter((item) => item.text === '🏋️ Exercise 0');
+  assert.ok(continuation.length > 1, 'split tables repeat their exercise heading');
+});
+
+test('PNG export failure rejects instead of returning an empty successful file', async () => {
+  const canvas = { width: 1520, height: 2150, toBlob: (callback) => callback(null) };
+  const context = vm.createContext({
+    buildWorkoutShareCanvases: function* () { yield canvas; },
+  });
+  vm.runInContext(section('async function buildWorkoutShareImages(', '// Builds a real PDF'), context);
+  await assert.rejects(context.buildWorkoutShareImages([]));
+  assert.equal(canvas.width, 1);
+});
+
+function timerContext() {
+  let now = 1000;
+  let nextId = 0;
+  const timers = new Map();
+  const context = vm.createContext({
+    Date: { now: () => now },
+    setInterval: (callback) => { timers.set(++nextId, callback); return nextId; },
+    clearInterval: (id) => timers.delete(id),
+  });
+  vm.runInContext(read('www/js/timer.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  const Rest = vm.runInContext('RestTimer', context);
+  return {
+    context, timers, advance: (seconds) => { now += seconds * 1000; },
+    rest: (handlers) => new Rest(handlers),
+  };
+}
+
+test('rest timer emits 30, 60, done once for 90 seconds and stays silent after stop', () => {
+  const { rest, advance } = timerContext();
+  const events = [];
+  const timer = rest({
+    onTick: () => {}, onInterval: (n) => events.push(n), onDone: () => events.push('done'),
+  });
+  timer.start(90);
+  advance(30); timer.forceTick();
+  advance(30); timer.forceTick();
+  advance(30); timer.forceTick();
+  timer.forceTick();
+  assert.deepEqual(events, [30, 60, 'done']);
+  timer.start(120); timer.stop(); advance(120); timer.forceTick();
+  assert.deepEqual(events, [30, 60, 'done']);
+});
+
+test('rest extension and stopwatch restart keep just one timer and correct wall-clock duration', () => {
+  const { context, timers, rest, advance } = timerContext();
+  const timer = rest({ onTick() {}, onDone() {} });
+  timer.start(90);
+  advance(30);
+  timer.addSeconds(15);
+  assert.equal(timer.totalSeconds, 105);
+  assert.equal(timers.size, 1);
+  timer.stop();
+  const Watch = vm.runInContext('Stopwatch', context);
+  const watch = new Watch(() => {});
+  watch.start(context.Date.now());
+  watch.start(context.Date.now());
+  assert.equal(timers.size, 1);
+  advance(3661);
+  assert.equal(watch.stop(), 3661);
+  assert.equal(timers.size, 0);
+  assert.equal(context.formatHMS(3661), '1:01:01');
+});
+
+test('pending background announcement delays do not repeat already spoken 30-second marks', () => {
+  const context = vm.createContext({
+    Date: { now: () => 45000 },
+    restTimer: { isRunning: () => true, endAt: 90000, totalSeconds: 90, lastAnnouncedElapsed: 30 },
+    settings: { voiceAnnouncements: true, voiceIntervalAnnouncements: true },
+    restDoneMessage: 'done', holdTimers: new Map(), exercises: [],
+  });
+  vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
+  const items = context.buildBackgroundAnnouncementItems();
+  assert.deepEqual(Array.from(items, (item) => item.delaySeconds), [15, 45]);
+  context.settings.voiceAnnouncements = false;
+  assert.equal(context.buildBackgroundAnnouncementItems().length, 0);
+});
+
+function migrationContext() {
+  let savedExercises = [];
+  let id = 0;
+  const context = vm.createContext({
+    exercises: [], settings: { restSeconds: 135 }, activeSession: null,
+    db: {
+      uid: () => `id-${++id}`,
+      getExercises: () => JSON.parse(JSON.stringify(savedExercises)),
+      saveExercises: (value) => { savedExercises = JSON.parse(JSON.stringify(value)); },
+      saveSettings: () => {},
+    },
+    DEFAULT_WARMUP_NAME: 'walk', DEFAULT_COOLDOWN_NAME: 'walk', DEFAULT_CARDIO_PACE: '6',
+  });
+  vm.runInContext(read('www/js/seed.js').replace(/^export /gm, ''), context);
+  vm.runInContext(section('const EXERCISE_CONTENT_PATCH_V2', '/* ---------------- state'), context);
+  vm.runInContext(section('function init() {', '  if (!activeSession) {') + '}', context);
+  return context;
+}
+
+test('fresh-install exercise defaults and later user rest/set edits survive the second launch', () => {
+  const context = migrationContext();
+  context.init();
+  vm.runInContext(`
+    const hang = exercises.find(e => e.name === 'החזקה סטטית במתח');
+    if (hang.defaultSets !== 1) throw new Error('Incorrect hang defaults');
+    hang.defaultSets = 2;
+    hang.restSeconds = 105;
+    db.saveExercises(exercises);
+  `, context);
+  context.init();
+  assert.equal(vm.runInContext("exercises.find(e => e.name === 'החזקה סטטית במתח').defaultSets", context), 2);
+  assert.equal(vm.runInContext("exercises.find(e => e.name === 'החזקה סטטית במתח').restSeconds", context), 105);
+  assert.equal(context.settings.restSeconds, 135);
+  assert.equal(vm.runInContext("exercises.find(e => e.name === 'לחיצת חזה').restSeconds", context), 120);
+});
+
+test('exercise migrations add each new exercise once and apply rest overrides before renaming', () => {
+  const context = migrationContext();
+  context.db.saveExercises([{ id: 'old', name: 'כפיפת מרפקים בישיבה (ביצפס)', defaultSets: 3 }]);
+  context.init();
+  assert.equal(vm.runInContext("exercises.find(e => e.id === 'old').restSeconds", context), 120);
+  const count = context.exercises.length;
+  context.init();
+  assert.equal(context.exercises.length, count);
+  for (const name of ['גרביטון', 'סקוואט', 'כפיפות בטן לצדדים', 'לחיצת כתפיים בישיבה']) {
+    assert.equal(context.exercises.filter((entry) => entry.name === name).length, 1);
+  }
+});
+
+test('local history, active weights, settings, and profile survive a fresh module instance', () => {
+  const stored = new Map();
+  const storage = { getItem: (key) => stored.get(key) || null, setItem: (key, value) => stored.set(key, value),
+    removeItem: (key) => stored.delete(key) };
+  const createDb = () => {
+    const context = vm.createContext({ localStorage: storage });
+    vm.runInContext(read('www/js/db.js').replace(/^export /gm, ''), context);
+    return context;
+  };
+  const before = createDb();
+  before.saveWorkouts([{ id: 'history', entries: [{ sets: [{ weightKg: 22.5, reps: 12, completed: true }] }] }]);
+  before.saveActiveSession({ entries: [{ sets: [{ weightKg: '27.5', reps: '9', completed: false }] }] });
+  before.saveSettings({ restSeconds: 135, voiceCommandsEnabled: false, faceIdEnabled: true });
+  before.saveProfile({ weightHistory: [{ dateISO: '2026-10-18', weightKg: 80 }] });
+  const after = createDb();
+  assert.equal(after.getWorkouts()[0].entries[0].sets[0].weightKg, 22.5);
+  assert.equal(after.getActiveSession().entries[0].sets[0].weightKg, '27.5');
+  assert.equal(after.getSettings().voiceCommandsEnabled, false);
+  assert.equal(after.getSettings().faceIdEnabled, true);
+  assert.equal(after.getProfile().weightHistory[0].weightKg, 80);
+});
+
+for (const finish of [false, true]) {
+  test(`${finish ? 'finishing' : 'cancelling'} clears rest/hold timers without losing saved history`, () => {
+    const calls = [];
+    let saved = null;
+    const context = vm.createContext({
+      activeSession: { id: 'workout', running: true, startedAt: '2026-10-18T07:00:00Z', entries: [
+        { exerciseId: 'bench', exerciseName: 'Bench', sets: [
+          { weightKg: 20, reps: 12, completed: true }, { weightKg: 25, reps: 6, completed: false },
+        ] },
+      ] },
+      workouts: [], settings: { voiceAnnouncements: false }, voiceCountingState: {}, lastVoiceAction: {},
+      holdTimers: new Map([['bench:0', { intervalId: 42 }]]),
+      restTimer: { stop: () => calls.push('restStop') },
+      stopwatch: { stop: () => 120 },
+      clearInterval: (id) => calls.push(id),
+      db: { saveWorkouts: (data) => { saved = data; }, clearActiveSession: () => calls.push('clearDraft') },
+      buildDraftSession: () => ({ running: false, entries: [] }),
+      updateVoiceBadgeForListeningState() {}, renderWorkoutTab() {}, renderHistoryTab() {},
+      showToast() {}, showCelebration() {},
+      syncWorkoutActivity() {},
+      el: () => ({ classList: { add() {}, remove() {} } }),
+      native: { isNative: () => true, bgCancelAnnouncements() {}, bgStopKeepAlive() {} },
+      syncWorkoutToHealth: () => calls.push('health'),
+    });
+    vm.runInContext(section('function doCancelWorkout()', 'const CELEBRATION_MESSAGES'), context);
+    vm.runInContext(section('function finishWorkout()', 'function persistActiveSession()'), context);
+    vm.runInContext(section('function stopWorkoutTimers()', 'function renderWorkoutTab()'), context);
+    if (finish) context.finishWorkout(); else context.doCancelWorkout();
+    assert.ok(calls.includes('restStop') && calls.includes(42) && calls.includes('clearDraft'));
+    assert.equal(context.holdTimers.size, 0);
+    assert.equal(context.lastVoiceAction, null);
+    if (finish) {
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0].entries[0].sets.length, 1);
+      assert.equal(saved[0].entries[0].sets[0].weightKg, 20);
+      assert.ok(calls.includes('health'));
+    } else {
+      assert.equal(saved, null);
+      assert.ok(!calls.includes('health'));
+    }
+  });
+}
+
+test('volume and set metrics exclude warm-up/cool-down without mutating historical values', () => {
+  const workout = { entries: [
+    { type: 'cardio', durationSec: 300 },
+    { exerciseId: 'bench', sets: [{ weightKg: 20, reps: 12 }, { weightKg: 25, reps: 10 }] },
+  ] };
+  const before = JSON.stringify(workout);
+  const context = vm.createContext({});
+  vm.runInContext(section('function computeVolume(', 'function formatDate('), context);
+  assert.equal(context.computeVolume(workout), 490);
+  assert.equal(JSON.stringify(workout), before);
+});
+
+function activityContext() {
+  const calls = [], messages = [];
+  const context = vm.createContext({
+    activeSession: { id: 'session', running: true, startedAt: '2026-10-18T08:00:00Z',
+      currentExerciseId: 'bench', entries: [
+        { exerciseId: 'warmup', type: 'cardio', durationSec: 300, completed: true },
+        { exerciseId: 'bench', exerciseName: 'Bench', sets: [{ completed: true }, { completed: false }] },
+        { exerciseId: 'hold', exerciseName: 'Hold', sets: [{ completed: false }] },
+      ] },
+    exercises: [{ id: 'hold', holdSeconds: 15 }], holdTimers: new Map(),
+    restTimer: { running: false, isRunning() { return this.running; } },
+    native: { isNative: () => true, syncWorkoutActivity: async (data) => {
+      calls.push(data); return { ok: true, active: data.running };
+    } },
+    appInitialized: true, activitySyncQueued: false, activitySnapshotKey: '',
+    activitySyncChain: Promise.resolve(), activityError: '',
+    queueMicrotask, console, el: () => null, showToast: (message) => messages.push(message),
+    isEntryDone: (entry) => entry.type === 'cardio' ? entry.completed : entry.sets.every((set) => set.completed),
+  });
+  vm.runInContext(section('function buildWorkoutActivityPayload()', 'function stopWorkoutTimers()'), context);
+  return { context, calls, messages };
+}
+
+const settleActivity = async (context) => {
+  await new Promise((resolve) => setImmediate(resolve));
+  await context.activitySyncChain;
+};
+
+test('Live Activity uses absolute timestamps and counts strength sets, not cardio rows', () => {
+  const { context } = activityContext();
+  let payload = context.buildWorkoutActivityPayload();
+  assert.equal(payload.startMillis, Date.parse('2026-10-18T08:00:00Z'));
+  assert.equal(payload.exerciseName, 'Bench');
+  assert.equal(payload.totalSets, 3);
+  assert.equal(payload.completedSets, 1);
+  assert.equal(payload.phase, 'workout');
+  Object.assign(context.restTimer, { running: true, endAt: 200000, totalSeconds: 90 });
+  payload = context.buildWorkoutActivityPayload();
+  assert.equal(payload.phase, 'rest');
+  assert.equal(payload.phaseStartMillis, 110000);
+  assert.equal(payload.phaseEndMillis, 200000);
+  context.restTimer.running = false;
+  context.holdTimers.set('hold:0', { startedAt: 100000 });
+  payload = context.buildWorkoutActivityPayload();
+  assert.equal(payload.phase, 'hold');
+  assert.equal(payload.exerciseName, 'Hold');
+  assert.equal(payload.phaseEndMillis, 115000);
+  context.holdTimers.clear();
+  const cardio = context.activeSession.entries[0];
+  Object.assign(cardio, { completed: false, startedAt: 100000, elapsedSec: 70 });
+  payload = context.buildWorkoutActivityPayload();
+  assert.equal(payload.phase, 'cardio');
+  assert.equal(payload.phaseEndMillis, 330000);
+  context.activeSession.running = false;
+  assert.equal(JSON.stringify(context.buildWorkoutActivityPayload()), '{"running":false}');
+});
+
+test('Live Activity batches unchanged edits and serializes start, rest, extension, skip, and finish', async () => {
+  const { context, calls } = activityContext();
+  for (let i = 0; i < 20; i++) context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.equal(calls.length, 1);
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.equal(calls.length, 1);
+  Object.assign(context.restTimer, { running: true, endAt: 200000, totalSeconds: 90 });
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  context.restTimer.endAt += 15000;
+  context.restTimer.totalSeconds += 15;
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  context.restTimer.running = false;
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  context.activeSession.running = false;
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.deepEqual(calls.map((data) => data.phase || 'ended'), ['workout', 'rest', 'rest', 'workout', 'ended']);
+  assert.equal(calls[2].phaseEndMillis - calls[1].phaseEndMillis, 15000);
+});
+
+test('Live Activity denial is visible, retryable, and does not stop the workout', async () => {
+  const { context, messages } = activityContext();
+  context.native.syncWorkoutActivity = async () => ({ ok: false, reason: 'disabled in iPhone Settings' });
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /disabled/);
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.activitySnapshotKey, '');
+});
+
+test('browser never calls ActivityKit and native bridge failures cannot report successful activation', async () => {
+  const { context, calls } = activityContext();
+  context.native.isNative = () => false;
+  context.syncWorkoutActivity();
+  await settleActivity(context);
+  assert.equal(calls.length, 0);
+  const bridge = bridgeContext({ LiveActivityBridge: { sync: async () => { throw Error('not authorized'); } } });
+  const result = await bridge.syncWorkoutActivity({ running: true });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /not authorized/);
+});
+
+test('Live Activity extension is embedded, shares its exact data type, signs separately, and supports workout links', () => {
+  const project = read('ios/App/App.xcodeproj/project.pbxproj');
+  assert.match(project, /dstSubfolderSpec = 13/);
+  assert.match(project, /productType = "com.apple.product-type.app-extension"/);
+  assert.match(project, /WorkoutActivityAttributes.swift in Extension Sources/);
+  assert.match(project, /PROVISIONING_PROFILE_SPECIFIER = "AutoFit Live Activity AppStore"/);
+  assert.match(read('.github/workflows/ios-build.yml'), /<key>com.sasidaniel.autofit.liveactivity<\/key>/);
+  assert.match(read('ios/App/App/Info.plist'), /<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
+  const widget = read('ios/App/AutoFitLiveActivity/AutoFitLiveActivity.swift');
+  assert.match(widget, /Text\(timerInterval: start\.\.\.end, countsDown: true\)/);
+  assert.match(widget, /autofit:\/\/workout/);
+  for (const presentation of ['compactLeading', 'compactTrailing', 'minimal', 'DynamicIslandExpandedRegion']) {
+    assert.ok(widget.includes(presentation));
+  }
+  assert.doesNotMatch(widget, /Button\(|AppIntent/);
+  assert.match(read('ios/App/App/LiveActivityBridgePlugin.swift'), /AutoFitDismissedActivitySession/);
+  assert.match(read('ios/App/App/SceneDelegate.swift'), /connectionOptions.urlContexts.forEach/);
+});
+
+test('rest state restores its original deadline without replaying old interval announcements', () => {
+  const { rest, advance } = timerContext();
+  const events = [];
+  const timer = rest({ onTick() {}, onInterval: (n) => events.push(n), onDone: () => events.push('done') });
+  advance(70);
+  timer.restore({ endAt: 91000, totalSeconds: 90, lastAnnouncedElapsed: 0 });
+  assert.equal(timer.endAt, 91000);
+  assert.equal(timer.lastAnnouncedElapsed, 60);
+  assert.equal(events.length, 0);
+  advance(20); timer.forceTick(); timer.forceTick();
+  assert.deepEqual(events, ['done']);
+});
+
+test('throttled rest ticks do not announce obsolete 30-second marks on resume', () => {
+  const { rest, advance } = timerContext();
+  const events = [];
+  const timer = rest({ onTick() {}, onInterval: (n) => events.push(n), onDone() {} });
+  timer.start(120);
+  advance(75); timer.forceTick(); timer.forceTick();
+  assert.equal(events.length, 0);
+  advance(15); timer.forceTick();
+  assert.deepEqual(events, [90]);
+});
+
+test('negated speech and app announcements cannot finish a set or overwrite its count', () => {
+  const entry = { exerciseId: 'bench', sets: [{ reps: '', completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('התחל סט');
+  context.handleVoiceTranscript('שלוש');
+  for (const phrase of ['לא סיימתי', 'עוד לא סט הסתיים', 'עברו 30 שניות']) context.handleVoiceTranscript(phrase);
+  assert.equal(entry.sets[0].reps, 3);
+  assert.equal(entry.sets[0].completed, false);
+});
+
+test('rep counting keeps its model target when exercises are reordered', () => {
+  const entry = { exerciseId: 'bench', sets: [{ reps: '', completed: false }] };
+  const other = { exerciseId: 'row', sets: [{ reps: '', completed: false }] };
+  const { context } = voiceContext([entry, other]);
+  context.handleVoiceTranscript('התחל סט');
+  context.activeSession.entries.reverse();
+  context.qs = () => null;
+  context.handleVoiceTranscript('שבע');
+  assert.equal(entry.sets[0].reps, 7);
+  assert.equal(other.sets[0].reps, '');
+});
+
+test('full-program weeks honor custom default set counts above three', () => {
+  const context = vm.createContext({ settings: { programWeek: 3 } });
+  vm.runInContext(section('function setsForWeek(', 'function applyProgramWeekToActiveSession('), context);
+  assert.equal(context.setsForWeek({ defaultSets: 5 }), 5);
+  context.settings.programWeek = 1;
+  assert.equal(context.setsForWeek({ defaultSets: 5 }), 1);
+  context.settings.programWeek = 2;
+  assert.equal(context.setsForWeek({ defaultSets: 5 }), 2);
+  assert.equal(context.setsForWeek({ defaultSets: 1 }), 1);
+});
+
+test('removing a populated or running set requires confirmation and clears its timer and voice references', () => {
+  let confirmed = false;
+  const entry = { exerciseId: 'hold', sets: [{ completed: false }, { reps: 12, completed: true }] };
+  const last = entry.sets[1], cleared = [];
+  const context = vm.createContext({
+    confirm: () => confirmed, holdTimers: new Map([['hold:1', { intervalId: 42 }]]),
+    voiceCountingState: { entry, set: last }, lastVoiceAction: { entry, set: last },
+    clearInterval: (id) => cleared.push(id), persistActiveSession() {}, renderWorkoutTab() {},
+    updateVoiceBadgeForListeningState() {},
+  });
+  vm.runInContext(section('function removeLastWorkoutSet(', 'function updateProgress('), context);
+  context.removeLastWorkoutSet(entry);
+  assert.equal(entry.sets.length, 2);
+  assert.equal(context.holdTimers.size, 1);
+  confirmed = true;
+  context.removeLastWorkoutSet(entry);
+  assert.equal(entry.sets.length, 1);
+  assert.equal(context.holdTimers.size, 0);
+  assert.equal(context.voiceCountingState, null);
+  assert.equal(context.lastVoiceAction, null);
+  assert.deepEqual(cleared, [42]);
+});
+
+test('a hold target announces only once even after its display is rebound', () => {
+  const { context, timers, advance } = timerContext();
+  let announcements = 0;
+  Object.assign(context, { persistActiveSession() {}, formatHMS: String, playBeep() {}, notify() {},
+    settings: { voiceAnnouncements: true }, speak: () => announcements++ });
+  vm.runInContext(section('function startHoldTicking(', 'function renderHoldCell('), context);
+  const state = { startedAt: context.Date.now(), announced: false }, set = {};
+  const display = { classList: { add() {} } };
+  context.startHoldTicking(display, state, 15, set);
+  advance(15);
+  [...timers.values()][0]();
+  context.startHoldTicking({ classList: { add() {} } }, state, 15, set);
+  for (const tick of timers.values()) tick();
+  assert.equal(announcements, 1);
+  assert.equal(set.holdAnnounced, true);
+});
+
+test('finishing or cancelling clears the cloud copy of an active workout as well as local storage', () => {
+  const stored = new Map(), sync = [];
+  const context = vm.createContext({
+    localStorage: { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value),
+      removeItem: (key) => stored.delete(key) },
+  });
+  vm.runInContext(read('www/js/db.js').replace(/^export /gm, ''), context);
+  context.setSyncHook((key, value) => sync.push([key, value]));
+  context.saveActiveSession({ running: true });
+  context.clearActiveSession();
+  assert.equal(context.getActiveSession(), null);
+  assert.deepEqual(sync.at(-1), ['ft_active_session_v1', null]);
+});
+
+test('native announcements use system-managed speech, without permanently ducking microphone or startup audio', async () => {
+  const calls = [];
+  const bridge = bridgeContext({ BackgroundAnnouncer: { speakNow: async (data) => calls.push(data.text) } });
+  await bridge.announce('test announcement');
+  assert.deepEqual(calls, ['test announcement']);
+  assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /usesApplicationAudioSession = false/);
+  assert.doesNotMatch(read('ios/App/App/VoiceCommandPlugin.swift'), /\.duckOthers/);
+  assert.doesNotMatch(read('ios/App/App/AppDelegate.swift'), /\.duckOthers/);
+});
+
+test('offline navigation with query parameters falls back to the cached app without deleting unrelated caches', async () => {
+  const handlers = {}, deleted = [];
+  const offline = { app: true };
+  const context = vm.createContext({
+    self: { location: { origin: 'https://example.test' }, clients: { claim: async () => {} },
+      addEventListener: (name, callback) => { handlers[name] = callback; } },
+    URL, Response, fetch: async () => { throw Error('offline'); },
+    caches: {
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40'],
+      delete: async (key) => { deleted.push(key); },
+      match: async (request) => request === './index.html' ? offline : undefined,
+    },
+  });
+  vm.runInContext(read('www/service-worker.js'), context);
+  let done;
+  handlers.activate({ waitUntil: (promise) => { done = promise; } });
+  await done;
+  assert.deepEqual(deleted, ['autofit-v38']);
+  let response;
+  handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
+    respondWith: (promise) => { response = promise; } });
+  assert.equal(await response, offline);
+});
+
+test('every offline-precache asset exists in the bundled app', () => {
+  const worker = read('www/service-worker.js');
+  const assets = [...worker.matchAll(/'(\.\/[^']*)'/g)].map((match) => match[1]);
+  for (const asset of assets) assert.ok(fs.existsSync(path.join(root, 'www', asset)), asset);
+});
+
+test('pausing and resuming cardio banks elapsed time without shortening the history duration', () => {
+  let now = 1000000;
+  const callbacks = {};
+  const entry = { exerciseId: 'warmup', type: 'cardio', exerciseName: 'Walk', durationSec: 300 };
+  const context = vm.createContext({
+    Date: { now: () => now }, exercises: [], activeSession: { entries: [entry] },
+    document: { createElement: () => ({}) }, formatHMS: String, escapeHtml: String,
+    qs: (selector) => ({ addEventListener: (name, callback) => { callbacks[selector] = callback; } }),
+    ensureWorkoutStarted() {}, persistActiveSession() {}, renderWorkoutTab() {},
+    restTimer: { stop() {} }, el: () => ({ classList: { add() {} } }),
+  });
+  vm.runInContext(section('function renderCardioCard(', 'function tickCardioTimers('), context);
+  context.renderCardioCard(entry, 1);
+  callbacks['.btnCardioStart']();
+  now += 70000;
+  callbacks['.btnCardioStart']();
+  assert.equal(entry.durationSec, 300);
+  assert.equal(entry.elapsedSec, 70);
+  assert.equal(entry.startedAt, null);
+  callbacks['.btnCardioStart']();
+  now += 10000;
+  callbacks['.btnCardioStart']();
+  assert.equal(entry.elapsedSec, 80);
+  assert.equal(entry.durationSec, 300);
+  callbacks['.btnCardioDone']();
+  assert.equal(entry.completed, true);
+  assert.equal(entry.elapsedSec, 300);
+  callbacks['.btnCardioReset']();
+  assert.equal(entry.elapsedSec, 0);
+  assert.equal(entry.completed, false);
+});
+
+test('cloud-restored history and active weights enter memory before initialization, without destructive reloads', async () => {
+  const data = {
+    ft_settings_v1: JSON.stringify({ onboardingComplete: true, faceIdEnabled: false }),
+    ft_profile_v1: JSON.stringify({ name: 'Restored' }),
+    ft_workouts_v1: JSON.stringify([{ id: 'old', entries: [] }]),
+    ft_active_session_v1: JSON.stringify({ id: 'unfinished', entries: [{ sets: [{ weightKg: 27.5 }] }] }),
+  };
+  const stored = new Map();
+  let cloudChanged, observed;
+  const context = vm.createContext({
+    settings: {}, profile: {}, workouts: [], activeSession: null, console,
+    native: { isNative: () => true, cloudGetAll: async () => data,
+      onCloudChanged: (callback) => { cloudChanged = callback; },
+      onCloudError() {}, onVoiceTranscript() {}, onVoiceError() {}, onWorkoutActivityOpen() {} },
+    localStorage: { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) },
+    db: {
+      getSettings: () => JSON.parse(stored.get('ft_settings_v1')),
+      getProfile: () => JSON.parse(stored.get('ft_profile_v1')),
+      getWorkouts: () => JSON.parse(stored.get('ft_workouts_v1')),
+      getActiveSession: () => JSON.parse(stored.get('ft_active_session_v1')),
+      setSyncHook() {},
+    },
+    waitForSplashMinimum: async () => {}, hideSplash() {}, URLSearchParams,
+    location: { search: '', reload: () => assert.fail('A cloud update must not reload an active workout') },
+    init: () => { observed = { workouts: context.workouts, activeSession: context.activeSession }; },
+  });
+  vm.runInContext(section('async function restoreFromCloudIfEmpty()', '\n}') + '\n}', context);
+  vm.runInContext(section('async function bootstrap()', 'function waitForSplashMinimum('), context);
+  await context.bootstrap();
+  assert.equal(observed.workouts[0].id, 'old');
+  assert.equal(observed.activeSession.entries[0].sets[0].weightKg, 27.5);
+  cloudChanged();
+  assert.equal(context.activeSession.id, 'unfinished');
+});
+
+test('failed or cancelled Face ID offers a working retry without destroying the app document', async () => {
+  let click, removed = false, attempts = 0;
+  const button = { disabled: false, addEventListener: (_, callback) => { click = callback; } };
+  const status = {};
+  const overlay = { setAttribute() {}, remove: () => { removed = true; } };
+  const context = vm.createContext({
+    native: { biometricVerify: async () => ++attempts >= 3 }, hideSplash() {},
+    document: { createElement: () => overlay, body: { appendChild() {} } },
+    qs: (selector) => selector === '.btnRetryUnlock' ? button : status,
+  });
+  vm.runInContext(section('async function unlockWithBiometrics()', '// Native-only bootstrap:'), context);
+  const unlocking = context.unlockWithBiometrics();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof click, 'function');
+  await click();
+  assert.equal(removed, false);
+  assert.equal(button.disabled, false);
+  await click();
+  await unlocking;
+  assert.equal(removed, true);
+  assert.equal(attempts, 3);
+});
+
+test('exercise sorting does not stack handlers across renders and cancels a gesture cleanly', () => {
+  const listeners = new Map(), reordered = [];
+  const dragged = { dataset: { id: 'second' }, classList: { add() {}, remove() {} },
+    setPointerCapture() {}, releasePointerCapture() {} };
+  const children = [{ dataset: { id: 'first' } }, dragged];
+  const list = {};
+  const context = vm.createContext({
+    qsa: () => children,
+    document: { addEventListener: (name, callback) => listeners.set(name, callback),
+      removeEventListener: (name) => listeners.delete(name) },
+  });
+  vm.runInContext(section('function makeSortable(', 'function reorderActiveSessionToMatchExercises('), context);
+  for (let i = 0; i < 20; i++) context.makeSortable(list, (order) => reordered.push(Array.from(order)));
+  list.onpointerdown({ pointerId: 1, preventDefault() {},
+    target: { closest: () => ({ closest: () => dragged }) } });
+  listeners.get('pointercancel')({ type: 'pointercancel' });
+  assert.equal(reordered.length, 1);
+  assert.deepEqual(reordered[0], ['first', 'second']);
+  assert.equal(listeners.size, 0);
+});
+
+test('invalid tab links preserve the current screen instead of throwing after hiding all panels', () => {
+  let changed = false, logged = false;
+  const context = vm.createContext({
+    el: () => null, qsa: () => { changed = true; return []; },
+    console: { warn: () => { logged = true; } },
+  });
+  vm.runInContext(section('function switchTab(', '/* ---------------- live clock'), context);
+  context.switchTab('missing-tab');
+  assert.equal(changed, false);
+  assert.equal(logged, true);
+});
+
+test('local storage quota failures are visible, do not report cloud success, and retain prior data', () => {
+  const previous = JSON.stringify([{ id: 'saved' }]), events = [];
+  let synced = false;
+  class StorageEvent {
+    constructor(type, options) { this.type = type; this.detail = options.detail; }
+  }
+  const context = vm.createContext({
+    localStorage: { getItem: () => previous, setItem: () => { throw Error('Quota exceeded'); } },
+    console: { error() {} }, window: { dispatchEvent: (event) => events.push(event) }, CustomEvent: StorageEvent,
+  });
+  vm.runInContext(read('www/js/db.js').replace(/^export /gm, ''), context);
+  context.setSyncHook(() => { synced = true; });
+  assert.throws(() => context.saveWorkouts([{ id: 'new' }]), /Quota exceeded/);
+  assert.equal(synced, false);
+  assert.equal(context.getWorkouts()[0].id, 'saved');
+  assert.equal(events[0].type, 'autofit-storage-error');
 });

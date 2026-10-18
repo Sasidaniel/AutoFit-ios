@@ -40,12 +40,20 @@ let activeSession = db.getActiveSession(); // { id, startedAt, accumulatedSec, r
 let workouts = db.getWorkouts();
 // transient (not persisted) running hold-timers for hold-type exercises (e.g. plank), keyed by "exerciseId:setIdx"
 const holdTimers = new Map();
+let appInitialized = false;
+let pendingWorkoutNavigation = false;
+let activitySyncQueued = false;
+let activitySnapshotKey = '';
+let activitySyncChain = Promise.resolve();
+let activityError = '';
+let cloudBackupWarningShown = false;
 
 const stopwatch = new Stopwatch((elapsed) => {
   el('workoutTimerDisplay').textContent = formatHMS(elapsed);
 });
 let restDoneMessage = 'אפשר להמשיך לסט הבא';
 const restTimer = new RestTimer({
+  onChange: () => persistRestTimerState(),
   onTick: (remaining) => {
     el('restTimeDisplay').textContent = formatHMS(remaining);
   },
@@ -53,6 +61,7 @@ const restTimer = new RestTimer({
     if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
       speak(`עברו ${elapsedSeconds} שניות`);
     }
+    persistRestTimerState();
   },
   onDone: () => {
     playBeep();
@@ -128,6 +137,8 @@ function releaseWakeLock() {
     wakeLockRef.release().catch(() => {});
     wakeLockRef = null;
   }
+  window.addEventListener('autofit-audio-error', (event) => showToast('הודעה קולית נכשלה: ' + event.detail));
+  window.addEventListener('autofit-storage-error', () => showToast('השמירה במכשיר נכשלה. הנתונים הקודמים לא נמחקו; אל תסיר את האפליקציה.'));
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
@@ -138,6 +149,7 @@ document.addEventListener('visibilitychange', () => {
     tickCardioTimers();
     requestWakeLock();
     if (native.isNative()) native.bgCancelAnnouncements();
+    syncWorkoutActivity();
   } else if (native.isNative()) {
     // App is about to be minimized/backgrounded — hand off any pending voice
     // announcements (rest timer, hold timers) to native code so they still fire.
@@ -160,6 +172,12 @@ function init() {
     exercises = SEED_EXERCISES.map((e) => ({ id: db.uid(), active: true, ...e }));
     db.saveExercises(exercises);
     settings.seedSynced = true;
+    settings.exerciseDefaultsV3Applied = true;
+    settings.restOverrideV1Applied = true;
+    settings.newExercisesBatch1Applied = true;
+    settings.exerciseTextCleanupV1Applied = true;
+    settings.notesCleanupV1Applied = true;
+    settings.exerciseContentPatchV2 = true;
     db.saveSettings(settings);
   } else {
     // migrate older saved exercises that are missing newer fields (images, hold-type, active flag)
@@ -198,7 +216,8 @@ function init() {
     if (!settings.restOverrideV1Applied) {
       const longerRestNames = ['לחיצת חזה', 'כפיפת מרפקים בישיבה'];
       exercises.forEach((ex) => {
-        if (longerRestNames.includes(ex.name)) ex.restSeconds = 120;
+        const name = EXERCISE_CONTENT_PATCH_V2[ex.name]?.newName || ex.name;
+        if (longerRestNames.includes(name)) ex.restSeconds = 120;
       });
       settings.restOverrideV1Applied = true;
       db.saveSettings(settings);
@@ -311,10 +330,6 @@ function init() {
       db.saveSettings(settings);
     }
   }
-  if (settings.restSeconds !== 90) {
-    settings.restSeconds = 90;
-    db.saveSettings(settings);
-  }
   // one-time bump: program week now defaults to 3 (full sets) instead of the old
   // ramp-up default of 1, since the program no longer needs a gradual sets ramp-up
   if (!settings.programWeekV2Applied) {
@@ -328,11 +343,13 @@ function init() {
     // migrate existing active sessions that don't yet have the warm-up/cool-down walk entries
     let sessionMigrated = false;
     const lastByExercise = getLastCompletedValuesByExercise();
-    if (!activeSession.entries.some((e) => e.exerciseId === 'warmup')) {
+    if (!activeSession.entries.some((e) => e.exerciseId === 'warmup')
+      && exercises.some((e) => e.id === 'warmup' && e.active !== false)) {
       activeSession.entries.unshift(makeCardioEntry('warmup'));
       sessionMigrated = true;
     }
-    if (!activeSession.entries.some((e) => e.exerciseId === 'cooldown')) {
+    if (!activeSession.entries.some((e) => e.exerciseId === 'cooldown')
+      && exercises.some((e) => e.id === 'cooldown' && e.active !== false)) {
       activeSession.entries.push(makeCardioEntry('cooldown'));
       sessionMigrated = true;
     }
@@ -393,14 +410,39 @@ function init() {
 
   if (activeSession.running) {
     stopwatch.start(new Date(activeSession.startedAt).getTime());
+    if (native.isNative()) native.bgStartKeepAlive().then((started) => {
+      if (!started) showToast('לא ניתן לשחזר הודעות קוליות ברקע. נתוני האימון נשמרו.');
+    });
     el('btnStartWorkout').classList.add('hidden');
     el('btnFinishWorkout').classList.remove('hidden');
+    if (activeSession.rest) {
+      const savedRest = activeSession.rest;
+      restDoneMessage = savedRest.doneMessage || 'אפשר להמשיך לסט הבא';
+      el('restExerciseName').textContent = savedRest.exerciseName || '';
+      el('restOverlay').classList.remove('hidden');
+      try { restTimer.restore(savedRest); }
+      catch (error) {
+        restTimer.stop();
+        el('restOverlay').classList.add('hidden');
+        showToast('לא ניתן לשחזר את טיימר המנוחה: ' + error.message);
+      }
+    }
   }
 
   renderDashboard(); // initial; chart lib loaded via defer, retry if not ready
   waitForChartJs().then(renderDashboard);
 
   registerServiceWorker();
+  appInitialized = true;
+  syncWorkoutActivity();
+  if (native.isNative()) {
+    native.consumeWorkoutActivityLink().then((requested) => {
+      if (requested || pendingWorkoutNavigation) {
+        pendingWorkoutNavigation = false;
+        switchTab('workout');
+      }
+    });
+  }
 }
 
 function waitForChartJs() {
@@ -420,9 +462,14 @@ function wireTabs() {
   el('btnOpenSettings').addEventListener('click', () => switchTab('settings'));
 }
 function switchTab(tab) {
+  const panel = el(`tab-${tab}`);
+  if (!panel || !panel.classList.contains('tab-panel')) {
+    console.warn('Unknown application tab', tab);
+    return;
+  }
   qsa('.tab-panel').forEach((p) => p.classList.remove('active'));
   qsa('.tab-btn').forEach((b) => b.classList.remove('active'));
-  el(`tab-${tab}`).classList.add('active');
+  panel.classList.add('active');
   const btn = qs(`.tab-btn[data-tab="${tab}"]`);
   if (btn) btn.classList.add('active');
   if (tab === 'dashboard') renderDashboard();
@@ -480,7 +527,7 @@ function makeCardioEntry(kind) {
 
 function setsForWeek(ex) {
   const week = Math.max(1, Number(settings.programWeek) || 3);
-  return Math.max(1, Math.min(week, ex.defaultSets || 1));
+  return week >= 3 ? Math.max(1, ex.defaultSets || 1) : Math.max(1, Math.min(week, ex.defaultSets || 1));
 }
 
 function applyProgramWeekToActiveSession() {
@@ -519,6 +566,20 @@ function getLastCompletedValuesByExercise() {
 }
 
 function wireWorkoutControls() {
+  const focusEntry = (event) => {
+    const card = event.target.closest('.exercise-card');
+    if (!card || event.target.closest('.btnShowPhoto')) return;
+    const entry = activeSession.entries[Number(card.dataset.entryIndex)];
+    if (entry) {
+      activeSession.currentExerciseId = entry.exerciseId;
+      syncWorkoutActivity();
+    }
+  };
+  ['click', 'input', 'change'].forEach((type) => el('exerciseList').addEventListener(type, focusEntry, true));
+  if (native.isNative()) {
+    el('btnEnableWorkoutVoice').addEventListener('click', requestVoiceActivation);
+    updateVoiceBadgeForListeningState();
+  }
   el('btnStartWorkout').addEventListener('click', () => {
     primeSpeech();
     ensureWorkoutStarted();
@@ -550,7 +611,9 @@ function ensureWorkoutStarted() {
   el('btnStartWorkout').classList.add('hidden');
   el('btnFinishWorkout').classList.remove('hidden');
   if (settings.voiceAnnouncements) speak('אימון מהנה ובהצלחה');
-  if (native.isNative()) native.bgStartKeepAlive();
+  if (native.isNative()) native.bgStartKeepAlive().then((started) => {
+    if (!started) showToast('הפעלת ההודעות הקוליות ברקע נכשלה. טיימר המסך והפעילות החיה ממשיכים לפעול.');
+  });
 }
 
 // Cancels the current workout without saving anything to history, resetting
@@ -565,10 +628,12 @@ function cancelWorkout() {
 // native dialog (the user already explicitly asked for the voice command to
 // act immediately, same as every other voice command).
 function doCancelWorkout() {
+  stopWorkoutTimers();
   stopwatch.stop();
   activeSession.running = false;
   db.clearActiveSession();
   activeSession = buildDraftSession();
+  syncWorkoutActivity();
   voiceCountingState = null;
   updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
@@ -610,6 +675,7 @@ function showCelebration(record) {
 }
 
 function finishWorkout() {
+  stopWorkoutTimers();
   const durationSec = stopwatch.stop();
   activeSession.running = false;
   activeSession.accumulatedSec = durationSec;
@@ -653,6 +719,7 @@ function finishWorkout() {
 
   db.clearActiveSession();
   activeSession = buildDraftSession();
+  syncWorkoutActivity();
   voiceCountingState = null;
   updateVoiceBadgeForListeningState();
   el('workoutTimerDisplay').textContent = '00:00';
@@ -665,6 +732,100 @@ function finishWorkout() {
 
 function persistActiveSession() {
   db.saveActiveSession(activeSession);
+  syncWorkoutActivity();
+}
+
+function persistRestTimerState() {
+  if (!activeSession) return;
+  activeSession.rest = restTimer.isRunning() ? {
+    endAt: restTimer.endAt, totalSeconds: restTimer.totalSeconds,
+    lastAnnouncedElapsed: restTimer.lastAnnouncedElapsed,
+    exerciseName: el('restExerciseName').textContent, doneMessage: restDoneMessage,
+  } : null;
+  if (activeSession.running) db.saveActiveSession(activeSession);
+  syncWorkoutActivity();
+}
+
+function buildWorkoutActivityPayload() {
+  if (!activeSession?.running) return { running: false };
+  const strength = activeSession.entries.filter((entry) => entry.type !== 'cardio');
+  const runningHold = [...holdTimers].find(([key]) =>
+    key.startsWith(`${activeSession.currentExerciseId}:`)) || [...holdTimers][0];
+  const cardio = activeSession.entries.find((entry) =>
+    entry.type === 'cardio' && entry.startedAt && !entry.completed);
+  let current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId);
+  let phase = 'workout', phaseStartMillis = null, phaseEndMillis = null;
+  if (restTimer.isRunning()) {
+    phase = 'rest';
+    phaseEndMillis = restTimer.endAt;
+    phaseStartMillis = phaseEndMillis - restTimer.totalSeconds * 1000;
+  } else if (runningHold) {
+    phase = 'hold';
+    const [key, state] = runningHold;
+    current = activeSession.entries.find((entry) => key.startsWith(`${entry.exerciseId}:`));
+    const exercise = exercises.find((entry) => entry.id === current?.exerciseId);
+    phaseStartMillis = state.startedAt;
+    phaseEndMillis = state.startedAt + (exercise?.holdSeconds || 15) * 1000;
+  } else if (cardio) {
+    phase = 'cardio';
+    current = cardio;
+    phaseStartMillis = cardio.startedAt;
+    phaseEndMillis = cardio.startedAt + Math.max(0, cardio.durationSec - (cardio.elapsedSec || 0)) * 1000;
+    if (phaseEndMillis <= phaseStartMillis) phase = 'workout';
+  }
+  current = current || activeSession.entries.find((entry) => !isEntryDone(entry));
+  if (phase === 'workout') { phaseStartMillis = null; phaseEndMillis = null; }
+  return {
+    running: true, sessionID: activeSession.id, startMillis: new Date(activeSession.startedAt).getTime(),
+    exerciseName: (current?.exerciseName || 'אימון כוח').slice(0, 120),
+    totalSets: strength.reduce((sum, entry) => sum + entry.sets.length, 0),
+    completedSets: strength.reduce((sum, entry) => sum + entry.sets.filter((set) => set.completed).length, 0),
+    phase, phaseStartMillis, phaseEndMillis,
+  };
+}
+
+function syncWorkoutActivity() {
+  if (!native.isNative() || !appInitialized || activitySyncQueued) return;
+  activitySyncQueued = true;
+  queueMicrotask(() => {
+    activitySyncQueued = false;
+    const snapshot = buildWorkoutActivityPayload();
+    const key = JSON.stringify(snapshot);
+    if (key === activitySnapshotKey) return;
+    activitySnapshotKey = key;
+    activitySyncChain = activitySyncChain.then(async () => {
+      const result = await native.syncWorkoutActivity(snapshot);
+      const status = el('liveActivityStatus');
+      if (!result.ok) {
+        if (activitySnapshotKey === key) activitySnapshotKey = '';
+        if (activityError !== result.reason) {
+          activityError = result.reason;
+          showToast('לא ניתן להציג פעילות חיה במסך הנעילה — ' + result.reason);
+        }
+        if (status) { status.textContent = 'פעילות חיה אינה זמינה: ' + result.reason; status.classList.remove('hidden'); }
+      } else {
+        activityError = '';
+        if (status) {
+          status.textContent = result.active ? '⏱ האימון מוצג גם במסך הנעילה וב־Dynamic Island'
+            : result.dismissed ? 'הפעילות החיה הוסתרה לאימון הזה. האימון ממשיך כרגיל.'
+              : 'הפעילות החיה תופיע בתחילת אימון, אם היא מאושרת בהגדרות האייפון.';
+          status.classList.remove('hidden');
+        }
+      }
+    }).catch((error) => {
+      activitySnapshotKey = '';
+      console.error('Workout Live Activity update failed', error);
+      showToast('עדכון הפעילות החיה נכשל: ' + error.message);
+    });
+  });
+}
+
+function stopWorkoutTimers() {
+  restTimer.stop();
+  el('restOverlay').classList.add('hidden');
+  holdTimers.forEach((state) => clearInterval(state.intervalId));
+  holdTimers.clear();
+  lastVoiceAction = null;
 }
 
 function renderWorkoutTab() {
@@ -771,6 +932,21 @@ function renderWorkoutTab() {
 
       checkBtn.addEventListener('click', () => {
         set.completed = !set.completed;
+        if (ex.inputType === 'hold') {
+          const key = `${entry.exerciseId}:${idx}`;
+          const timer = holdTimers.get(key);
+          if (timer) {
+            set.reps = Math.round((Date.now() - timer.startedAt) / 1000);
+            clearInterval(timer.intervalId);
+            holdTimers.delete(key);
+          }
+          delete set.holdStartedAt;
+          delete set.holdAnnounced;
+        }
+        if (voiceCountingState?.entry === entry && voiceCountingState.set === set) {
+          voiceCountingState = null;
+          updateVoiceBadgeForListeningState();
+        }
         checkBtn.classList.toggle('checked', set.completed);
         tr.classList.toggle('completed', set.completed);
         persistActiveSession();
@@ -781,6 +957,7 @@ function renderWorkoutTab() {
           const exerciseDone = entry.sets.every((s) => s.completed);
           startRestTimer(ex, exerciseDone, nextEntryName(entry));
         }
+        if (ex.inputType === 'hold') renderWorkoutTab();
       });
 
       tbody.appendChild(tr);
@@ -806,10 +983,7 @@ function renderWorkoutTab() {
       renderWorkoutTab();
     });
     qs('.btnRemoveSet', actions).addEventListener('click', () => {
-      if (entry.sets.length <= 1) return;
-      entry.sets.pop();
-      persistActiveSession();
-      renderWorkoutTab();
+      removeLastWorkoutSet(entry);
     });
     const restoreBtn = qs('.btnRestoreLast', actions);
     if (restoreBtn) {
@@ -826,6 +1000,25 @@ function renderWorkoutTab() {
   });
 
   updateProgress(totalSets, completedSets);
+  syncWorkoutActivity();
+}
+
+function removeLastWorkoutSet(entry) {
+  if (entry.sets.length <= 1) return;
+  const set = entry.sets.at(-1);
+  const key = `${entry.exerciseId}:${entry.sets.length - 1}`;
+  const timer = holdTimers.get(key);
+  if ((set.completed || set.weightKg || set.reps || timer)
+    && !confirm('בסט האחרון יש נתונים או מדידה פעילה. למחוק את הסט הזה?')) return;
+  if (timer) { clearInterval(timer.intervalId); holdTimers.delete(key); }
+  if (voiceCountingState?.set === set) {
+    voiceCountingState = null;
+    updateVoiceBadgeForListeningState();
+  }
+  if (lastVoiceAction?.set === set) lastVoiceAction = null;
+  entry.sets.pop();
+  persistActiveSession();
+  renderWorkoutTab();
 }
 
 function updateProgress(total, done) {
@@ -865,7 +1058,7 @@ function renderCardioCard(entry, number) {
       </div>
     </div>
     <div class="cardio-body">
-      <div class="cardio-timer-display" id="cardio-remaining-${entry.exerciseId}">${formatHMS(entry.startedAt ? Math.max(0, entry.durationSec - (Date.now() - entry.startedAt) / 1000) : entry.durationSec)}</div>
+      <div class="cardio-timer-display" id="cardio-remaining-${entry.exerciseId}">${formatHMS(Math.max(0, entry.durationSec - (entry.elapsedSec || 0) - (entry.startedAt ? (Date.now() - entry.startedAt) / 1000 : 0)))}</div>
       <div class="cardio-pace-row">
         <select class="select cardioLocation">
           <option value="" ${!entry.location ? 'selected' : ''}>מיקום (לא צויין)</option>
@@ -891,12 +1084,14 @@ function renderCardioCard(entry, number) {
   });
   qs('.btnCardioStart', card).addEventListener('click', () => {
     if (entry.startedAt && !entry.completed) {
-      // pause: bank the elapsed time by shrinking the remaining duration
       const elapsed = (Date.now() - entry.startedAt) / 1000;
-      entry.durationSec = Math.max(0, entry.durationSec - elapsed);
+      entry.elapsedSec = Math.min(entry.durationSec, (entry.elapsedSec || 0) + elapsed);
       entry.startedAt = null;
     } else {
       ensureWorkoutStarted();
+      restTimer.stop();
+      el('restOverlay').classList.add('hidden');
+      if (entry.completed) entry.elapsedSec = 0;
       entry.completed = false;
       entry.startedAt = Date.now();
     }
@@ -905,6 +1100,7 @@ function renderCardioCard(entry, number) {
   });
   qs('.btnCardioReset', card).addEventListener('click', () => {
     entry.durationSec = fullDurationSec;
+    entry.elapsedSec = 0;
     entry.startedAt = null;
     entry.completed = false;
     persistActiveSession();
@@ -912,6 +1108,8 @@ function renderCardioCard(entry, number) {
   });
   qs('.btnCardioDone', card).addEventListener('click', () => {
     entry.completed = !entry.completed;
+    if (entry.completed) ensureWorkoutStarted();
+    entry.elapsedSec = entry.completed ? entry.durationSec : 0;
     entry.startedAt = null;
     persistActiveSession();
     renderWorkoutTab();
@@ -924,10 +1122,11 @@ function tickCardioTimers() {
   let needsRerender = false;
   activeSession.entries.forEach((entry) => {
     if (entry.type !== 'cardio' || !entry.startedAt || entry.completed) return;
-    const remaining = entry.durationSec - (Date.now() - entry.startedAt) / 1000;
+    const remaining = entry.durationSec - (entry.elapsedSec || 0) - (Date.now() - entry.startedAt) / 1000;
     const span = el(`cardio-remaining-${entry.exerciseId}`);
     if (remaining <= 0) {
       entry.completed = true;
+      entry.elapsedSec = entry.durationSec;
       entry.startedAt = null;
       persistActiveSession();
       playBeep();
@@ -946,11 +1145,14 @@ function tickCardioTimers() {
 /* ---- hold-type (e.g. plank) per-set timer: start -> counts up -> beeps/announces at
    the target duration so the trainee knows when to stop -> stop records the achieved
    duration, auto-checks the set, and kicks off the normal rest timer for the next rep ---- */
-function startHoldTicking(display, startedAt, target) {
+function startHoldTicking(display, state, target, set) {
   return setInterval(() => {
-    const elapsed = (Date.now() - startedAt) / 1000;
+    const elapsed = (Date.now() - state.startedAt) / 1000;
     display.textContent = formatHMS(elapsed);
-    if (elapsed >= target && !display.classList.contains('reached')) {
+    if (elapsed >= target && !state.announced) {
+      state.announced = true;
+      set.holdAnnounced = true;
+      persistActiveSession();
       display.classList.add('reached');
       playBeep();
       if (settings.voiceAnnouncements) speak(`${target} שניות הושלמו, אפשר לעצור`);
@@ -963,16 +1165,22 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
   if (set.completed) {
     const state = holdTimers.get(key);
     if (state) { clearInterval(state.intervalId); holdTimers.delete(key); }
-    td.innerHTML = `<div class="hold-timer-cell"><span class="hold-result">${escapeHtml(String(set.reps || ex.holdSeconds || 15))} שנ'</span><button class="hold-reset" title="מדוד שוב">↺</button></div>`;
+    const achieved = set.reps === '' || set.reps == null ? ex.holdSeconds || 15 : set.reps;
+    td.innerHTML = `<div class="hold-timer-cell"><span class="hold-result">${escapeHtml(String(achieved))} שנ'</span><button class="hold-reset" title="מדוד שוב">↺</button></div>`;
     qs('.hold-reset', td).addEventListener('click', () => {
       set.completed = false;
       set.reps = '';
+      delete set.holdStartedAt;
+      delete set.holdAnnounced;
       persistActiveSession();
       renderWorkoutTab();
     });
     return;
   }
   const target = ex.holdSeconds || 15;
+  if (!holdTimers.has(key) && Number.isFinite(set.holdStartedAt) && set.holdStartedAt > 0) {
+    holdTimers.set(key, { startedAt: set.holdStartedAt, announced: !!set.holdAnnounced, intervalId: null });
+  }
   const existing = holdTimers.get(key);
   const running = !!existing;
   td.innerHTML = `<div class="hold-timer-cell"><span class="hold-timer-display">${running ? formatHMS((Date.now() - existing.startedAt) / 1000) : '0:00'}</span><button class="btn-hold-toggle${running ? ' running' : ''}">${running ? '⏹ עצור' : '▶ התחל'}</button></div>`;
@@ -980,7 +1188,7 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
   const btn = qs('.btn-hold-toggle', td);
   if (existing) {
     clearInterval(existing.intervalId); // old interval pointed at now-detached DOM — rebind to the fresh element
-    holdTimers.set(key, { intervalId: startHoldTicking(display, existing.startedAt, target), startedAt: existing.startedAt });
+    existing.intervalId = startHoldTicking(display, existing, target, set);
   }
   btn.addEventListener('click', () => {
     const state = holdTimers.get(key);
@@ -989,13 +1197,23 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
       holdTimers.delete(key);
       set.reps = Math.round((Date.now() - state.startedAt) / 1000);
       set.completed = true;
+      delete set.holdStartedAt;
+      delete set.holdAnnounced;
       persistActiveSession();
       onAutoComplete();
       renderWorkoutTab();
     } else {
       ensureWorkoutStarted();
+      restTimer.stop();
+      el('restOverlay').classList.add('hidden');
       const startedAt = Date.now();
-      holdTimers.set(key, { intervalId: startHoldTicking(display, startedAt, target), startedAt });
+      const state = { intervalId: null, startedAt, announced: false };
+      state.intervalId = startHoldTicking(display, state, target, set);
+      holdTimers.set(key, state);
+      set.holdStartedAt = startedAt;
+      set.holdAnnounced = false;
+      persistActiveSession();
+      syncWorkoutActivity();
       btn.textContent = '⏹ עצור';
       btn.classList.add('running');
     }
@@ -1029,53 +1247,61 @@ const HE_NUM_WORDS = {
   'שלוש': 3, 'שלושה': 3, 'ארבע': 4, 'ארבעה': 4, 'חמש': 5, 'חמישה': 5,
   'שש': 6, 'שישה': 6, 'שבע': 7, 'שבעה': 7, 'שמונה': 8, 'תשע': 9, 'תשעה': 9,
   'עשר': 10, 'עשרה': 10,
-  'אחת עשרה': 11, 'אחד עשר': 11, 'שתים עשרה': 12, 'שנים עשר': 12,
+  'אחת עשרה': 11, 'אחד עשר': 11, 'שתים עשרה': 12, 'שנים עשר': 12, 'שתיים עשרה': 12, 'שניים עשר': 12,
   'שלוש עשרה': 13, 'שלושה עשר': 13, 'ארבע עשרה': 14, 'ארבעה עשר': 14,
   'חמש עשרה': 15, 'חמישה עשר': 15, 'שש עשרה': 16, 'שישה עשר': 16,
   'שבע עשרה': 17, 'שבעה עשר': 17, 'שמונה עשרה': 18, 'שמונה עשר': 18,
   'תשע עשרה': 19, 'תשעה עשר': 19,
   'עשרים': 20, 'שלושים': 30,
 };
-const HE_NUM_KEYS = Object.keys(HE_NUM_WORDS).sort((a, b) => b.length - a.length);
 function parseSpokenNumber(text) {
-  const digitMatch = text.match(/\d+/);
-  if (digitMatch) return parseInt(digitMatch[0], 10);
-  const tensMatch = text.match(/(עשרים|שלושים)\s*ו?\s*(אחת|אחד|שתיים|שניים|שלוש|ארבע|חמש|שש|שבע|שמונה|תשע)?/);
-  if (tensMatch && tensMatch[0].trim()) {
-    const base = HE_NUM_WORDS[tensMatch[1]];
-    if (!tensMatch[2]) return base;
-    return base + HE_NUM_WORDS[tensMatch[2]];
+  const words = normalizeVoiceText(text).split(' ');
+  let last = null;
+  for (let i = 0; i < words.length; i++) {
+    let word = words[i];
+    if (word.startsWith('ו') && HE_NUM_WORDS[word.slice(1)] !== undefined) word = word.slice(1);
+    if (/^\d+$/.test(word)) { last = Number(word); continue; }
+    const pair = `${word} ${words[i + 1] || ''}`;
+    if (HE_NUM_WORDS[pair] !== undefined) {
+      last = HE_NUM_WORDS[pair];
+      i++;
+    } else if (word === 'עשרים' || word === 'שלושים') {
+      last = HE_NUM_WORDS[word];
+      const unit = HE_NUM_WORDS[(words[i + 1] || '').replace(/^ו/, '')];
+      if (unit > 0 && unit < 10) { last += unit; i++; }
+    } else if (HE_NUM_WORDS[word] !== undefined) {
+      last = HE_NUM_WORDS[word];
+    }
   }
-  for (const k of HE_NUM_KEYS) {
-    if (text.includes(k)) return HE_NUM_WORDS[k];
-  }
-  return null;
+  return last;
+}
+
+function normalizeVoiceText(text) {
+  return String(text || '').normalize('NFKC').replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /* ---------------- Voice commands: phrase classification ---------------- */
 // Order matters: more specific phrases (containing "אימון") are checked before
 // the short generic forms ("סיימתי"/"הסתיים" alone) used while counting reps.
 function classifyVoiceCommand(text) {
-  const t = (text || '').trim();
+  const t = normalizeVoiceText(text);
   if (!t) return null;
-  if ((t.includes('בטל') || t.includes('ביטול')) && t.includes('אימון')) return 'cancelWorkout';
-  if ((t.includes('סיים') || t.includes('סיום')) && t.includes('אימון')) return 'finishWorkout';
-  if ((t.includes('התחל') || t.includes('מתחיל')) && t.includes('אימון')) return 'startWorkout';
-  if ((t.includes('התחל') || t.includes('מתחיל') || t.includes('נספור') || t.includes('לספור')) && t.includes('סט')) return 'startSet';
-  if (t.includes('מנוח') && (t.includes('דלג') || t.includes('הסתיים') || t.includes('סיים'))) return 'skipRest';
-  if (t.includes('תרגיל') && t.includes('הבא')) return 'nextExercise';
-  if (t.includes('סט') && (t.includes('הסתיים') || t.includes('סיימתי') || t.includes('בוצע') || t.includes('הבא'))) return 'setDone';
-  if (t.includes('הסתיים') || t.includes('סיימתי') || t === 'סיום') return 'setDone'; // short form while counting reps
-  if (t.includes('בטל')) return 'undo';
+  if (/^(בטל|ביטול)( את)? ה?אימון$/.test(t)) return 'cancelWorkout';
+  if (/^(סיים|סיום|סיימתי)( את)? ה?אימון$/.test(t)) return 'finishWorkout';
+  if (/^(התחל|תתחיל|מתחיל)( את)? ה?אימון$/.test(t)) return 'startWorkout';
+  if (/^(התחל|תתחיל|מתחיל|נספור|לספור)( את)? ה?סט$/.test(t)) return 'startSet';
+  if (/^(דלג( על)? (זמן )?ה?מנוחה|זמן ה?מנוחה (הסתיים|נגמר)|ה?מנוחה (הסתיימה|נגמרה))$/.test(t)) return 'skipRest';
+  if (/^ה?תרגיל הבא$/.test(t)) return 'nextExercise';
+  if (/^(ה?סט (הסתיים|בוצע|הבא)|סיימתי( את)? ה?סט|סיימתי|הסתיים|סיום)$/.test(t)) return 'setDone';
+  if (/^חזרה (אחת|ראשונה|שנייה|\d+) הסתיימה$/.test(t)) return 'setDone';
+  if (t === 'בטל') return 'undo';
   return null;
 }
 
 /* ---------------- Voice commands dispatch ---------------- */
-// Remembers the single most recent voice-checked button so "undo" can click
-// it again (toggling it back off) if a command gets misrecognized — storing
-// the exact element (not just an index) means undo is unambiguous even if
-// other sets get checked manually in between.
-let lastVoiceButton = null;
+// Keep model references: rendering the cards must not break voice undo.
+let lastVoiceAction = null;
 // While counting reps out loud after "התחל סט": { entryIndex, setIndex, count }.
 let voiceCountingState = null;
 
@@ -1093,18 +1319,37 @@ function setVoiceBadge(text, counting) {
 }
 
 function updateVoiceBadgeForListeningState() {
+  if (!native.isNative()) return;
+  el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive);
   if (voiceCountingState) return; // counting badge takes priority, left as-is
-  setVoiceBadge(voiceListeningActive ? '🎙️ מקשיב לפקודות קוליות…' : '');
+  setVoiceBadge(voiceListeningActive ? '🎙️ מקשיב — אמור ״התחל אימון״ והמתן רגע'
+    : voiceListeningError ? `🎙️ לא פעיל: ${voiceListeningError}`
+      : '🎙️ המיקרופון אינו מקשיב. להפעלה לחץ על הכפתור למטה');
 }
 
 function handleVoiceTranscript(transcript) {
-  if (!transcript) return;
-  const t = transcript.trim();
+  if (!transcript || !voiceListeningActive || currentTab !== 'workout' || document.visibilityState !== 'visible') return;
+  const t = normalizeVoiceText(transcript);
+  if (voiceCountingState?.entry) {
+    voiceCountingState.entryIndex = activeSession.entries.indexOf(voiceCountingState.entry);
+    voiceCountingState.setIndex = voiceCountingState.entry.sets.indexOf(voiceCountingState.set);
+    if (voiceCountingState.entryIndex < 0 || voiceCountingState.setIndex < 0 || voiceCountingState.set.completed) {
+      voiceCountingState = null;
+      updateVoiceBadgeForListeningState();
+    }
+  }
+  let command = classifyVoiceCommand(t);
+  const endsCount = /(?:^| )(סיימתי|סט הסתיים|סיום)$/.test(t);
+  const numberText = endsCount ? t.replace(/(?:^| )(סיימתי|סט הסתיים|סיום)$/, '') : t;
+  const onlyNumbers = numberText.split(' ').every((word) => /^\d+$/.test(word)
+    || HE_NUM_WORDS[word] !== undefined || (word.startsWith('ו') && HE_NUM_WORDS[word.slice(1)] !== undefined));
+  const spokenCount = onlyNumbers ? parseSpokenNumber(numberText) : null;
+  if (voiceCountingState && endsCount && spokenCount !== null) command = 'setDone';
 
   // While actively counting reps out loud, any recognized number updates the
   // live count instead of being treated as a command.
-  if (voiceCountingState && !/סט|אימון|תרגיל|מנוח|בטל/.test(t)) {
-    const n = parseSpokenNumber(t);
+  if (voiceCountingState && (!command || command === 'setDone')) {
+    const n = spokenCount;
     if (n !== null) {
       voiceCountingState.count = n;
       const entry = activeSession.entries[voiceCountingState.entryIndex];
@@ -1117,12 +1362,14 @@ function handleVoiceTranscript(transcript) {
         if (repsInput) repsInput.value = n;
       }
       setVoiceBadge(`🎙️ סופר: ${n}`, true);
-      return;
+      if (!command) return;
     }
   }
 
-  const command = classifyVoiceCommand(t);
-  if (!command) return;
+  if (!command) {
+    if (!voiceCountingState) setVoiceBadge(`🎙️ שמעתי ״${t}״ — פקודה לא מוכרת`);
+    return;
+  }
 
   if (command === 'startWorkout') {
     if (activeSession.running) return;
@@ -1136,6 +1383,7 @@ function handleVoiceTranscript(transcript) {
     if (!activeSession.running) return;
     doCancelWorkout(); // already shows its own "cancelled" toast
   } else if (command === 'startSet') {
+    if (voiceCountingState) { showToast('🎙️ ספירת הסט כבר פעילה'); return; }
     const idx = firstNotDoneEntryIndex();
     if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
     const entry = activeSession.entries[idx];
@@ -1143,7 +1391,21 @@ function handleVoiceTranscript(transcript) {
     const setIdx = entry.sets.findIndex((s) => !s.completed);
     if (setIdx < 0) { showToast('🎙️ כל הסטים בתרגיל זה כבר בוצעו'); return; }
     ensureWorkoutStarted();
-    voiceCountingState = { entryIndex: idx, setIndex: setIdx, count: 0 };
+    activeSession.currentExerciseId = entry.exerciseId;
+    syncWorkoutActivity();
+    restTimer.stop();
+    el('restOverlay').classList.add('hidden');
+    const exercise = exercises.find((ex) => ex.id === entry.exerciseId);
+    if (exercise && exercise.inputType === 'hold') {
+      const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
+      const row = card && qsa('.set-row', card)[setIdx];
+      const button = row && qs('.btn-hold-toggle', row);
+      if (!button) { showToast('🎙️ לא ניתן להתחיל מדידת החזקה'); return; }
+      if (!holdTimers.has(`${entry.exerciseId}:${setIdx}`)) button.click();
+      showToast('🎙️ מדידת ההחזקה התחילה');
+      return;
+    }
+    voiceCountingState = { entry, set: entry.sets[setIdx], entryIndex: idx, setIndex: setIdx, count: 0 };
     setVoiceBadge('🎙️ סופר: 0 (תגיד את מספר החזרות, ו"סיימתי" לסיום)', true);
   } else if (command === 'setDone') {
     if (voiceCountingState) {
@@ -1156,7 +1418,8 @@ function handleVoiceTranscript(transcript) {
       const btn = row && qs('.set-check:not(.checked)', row);
       if (!btn) return;
       btn.click();
-      lastVoiceButton = btn;
+      const entry = activeSession.entries[entryIndex];
+      lastVoiceAction = { entry, set: entry.sets[setIndex] };
       showToast('🎙️ סט סומן כבוצע');
       return;
     }
@@ -1165,10 +1428,11 @@ function handleVoiceTranscript(transcript) {
     const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
     if (!card) return;
     const entry = activeSession.entries[idx];
+    const set = entry.type === 'cardio' ? null : entry.sets.find((s) => !s.completed);
     const btn = entry.type === 'cardio' ? qs('.btnCardioDone', card) : qs('.set-check:not(.checked)', card);
     if (!btn) return;
     btn.click();
-    lastVoiceButton = btn;
+    lastVoiceAction = { entry, set };
     showToast('🎙️ סט סומן כבוצע');
   } else if (command === 'skipRest') {
     if (el('restOverlay').classList.contains('hidden')) return;
@@ -1179,13 +1443,25 @@ function handleVoiceTranscript(transcript) {
     if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
     const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
     if (!card) return;
+    activeSession.currentExerciseId = activeSession.entries[idx].exerciseId;
+    persistActiveSession();
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     card.classList.add('voice-highlight');
     setTimeout(() => card.classList.remove('voice-highlight'), 1600);
   } else if (command === 'undo') {
-    if (!lastVoiceButton || !lastVoiceButton.isConnected) { showToast('🎙️ אין פעולה לביטול'); lastVoiceButton = null; return; }
-    lastVoiceButton.click();
-    lastVoiceButton = null;
+    if (!lastVoiceAction || !activeSession.entries.includes(lastVoiceAction.entry)) {
+      showToast('🎙️ אין פעולה לביטול'); lastVoiceAction = null; return;
+    }
+    const target = lastVoiceAction.set || lastVoiceAction.entry;
+    if ((lastVoiceAction.set && !lastVoiceAction.entry.sets.includes(target)) || !target.completed) {
+      showToast('🎙️ אין פעולה לביטול'); lastVoiceAction = null; return;
+    }
+    target.completed = false;
+    lastVoiceAction = null;
+    restTimer.stop();
+    el('restOverlay').classList.add('hidden');
+    persistActiveSession();
+    renderWorkoutTab();
     showToast('🎙️ הפעולה האחרונה בוטלה');
   }
 }
@@ -1197,7 +1473,21 @@ function handleVoiceTranscript(transcript) {
 // permission, independent of activeSession.running.
 let voiceListeningActive = false;
 let voiceListeningRevision = 0;
+let voiceListeningError = '';
 let currentTab = 'home';
+async function requestVoiceActivation() {
+  const result = await native.voiceRequestPermission();
+  voiceListeningError = result.granted ? '' : (result.reason || 'אשר מיקרופון וזיהוי דיבור בהגדרות האייפון');
+  if (result.granted) {
+    settings.voiceCommandsEnabled = true;
+    db.saveSettings(settings);
+    el('settingVoiceCommands').checked = true;
+    await updateVoiceListeningState();
+  } else {
+    showToast(voiceListeningError);
+  }
+  updateVoiceBadgeForListeningState();
+}
 async function updateVoiceListeningState() {
   if (!native.isNative()) return;
   const should = currentTab === 'workout'
@@ -1210,6 +1500,7 @@ async function updateVoiceListeningState() {
     const result = await native.voiceStartListening();
     if (revision !== voiceListeningRevision) return;
     voiceListeningActive = result.listening;
+    voiceListeningError = result.listening ? '' : result.reason;
     if (!result.listening) showToast('לא ניתן להפעיל פקודות קוליות — ' + result.reason);
   } else {
     voiceCountingState = null;
@@ -1428,8 +1719,10 @@ function buildWorkoutShareLines(workoutsArr) {
 // native text API) because jsPDF's built-in fonts don't include Hebrew glyphs —
 // the canvas renders Hebrew natively via the OS font and we embed the result as
 // an image, giving us a clean printable look with a real white background.
-function buildWorkoutShareCanvas(workoutsArr) {
+function* buildWorkoutShareCanvases(workoutsArr) {
   const width = 760;
+  const pageHeight = 1075;
+  const scale = 2;
   const margin = 28;
   const innerWidth = width - margin * 2;
   const COLORS = {
@@ -1466,106 +1759,146 @@ function buildWorkoutShareCanvas(workoutsArr) {
   });
   add('footer', 40, { text: 'נשלח מתוך AutoFit 🚀' });
 
-  const height = margin + blocks.reduce((a, b) => a + b.h, 0) + margin;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-
-  // ---- Pass 2: draw ----
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(0, 0, width, height);
-  ctx.direction = 'rtl';
-  const right = width - margin;
-  let y = margin;
-
-  blocks.forEach((b) => {
-    const cy = y + b.h / 2;
-    if (b.type === 'title') {
-      ctx.textAlign = 'right';
-      ctx.fillStyle = COLORS.primary;
-      ctx.font = 'bold 26px Arial';
-      ctx.fillText(b.text, right, y + 34);
-    } else if (b.type === 'section') {
-      ctx.textAlign = 'right';
-      ctx.fillStyle = COLORS.text;
-      ctx.font = 'bold 18px Arial';
-      ctx.fillText(b.text, right, y + 24);
-    } else if (b.type === 'stats') {
-      const n = b.stats.length;
-      const gap = 10;
-      const boxW = (innerWidth - gap * (n - 1)) / n;
-      b.stats.forEach((s, i) => {
-        const bx = right - boxW - i * (boxW + gap);
-        ctx.fillStyle = COLORS.primarySoft;
-        ctx.fillRect(bx, y, boxW, b.h - 8);
-        ctx.fillStyle = COLORS.primary;
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(s, bx + boxW / 2, y + (b.h - 8) / 2 + 5);
-      });
-      ctx.textAlign = 'right';
-    } else if (b.type === 'divider') {
-      ctx.strokeStyle = COLORS.border;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      ctx.moveTo(margin, cy);
-      ctx.lineTo(width - margin, cy);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    } else if (b.type === 'exTitle') {
-      ctx.fillStyle = COLORS.text;
-      ctx.font = 'bold 17px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(`🏋️ ${b.text}`, right, y + 24);
-    } else if (b.type === 'cardio') {
-      ctx.fillStyle = COLORS.rowAlt;
-      ctx.fillRect(margin, y, innerWidth, b.h - 6);
-      ctx.fillStyle = COLORS.text;
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(b.text, right - 10, y + (b.h - 6) / 2 + 5);
-    } else if (b.type === 'tableHeader') {
-      ctx.fillStyle = COLORS.primary;
-      ctx.fillRect(margin, y, innerWidth, b.h);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('סט', right - innerWidth * 0.15, y + b.h / 2 + 4);
-      ctx.fillText('ק"ג', right - innerWidth * 0.5, y + b.h / 2 + 4);
-      ctx.fillText('חזרות', right - innerWidth * 0.85, y + b.h / 2 + 4);
-      ctx.textAlign = 'right';
-    } else if (b.type === 'tableRow') {
-      if (b.i % 2 === 1) { ctx.fillStyle = COLORS.rowAlt; ctx.fillRect(margin, y, innerWidth, b.h); }
-      ctx.strokeStyle = COLORS.border;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(margin, y, innerWidth, b.h);
-      ctx.fillStyle = COLORS.text;
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(b.i + 1), right - innerWidth * 0.15, y + b.h / 2 + 5);
-      ctx.fillText(String(b.weightKg), right - innerWidth * 0.5, y + b.h / 2 + 5);
-      ctx.fillText(String(b.reps), right - innerWidth * 0.85, y + b.h / 2 + 5);
-      ctx.textAlign = 'right';
-    } else if (b.type === 'footer') {
-      ctx.fillStyle = COLORS.muted;
-      ctx.font = '13px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(b.text, width / 2, y + 24);
-      ctx.textAlign = 'right';
+  const pages = [];
+  let page = [];
+  let used = 0;
+  let exerciseTitle = null;
+  const availableHeight = pageHeight - margin * 2 - 24;
+  blocks.forEach((block, index) => {
+    let required = block.h;
+    if (block.type === 'exTitle') required += (blocks[index + 1]?.h || 0) + (blocks[index + 2]?.h || 0);
+    if (block.type === 'tableHeader') required += blocks[index + 1]?.h || 0;
+    if (used + required > availableHeight && page.length) {
+      pages.push(page);
+      page = [];
+      used = 0;
+      if (block.type === 'tableRow') {
+        if (exerciseTitle) { page.push(exerciseTitle); used += exerciseTitle.h; }
+        page.push({ type: 'tableHeader', h: 28 });
+        used += 28;
+      }
     }
-    y += b.h;
+    if (block.type === 'exTitle') exerciseTitle = block;
+    page.push(block);
+    used += block.h;
   });
+  if (page.length) pages.push(page);
 
-  return canvas;
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = pageHeight * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('לא ניתן ליצור תמונת שיתוף');
+    ctx.scale(scale, scale);
+
+    // ---- Pass 2: draw ----
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, width, pageHeight);
+    ctx.direction = 'rtl';
+    const right = width - margin;
+    let y = margin;
+
+    pages[pageIndex].forEach((b) => {
+      const cy = y + b.h / 2;
+      if (b.type === 'title') {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = COLORS.primary;
+        ctx.font = 'bold 26px Arial';
+        ctx.fillText(b.text, right, y + 34, innerWidth);
+      } else if (b.type === 'section') {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = COLORS.text;
+        ctx.font = 'bold 18px Arial';
+        ctx.fillText(b.text, right, y + 24, innerWidth);
+      } else if (b.type === 'stats') {
+        const n = b.stats.length;
+        const gap = 10;
+        const boxW = (innerWidth - gap * (n - 1)) / n;
+        b.stats.forEach((s, i) => {
+          const bx = right - boxW - i * (boxW + gap);
+          ctx.fillStyle = COLORS.primarySoft;
+          ctx.fillRect(bx, y, boxW, b.h - 8);
+          ctx.fillStyle = COLORS.primary;
+          ctx.font = 'bold 14px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(s, bx + boxW / 2, y + (b.h - 8) / 2 + 5);
+        });
+        ctx.textAlign = 'right';
+      } else if (b.type === 'divider') {
+        ctx.strokeStyle = COLORS.border;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(margin, cy);
+        ctx.lineTo(width - margin, cy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (b.type === 'exTitle') {
+        ctx.fillStyle = COLORS.text;
+        ctx.font = 'bold 17px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`🏋️ ${b.text}`, right, y + 24, innerWidth);
+      } else if (b.type === 'cardio') {
+        ctx.fillStyle = COLORS.rowAlt;
+        ctx.fillRect(margin, y, innerWidth, b.h - 6);
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(b.text, right - 10, y + (b.h - 6) / 2 + 5, innerWidth - 20);
+      } else if (b.type === 'tableHeader') {
+        ctx.fillStyle = COLORS.primary;
+        ctx.fillRect(margin, y, innerWidth, b.h);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('סט', right - innerWidth * 0.15, y + b.h / 2 + 4);
+        ctx.fillText('ק"ג', right - innerWidth * 0.5, y + b.h / 2 + 4);
+        ctx.fillText('חזרות', right - innerWidth * 0.85, y + b.h / 2 + 4);
+        ctx.textAlign = 'right';
+      } else if (b.type === 'tableRow') {
+        if (b.i % 2 === 1) { ctx.fillStyle = COLORS.rowAlt; ctx.fillRect(margin, y, innerWidth, b.h); }
+        ctx.strokeStyle = COLORS.border;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(margin, y, innerWidth, b.h);
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(b.i + 1), right - innerWidth * 0.15, y + b.h / 2 + 5);
+        ctx.fillText(String(b.weightKg), right - innerWidth * 0.5, y + b.h / 2 + 5);
+        ctx.fillText(String(b.reps), right - innerWidth * 0.85, y + b.h / 2 + 5);
+        ctx.textAlign = 'right';
+      } else if (b.type === 'footer') {
+        ctx.fillStyle = COLORS.muted;
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(b.text, width / 2, y + 24);
+        ctx.textAlign = 'right';
+      }
+      y += b.h;
+    });
+
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = '13px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`AutoFit — ${pageIndex + 1} / ${pages.length}`, width / 2, pageHeight - margin);
+    yield canvas;
+  }
 }
 
-// Sharing an image is far more reliable for WhatsApp (and most share targets)
-// than a generated PDF, and fully supports Hebrew/RTL.
-function buildWorkoutShareImage(workoutsArr) {
-  const canvas = buildWorkoutShareCanvas(workoutsArr);
-  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+async function buildWorkoutShareImages(workoutsArr) {
+  const files = [];
+  const stamp = Date.now();
+  for (const canvas of buildWorkoutShareCanvases(workoutsArr)) {
+    try {
+      const blob = await new Promise((resolve, reject) => canvas.toBlob(
+        (result) => result ? resolve(result) : reject(new Error('יצירת תמונה נכשלה')), 'image/png'));
+      files.push({ blob, filename: `autofit-${stamp}-${files.length + 1}.png`, mime: 'image/png' });
+    } finally {
+      canvas.width = canvas.height = 1;
+    }
+  }
+  return files;
 }
 
 // Builds a real PDF file (not just a print dialog) by embedding the rendered
@@ -1573,14 +1906,19 @@ function buildWorkoutShareImage(workoutsArr) {
 // attachable file via the native share sheet (unlike window.print(), which only
 // opens the browser print UI and cannot be "sent" directly to an app).
 function buildWorkoutSharePdf(workoutsArr) {
-  const canvas = buildWorkoutShareCanvas(workoutsArr);
   const { jsPDF } = window.jspdf || {};
-  if (!jsPDF) return null;
-  const pxToMm = 0.264583;
-  const wMm = canvas.width * pxToMm;
-  const hMm = canvas.height * pxToMm;
-  const doc = new jsPDF({ orientation: hMm > wMm ? 'p' : 'l', unit: 'mm', format: [wMm, hMm] });
-  doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, wMm, hMm);
+  if (!jsPDF) throw new Error('ספריית PDF אינה זמינה');
+  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+  doc.setProperties({ title: 'AutoFit workout history', creator: 'AutoFit' });
+  let pageIndex = 0;
+  for (const canvas of buildWorkoutShareCanvases(workoutsArr)) {
+    try {
+      if (pageIndex++) doc.addPage();
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297);
+    } finally {
+      canvas.width = canvas.height = 1;
+    }
+  }
   return doc.output('blob');
 }
 
@@ -1589,10 +1927,16 @@ function buildWorkoutSharePdf(workoutsArr) {
 // since neither wa.me nor mailto: support file attachments). Falls back to a
 // plain download so the user can still attach it manually.
 async function shareFile(blob, filename, mime) {
-  if (!blob) { showToast('היצירה נכשלה, נסה שוב'); return false; }
+  return shareFiles([{ blob, filename, mime }]);
+}
+
+async function shareFiles(files) {
+  if (!files.length || files.some((file) => !file.blob || !file.blob.size)) {
+    showToast('היצירה נכשלה, נסה שוב'); return false;
+  }
   if (native.isNative()) {
     try {
-      await native.shareFile(blob, filename);
+      await native.shareFiles(files);
       return true;
     } catch (e) {
       console.error('Native file sharing failed', e);
@@ -1600,10 +1944,10 @@ async function shareFile(blob, filename, mime) {
       return false;
     }
   }
-  const file = new File([blob], filename, { type: mime });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  const sharedFiles = files.map(({ blob, filename, mime }) => new File([blob], filename, { type: mime }));
+  if (navigator.canShare && navigator.canShare({ files: sharedFiles })) {
     try {
-      await navigator.share({ files: [file], title: 'אימון AutoFit' });
+      await navigator.share({ files: sharedFiles, title: 'אימון AutoFit' });
     } catch (e) {
       if (e.name !== 'AbortError') {
         console.error('File sharing failed', e);
@@ -1613,14 +1957,16 @@ async function shareFile(blob, filename, mime) {
     }
     return true;
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  files.forEach(({ blob, filename }) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
   showToast('הקובץ הורד — אפשר לצרף ולשלוח אותו ידנית במייל/וואטסאפ');
   return true;
 }
@@ -1712,7 +2058,8 @@ function openShareModal(workoutsArr) {
       <div class="photo-modal-head"><b>${title}</b><button class="btn-icon btnCloseShare">✕</button></div>
       <div class="settings-actions" style="flex-direction:column;">
         <button class="btn btn-primary" id="sharePdf">📄 שתף כ-PDF</button>
-        <button class="btn btn-secondary" id="shareImage">🖼️ שתף כתמונה</button>
+        <button class="btn btn-secondary" id="shareImage">🖼️ שתף תמונות חדות לפי עמודים</button>
+        <div class="field-hint">כל תמונה היא עמוד נפרד וברזולוציה גבוהה. לשיתוף היסטוריה ארוכה בקובץ אחד בחר PDF. וואטסאפ עשוי לדחוס תמונות גם אחרי השיתוף.</div>
         ${native.isNative() ? '' : `
         <div style="display:flex; gap:6px;">
           <button class="btn btn-secondary" id="sendHealth" style="flex:1;">⌚ שלח ל-Shortcuts (לבריאות)</button>
@@ -1726,19 +2073,24 @@ function openShareModal(workoutsArr) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseShare', overlay).addEventListener('click', close);
 
+  let sharing = false;
   async function shareWorkout(format) {
-    const button = qs(format === 'pdf' ? '#sharePdf' : '#shareImage', overlay);
-    button.disabled = true;
+    if (sharing) return;
+    sharing = true;
+    const buttons = [qs('#sharePdf', overlay), qs('#shareImage', overlay)];
+    buttons.forEach((button) => { button.disabled = true; });
     try {
-      const blob = format === 'pdf' ? buildWorkoutSharePdf(list) : await buildWorkoutShareImage(list);
-      const shared = await shareFile(blob, `autofit-${Date.now()}.${format}`,
-        format === 'pdf' ? 'application/pdf' : 'image/png');
+      const files = format === 'pdf'
+        ? [{ blob: buildWorkoutSharePdf(list), filename: `autofit-${Date.now()}.pdf`, mime: 'application/pdf' }]
+        : await buildWorkoutShareImages(list);
+      const shared = await shareFiles(files);
       if (shared) close();
     } catch (e) {
       console.error('Share file generation failed', e);
       showToast('יצירת הקובץ נכשלה — ' + String(e.message || e));
     } finally {
-      button.disabled = false;
+      sharing = false;
+      buttons.forEach((button) => { button.disabled = false; });
     }
   }
   qs('#sharePdf', overlay).addEventListener('click', () => shareWorkout('pdf'));
@@ -2117,8 +2469,8 @@ function openExerciseEditModal(ex, options = {}) {
         <label class="field-label">זמן יעד להחזקה (שניות)</label>
         <input type="number" min="1" class="input" id="editExHoldSeconds" value="${ex.holdSeconds || 15}">
       </div>
-      <label class="field-label">מנוחה (שניות)</label>
-      <input type="number" min="10" class="input" id="editExRest" value="${ex.restSeconds}">
+      <label class="field-label">מנוחה (שניות) — ריק משתמש בברירת המחדל מההגדרות</label>
+      <input type="number" min="10" class="input" id="editExRest" value="${ex.restSeconds || ''}" placeholder="${settings.restSeconds}">
       <label class="field-label">הערות</label>
       <input class="input" id="editExNotes" value="${escapeAttr(ex.notes || '')}">
       <label class="checkbox-row"><input type="checkbox" id="editExActive" ${ex.active !== false ? 'checked' : ''}> כלול באימונים הבאים</label>
@@ -2191,7 +2543,8 @@ function openExerciseEditModal(ex, options = {}) {
       delete ex.holdSeconds;
       ex.defaultReps = qs('#editExReps', overlay).value.trim();
     }
-    ex.restSeconds = Math.max(10, Number(qs('#editExRest', overlay).value) || 90);
+    const restValue = qs('#editExRest', overlay).value.trim();
+    ex.restSeconds = restValue === '' ? 0 : Math.max(10, Number(restValue) || 90);
     ex.notes = qs('#editExNotes', overlay).value.trim();
     ex.active = qs('#editExActive', overlay).checked;
     ex.images = currentImages;
@@ -2266,7 +2619,7 @@ function syncExerciseNameEverywhere(ex) {
 
 /* ---- drag-to-reorder (pointer events, touch-friendly for iPhone) ---- */
 function makeSortable(listEl, onReorder) {
-  listEl.addEventListener('pointerdown', (e) => {
+  listEl.onpointerdown = (e) => {
     const handle = e.target.closest('.drag-handle');
     if (!handle) return;
     const dragEl = handle.closest('.sortable-item');
@@ -2286,17 +2639,20 @@ function makeSortable(listEl, onReorder) {
       if (next) listEl.insertBefore(dragEl, next);
       else listEl.appendChild(dragEl);
     };
-    const onUp = () => {
+    const originalOrder = qsa('.sortable-item', listEl).map((item) => item.dataset.id);
+    const onUp = (event) => {
       dragEl.classList.remove('dragging');
       try { dragEl.releasePointerCapture(e.pointerId); } catch (err) { /* noop */ }
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
-      const newOrder = qsa('.sortable-item', listEl).map((x) => x.dataset.id);
+      document.removeEventListener('pointercancel', onUp);
+      const newOrder = event.type === 'pointercancel' ? originalOrder : qsa('.sortable-item', listEl).map((x) => x.dataset.id);
       onReorder(newOrder);
     };
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  });
+    document.addEventListener('pointercancel', onUp);
+  };
 }
 
 function reorderActiveSessionToMatchExercises() {
@@ -2309,10 +2665,14 @@ function reorderActiveSessionToMatchExercises() {
   // completed sets. Otherwise editing the Exercises tab before checking off a single set
   // would wipe out everything the user already typed in the Workout tab.
   const hasProgress = activeSession.entries.some((e) =>
-    e.type !== 'cardio' && e.sets.some((s) => s.completed || s.weightKg || s.reps));
+    e.type === 'cardio' ? e.completed || e.startedAt || e.elapsedSec > 0 : e.sets.some((s) => s.completed || s.weightKg || s.reps));
 
-  const warmup = warmupEx && warmupEx.active !== false ? (byExId['warmup'] || makeCardioEntry('warmup')) : null;
-  const cooldown = cooldownEx && cooldownEx.active !== false ? (byExId['cooldown'] || makeCardioEntry('cooldown')) : null;
+  const warmupLogged = byExId.warmup && (byExId.warmup.completed || byExId.warmup.startedAt || byExId.warmup.elapsedSec > 0);
+  const cooldownLogged = byExId.cooldown && (byExId.cooldown.completed || byExId.cooldown.startedAt || byExId.cooldown.elapsedSec > 0);
+  const warmup = warmupLogged ? byExId.warmup
+    : warmupEx && warmupEx.active !== false ? (byExId.warmup || makeCardioEntry('warmup')) : null;
+  const cooldown = cooldownLogged ? byExId.cooldown
+    : cooldownEx && cooldownEx.active !== false ? (byExId.cooldown || makeCardioEntry('cooldown')) : null;
 
   if (hasProgress) {
     // mid-workout: never drop logged data — just reorder to match the exercise list,
@@ -2446,18 +2806,7 @@ function wireSettings() {
       db.saveSettings(settings);
       updateVoiceListeningState();
     });
-    el('btnEnableVoiceSettings').addEventListener('click', async () => {
-      const res = await native.voiceRequestPermission();
-      showToast(res.granted
-        ? 'מיקרופון ופקודות קוליות אושרו ✅'
-        : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > מיקרופון/זיהוי דיבור`);
-      if (res.granted) {
-        settings.voiceCommandsEnabled = true;
-        db.saveSettings(settings);
-        el('settingVoiceCommands').checked = true;
-        updateVoiceListeningState();
-      }
-    });
+    el('btnEnableVoiceSettings').addEventListener('click', requestVoiceActivation);
   }
 }
 
@@ -2697,6 +3046,33 @@ document.addEventListener('DOMContentLoaded', bootstrap);
 const splashStartTime = Date.now();
 const SPLASH_MIN_MS = 2500; // keep the branded splash on screen ~2.5s: logo pop + delayed tagline/loader reveal
 
+async function unlockWithBiometrics() {
+  if (await native.biometricVerify()) return;
+  hideSplash();
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML = `<div class="photo-modal">
+    <div class="photo-modal-head"><b>🔒 AutoFit נעולה</b></div>
+    <p class="unlock-status" role="status">האימות לא הושלם. נסה שוב כדי לפתוח את האפליקציה.</p>
+    <button class="btn btn-primary btnRetryUnlock">נסה Face ID שוב</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  await new Promise((resolve) => {
+    const button = qs('.btnRetryUnlock', overlay);
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const verified = await native.biometricVerify();
+      if (verified) { overlay.remove(); resolve(); }
+      else {
+        qs('.unlock-status', overlay).textContent = 'האימות נכשל או בוטל. אפשר לנסות שוב.';
+        button.disabled = false;
+      }
+    });
+  });
+}
+
 // Native-only bootstrap: restore iCloud data (if any), gate behind Face ID for
 // returning users who enabled it, then either launch onboarding (first run)
 // or the main app.
@@ -2707,23 +3083,36 @@ async function bootstrap() {
     // copies so onboarding/Face ID checks below see the restored values.
     settings = db.getSettings();
     profile = db.getProfile();
+    workouts = db.getWorkouts();
+    activeSession = db.getActiveSession();
 
     if (settings.onboardingComplete && settings.faceIdEnabled !== false) {
       const bio = await native.biometricIsAvailable();
       if (bio.available) {
-        const ok = await native.biometricVerify();
-        if (!ok) {
-          document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:18px;background:#000;color:#fff;">🔒 האימות נכשל — רענן כדי לנסות שוב</div>';
-          return;
-        }
+        await unlockWithBiometrics();
       }
     }
-    db.setSyncHook((key, value) => { native.cloudSetItem(key, JSON.stringify(value)); });
-    native.onCloudChanged(() => { window.location.reload(); });
+    const reportBackupFailure = () => {
+      if (cloudBackupWarningShown) return;
+      cloudBackupWarningShown = true;
+      showToast('הנתונים נשמרו במכשיר, אך גיבוי iCloud נכשל. בדוק חיבור ושטח אחסון; אל תסיר את האפליקציה.');
+    };
+    db.setSyncHook((key, value) => {
+      native.cloudSetItem(key, JSON.stringify(value)).then((saved) => { if (!saved) reportBackupFailure(); });
+    });
+    native.onCloudError(reportBackupFailure);
+    native.onCloudChanged(() => {
+      console.info('iCloud backup changed; keeping the local workout intact instead of reloading.');
+    });
     native.onVoiceTranscript((data) => handleVoiceTranscript(data && data.transcript));
+    native.onWorkoutActivityOpen(() => {
+      if (appInitialized) switchTab('workout');
+      else pendingWorkoutNavigation = true;
+    });
     native.onVoiceError((data) => {
       voiceListeningRevision++;
       voiceListeningActive = false;
+      voiceListeningError = data.reason;
       updateVoiceBadgeForListeningState();
       showToast('זיהוי הדיבור הופסק — ' + data.reason);
     });

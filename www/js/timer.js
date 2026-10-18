@@ -1,4 +1,5 @@
 // timer.js — workout stopwatch + rest countdown with sound/vibration
+import { isNative, announce } from './native-bridge.js';
 export function formatHMS(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -19,6 +20,7 @@ export class Stopwatch {
     this.intervalId = null;
   }
   start(startEpochMs) {
+    if (this.intervalId !== null) clearInterval(this.intervalId);
     this.startEpochMs = startEpochMs;
     this._tick();
     this.intervalId = setInterval(() => this._tick(), 1000);
@@ -64,6 +66,13 @@ export function playBeep() {
 // Voice announcement via Web Speech API (plays through connected headphones too).
 // Must first be triggered from a user gesture (tap) on iOS, otherwise it's silently blocked.
 export function speak(text, lang = 'he-IL') {
+  if (isNative()) {
+    announce(text).catch((error) => {
+      console.error('Native announcement failed', error);
+      window.dispatchEvent(new CustomEvent('autofit-audio-error', { detail: String(error) }));
+    });
+    return;
+  }
   try {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -77,6 +86,7 @@ export function speak(text, lang = 'he-IL') {
 
 // Call once on a user gesture (e.g. the "start workout" tap) to unlock speech on iOS.
 export function primeSpeech() {
+  if (isNative()) return;
   try {
     if (!('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance(' ');
@@ -86,31 +96,49 @@ export function primeSpeech() {
 }
 
 export class RestTimer {
-  constructor({ onTick, onDone, onInterval }) {
+  constructor({ onTick, onDone, onInterval, onChange }) {
     this.onTick = onTick;
     this.onDone = onDone;
     this.onInterval = onInterval; // optional: called with elapsed seconds (30, 60, ...) as thresholds are crossed
+    this.onChange = onChange;
     this.endAt = null;
     this.totalSeconds = 0;
     this.lastAnnouncedElapsed = 0;
     this.intervalId = null;
   }
   start(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new RangeError('Rest duration must be positive');
     this.stop();
     this.totalSeconds = seconds;
     this.lastAnnouncedElapsed = 0;
     this.endAt = Date.now() + seconds * 1000;
-    this._tick();
     this.intervalId = setInterval(() => this._tick(), 250);
+    this._tick();
+    this.onChange?.();
+  }
+  restore({ endAt, totalSeconds, lastAnnouncedElapsed = 0 }) {
+    if (!Number.isFinite(endAt) || !Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+      throw new RangeError('Invalid saved rest timer');
+    }
+    this.stop();
+    this.endAt = endAt;
+    this.totalSeconds = totalSeconds;
+    const elapsed = totalSeconds - (endAt - Date.now()) / 1000;
+    this.lastAnnouncedElapsed = Math.max(lastAnnouncedElapsed, Math.floor(elapsed / 30) * 30);
+    this.intervalId = setInterval(() => this._tick(), 250);
+    this._tick();
+    this.onChange?.();
   }
   addSeconds(seconds) {
     if (!this.endAt) return;
     this.endAt += seconds * 1000;
     this.totalSeconds += seconds;
     this._tick();
+    this.onChange?.();
   }
   forceTick() { this._tick(); }
   _tick() {
+    if (this.endAt === null) return;
     const remaining = (this.endAt - Date.now()) / 1000;
     if (remaining <= 0) {
       this.onTick(0);
@@ -126,18 +154,21 @@ export class RestTimer {
   _checkIntervalAnnouncement(remaining) {
     if (!this.onInterval) return;
     const elapsed = this.totalSeconds - remaining;
-    const nextThreshold = this.lastAnnouncedElapsed + 30;
+    const nextThreshold = Math.floor(elapsed / 30) * 30;
     if (elapsed >= nextThreshold && nextThreshold < this.totalSeconds) {
+      if (nextThreshold <= this.lastAnnouncedElapsed) return;
       this.lastAnnouncedElapsed = nextThreshold;
-      this.onInterval(nextThreshold);
+      if (elapsed - nextThreshold < 2) this.onInterval(nextThreshold);
     }
   }
   stop() {
+    const wasRunning = this.intervalId !== null;
     if (this.intervalId) clearInterval(this.intervalId);
     this.intervalId = null;
     this.endAt = null;
     this.totalSeconds = 0;
     this.lastAnnouncedElapsed = 0;
+    if (wasRunning) this.onChange?.();
   }
   isRunning() {
     return this.intervalId !== null;

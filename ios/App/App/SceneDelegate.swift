@@ -11,11 +11,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.rootViewController = MainViewController()
         window?.makeKeyAndVisible()
 
+        connectionOptions.urlContexts.forEach { routeWorkoutLink($0.url) }
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        URLContexts.forEach { routeWorkoutLink($0.url) }
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
+    }
+
+    private func routeWorkoutLink(_ url: URL) {
+        guard url.scheme == "autofit", url.host == "workout" else { return }
+        LiveActivityBridgePlugin.pendingWorkoutLink = true
+        NotificationCenter.default.post(name: LiveActivityBridgePlugin.workoutLinkOpened, object: nil)
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {

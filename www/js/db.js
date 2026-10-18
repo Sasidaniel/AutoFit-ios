@@ -27,7 +27,15 @@ export function setSyncHook(fn) {
   syncHook = fn;
 }
 function write(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error('Local data could not be saved', key, error);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('autofit-storage-error', { detail: { key } }));
+    }
+    throw error;
+  }
   if (syncHook) syncHook(key, value);
 }
 
@@ -83,4 +91,5 @@ export function saveActiveSession(session) {
 }
 export function clearActiveSession() {
   localStorage.removeItem(KEYS.activeSession);
+  if (syncHook) syncHook(KEYS.activeSession, null);
 }

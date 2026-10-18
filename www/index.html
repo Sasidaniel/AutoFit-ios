@@ -118,7 +118,9 @@
     </div>
 
     <div class="workout-header card">
-      <div id="voiceStatusBadge" class="voice-status-badge hidden">🎙️ מקשיב לפקודות קוליות…</div>
+      <div id="voiceStatusBadge" class="voice-status-badge hidden" role="status"></div>
+      <button id="btnEnableWorkoutVoice" class="btn btn-secondary btn-small hidden">🎙️ הפעל מיקרופון ופקודות קוליות</button>
+      <div id="liveActivityStatus" class="field-hint hidden" role="status"></div>
       <div class="workout-timer-row">
         <div>
           <div class="label">זמן אימון</div>
@@ -267,7 +269,7 @@
 
     <div id="voiceCommandsHelpCard" class="card hidden">
       <div class="card-title">🎙️ פקודות קוליות זמינות</div>
-      <div class="field-hint">אומרים את המשפט בקול רגיל תוך כדי אימון (גם באוזניות בלוטות') — זו דרך נוספת, לא תחליף להזנה ידנית. המיקרופון מקשיב כל עוד טאב "אימון" פתוח:</div>
+      <div class="field-hint">כשהסימון ״מקשיב״ מופיע בטאב אימון, אומרים פקודה בקול רגיל וממתינים רגע בין פקודות. זו דרך נוספת, לא תחליף להזנה ידנית. אם המיקרופון כבוי, אפשר להפעילו בכפתור שבטאב אימון:</div>
       <ul class="voice-commands-list">
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
         <li><strong>"התחל סט"</strong> — מתחיל לספור חזרות עבור הסט הבא שטרם בוצע; אחר כך פשוט סופרים בקול ("אחת", "שתיים", "שלוש"...) והמספר מתעדכן בזמן אמת</li>
@@ -282,6 +284,7 @@
 
     <div id="permissionsSettingsCard" class="card hidden">
       <div class="card-title">הרשאות מערכת</div>
+      <div class="field-hint">פעילות חיה מציגה טיימר אימון ומנוחה, תרגיל וסטים במסך הנעילה וב־Dynamic Island במכשירים תומכים. אפשר לאפשר או לכבות דרך הגדרות האייפון &gt; AutoFit &gt; פעילויות חיות. לחיצה על התצוגה מחזירה לאימון; היא אינה מפעילה האזנה ברקע.</div>
       <div class="field-hint">אפל מציגה את חלון האישור הרשמי רק בפעם הראשונה שאפליקציה מבקשת הרשאה. אם פספסת את זה או שינית דעתך — אפשר לבקש שוב כאן בכל רגע.</div>
       <div class="settings-actions">
         <button id="btnEnableHealthSettings" class="btn btn-secondary">🩺 אפשר גישה לאפליקציית בריאות</button>

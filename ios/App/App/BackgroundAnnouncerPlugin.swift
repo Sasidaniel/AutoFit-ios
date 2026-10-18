@@ -23,6 +23,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "startKeepAlive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopKeepAlive", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "speakNow", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "scheduleAnnouncements", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelAnnouncements", returnType: CAPPluginReturnPromise)
     ]
@@ -34,10 +35,32 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin {
     private let playerNode = AVAudioPlayerNode()
     private var silentBuffer: AVAudioPCMBuffer?
 
+    override public func load() {
+        // Let iOS manage ducking per utterance, independently of the recording
+        // session. A continuously active microphone must not duck music forever.
+        speechSynthesizer.usesApplicationAudioSession = false
+    }
+
+    @objc func speakNow(_ call: CAPPluginCall) {
+        guard let text = call.getString("text"), !text.isEmpty else {
+            call.reject("Missing announcement text")
+            return
+        }
+        DispatchQueue.main.async {
+            self.speechSynthesizer.stopSpeaking(at: .immediate)
+            self.speak(text)
+            call.resolve()
+        }
+    }
+
     @objc func startKeepAlive(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.startSilentLoop()
-            call.resolve()
+            do {
+                try self.startSilentLoop()
+                call.resolve()
+            } catch {
+                call.reject("Background audio failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -45,6 +68,15 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             self.cancelAllTimers()
             self.playerNode.stop()
+            self.audioEngine.stop()
+            if !VoiceCommandPlugin.isListening {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                } catch {
+                    call.reject("Cannot release background audio: \(error.localizedDescription)")
+                    return
+                }
+            }
             call.resolve()
         }
     }
@@ -56,6 +88,12 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         DispatchQueue.main.async {
             self.cancelAllTimers()
+            do {
+                try self.startSilentLoop()
+            } catch {
+                call.reject("Cannot schedule background announcements: \(error.localizedDescription)")
+                return
+            }
             for item in items {
                 guard let delay = item["delaySeconds"] as? Double, let text = item["text"] as? String, !text.isEmpty else { continue }
                 let timer = Timer(timeInterval: max(0.05, delay), repeats: false) { [weak self] _ in
@@ -90,34 +128,28 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin {
     // Generates and loops a silent audio buffer so the OS treats the app as
     // "actively playing audio" and keeps it alive in the background (required
     // for the scheduled timers above to actually fire while minimized).
-    private func startSilentLoop() {
-        do {
-            // Skip while VoiceCommandPlugin is actively listening: it already set
-            // .playAndRecord (which also satisfies the "audio" background mode), and
-            // switching to plain .playback here would kill its microphone input.
-            if !VoiceCommandPlugin.isListening {
-                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            }
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("BackgroundAnnouncer: audio session setup failed: \(error)")
-            return
+    private func startSilentLoop() throws {
+        // Do not replace the recording category while the microphone is active.
+        if !VoiceCommandPlugin.isListening {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
         }
+        try AVAudioSession.sharedInstance().setActive(true)
         if silentBuffer == nil {
-            guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1) else { return }
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1) else {
+                throw NSError(domain: "AutoFit.Audio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Audio format unavailable"])
+            }
             let frameCount = AVAudioFrameCount(44100) // 1 second of silence, looped
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return }
-            buffer.frameLength = frameCount // left at zero == silence
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount),
+                  let samples = buffer.floatChannelData?[0] else {
+                throw NSError(domain: "AutoFit.Audio", code: 2, userInfo: [NSLocalizedDescriptionKey: "Audio buffer unavailable"])
+            }
+            buffer.frameLength = frameCount
+            samples.initialize(repeating: 0, count: Int(frameCount))
             silentBuffer = buffer
             audioEngine.attach(playerNode)
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
         }
-        do {
-            if !audioEngine.isRunning { try audioEngine.start() }
-        } catch {
-            print("BackgroundAnnouncer: audio engine start failed: \(error)")
-            return
-        }
+        if !audioEngine.isRunning { try audioEngine.start() }
         playerNode.stop()
         if let buffer = silentBuffer {
             playerNode.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)

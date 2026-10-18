@@ -50,6 +50,7 @@ export async function cloudSetItem(key, value) {
     await CloudBridge.setItem({ key, value });
     return true;
   } catch (e) {
+    console.error('iCloud backup write failed', e);
     return false;
   }
 }
@@ -82,6 +83,11 @@ export function onCloudChanged(callback) {
   CloudBridge.addListener('iCloudChanged', callback);
 }
 
+export function onCloudError(callback) {
+  const cloud = plugin('CloudBridge');
+  if (cloud && cloud.addListener) cloud.addListener('iCloudError', callback);
+}
+
 /* ---------------- Keep screen awake ---------------- */
 export async function keepAwakeEnable() {
   const KeepAwakeBridge = plugin('KeepAwakeBridge');
@@ -103,7 +109,16 @@ export async function keepAwakeDisable() {
 export async function bgStartKeepAlive() {
   const B = plugin('BackgroundAnnouncer');
   if (!B) return false;
-  try { await B.startKeepAlive(); return true; } catch (e) { return false; }
+  try { await B.startKeepAlive(); return true; } catch (e) {
+    console.error('Background audio startup failed', e);
+    return false;
+  }
+}
+
+export async function announce(text) {
+  const announcer = plugin('BackgroundAnnouncer');
+  if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
+  await announcer.speakNow({ text });
 }
 
 export async function bgStopKeepAlive() {
@@ -116,7 +131,10 @@ export async function bgStopKeepAlive() {
 export async function bgScheduleAnnouncements(items) {
   const B = plugin('BackgroundAnnouncer');
   if (!B || !items || !items.length) return false;
-  try { await B.scheduleAnnouncements({ items }); return true; } catch (e) { return false; }
+  try { await B.scheduleAnnouncements({ items }); return true; } catch (e) {
+    console.error('Background announcement scheduling failed', e);
+    return false;
+  }
 }
 
 export async function bgCancelAnnouncements() {
@@ -229,15 +247,50 @@ export function onVoiceError(callback) {
   if (V && V.addListener) V.addListener('voiceError', callback);
 }
 
+/* ---------------- Lock Screen / Dynamic Island Live Activity ---------------- */
+export async function syncWorkoutActivity(snapshot) {
+  const activity = plugin('LiveActivityBridge');
+  if (!activity) return { ok: false, reason: unavailableReason('LiveActivityBridge') };
+  try {
+    return { ok: true, ...await activity.sync(snapshot) };
+  } catch (e) {
+    return { ok: false, reason: String(e) };
+  }
+}
+
+export function onWorkoutActivityOpen(callback) {
+  const activity = plugin('LiveActivityBridge');
+  if (activity && activity.addListener) activity.addListener('openWorkout', callback);
+}
+
+export async function consumeWorkoutActivityLink() {
+  const activity = plugin('LiveActivityBridge');
+  if (!activity) return false;
+  try {
+    return !!(await activity.consumeWorkoutLink()).requested;
+  } catch (e) {
+    console.error('Cannot read workout Live Activity link', e);
+    return false;
+  }
+}
+
 /* ---------------- Native file sharing ---------------- */
 export async function shareFile(blob, filename) {
+  return shareFiles([{ blob, filename }]);
+}
+
+export async function shareFiles(files) {
   const S = plugin('ShareBridge');
   if (!S) throw new Error(unavailableReason('ShareBridge'));
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error('Cannot read share file'));
-    reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.readAsDataURL(blob);
-  });
-  return S.shareFile({ base64, filename });
+  const encoded = [];
+  for (const { blob, filename } of files) {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Cannot read share file'));
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+    encoded.push({ base64, filename });
+  }
+  return S.shareFiles({ files: encoded });
 }

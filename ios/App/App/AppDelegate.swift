@@ -10,22 +10,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
-        configureAudioSessionForDucking()
+        configureAudioSessionForMixing()
         UNUserNotificationCenter.current().delegate = self
         return true
     }
 
-    // Configures the shared audio session so that voice announcements (speech synthesis)
-    // and beep sounds played from the web view duck background audio (e.g. Apple Music,
-    // Spotify) instead of stopping it — same behavior as Siri/Maps spoken alerts.
-    // The music keeps playing at a lower volume during the announcement and returns to
-    // full volume right after, instead of being paused/killed for the rest of the session.
-    private func configureAudioSessionForDucking() {
+    // Speech uses a separate, system-managed session for temporary ducking.
+    // The app's long-lived playback/recording session only mixes with music.
+    private func configureAudioSessionForMixing() {
         do {
             try AVAudioSession.sharedInstance().setCategory(
                 .playback,
-                mode: .voicePrompt,
-                options: [.mixWithOthers, .duckOthers, .interruptSpokenAudioAndMixWithOthers]
+                mode: .default,
+                options: [.mixWithOthers]
             )
             try AVAudioSession.sharedInstance().setActive(true, options: [])
         } catch {
@@ -54,7 +51,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         // session back to plain ".playback" here would silently kill the
         // microphone input VoiceCommandPlugin relies on.
         if !VoiceCommandPlugin.isListening {
-            configureAudioSessionForDucking()
+            configureAudioSessionForMixing()
         }
     }
 

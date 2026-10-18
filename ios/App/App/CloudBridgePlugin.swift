@@ -30,13 +30,24 @@ public class CloudBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func storeDidChange(_ notification: Notification) {
-        // Notify JS so the app can reload data that changed on another device.
+        if notification.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int == NSUbiquitousKeyValueStoreQuotaViolationChange {
+            notifyListeners("iCloudError", data: ["reason": "iCloud backup storage limit exceeded"],
+                            retainUntilConsumed: true)
+            return
+        }
         notifyListeners("iCloudChanged", data: [:])
     }
 
     @objc func setItem(_ call: CAPPluginCall) {
         guard let key = call.getString("key"), let value = call.getString("value") else {
             call.reject("Missing key or value")
+            return
+        }
+        let otherBytes = store.dictionaryRepresentation.reduce(0) { total, item in
+            total + (item.key == key ? 0 : item.key.utf8.count + ((item.value as? String)?.utf8.count ?? 0))
+        }
+        guard otherBytes + key.utf8.count + value.utf8.count <= 1024 * 1024 else {
+            call.reject("iCloud key-value backup exceeds its 1 MB quota. Local data is unchanged.")
             return
         }
         store.set(value, forKey: key)
