@@ -2,7 +2,15 @@
 
 ## Version 1.0 (23): Voice, media and completion reliability
 
-Release candidate; native archive/upload and Apple processing remain pending.
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING` for build `f5a753e0-73ec-4b2a-afc4-c29b89b76099`;
+export compliance is complete. The
+[successful native release](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39128422924)
+passed 127 Node regressions, both standalone Swift suites, app/extension
+archive/signing, export, and upload. Released source: `b2e98d8`.
+The manually dispatched Actions run is number 24, but the verified Apple
+app build number is **23**. No external beta review or App Store submission
+was made.
 
 The initial Actions attempt `39128267250` stopped before native compilation:
 a new asynchronous regression was inadvertently nested and Node 22 cancelled
