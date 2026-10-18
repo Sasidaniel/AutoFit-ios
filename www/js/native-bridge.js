@@ -11,15 +11,19 @@ function plugin(name) {
   return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[name];
 }
 
+function unavailableReason(name) {
+  return isNative() ? `Native plugin missing: ${name}. Update the app build.` : 'not-native';
+}
+
 /* ---------------- HealthKit ---------------- */
 export async function healthRequestAuthorization() {
   const HealthBridge = plugin('HealthBridge');
-  if (!HealthBridge) return { granted: false, reason: 'not-native' };
+  if (!HealthBridge) return { granted: false, reason: unavailableReason('HealthBridge') };
   try {
     const avail = await HealthBridge.isAvailable();
     if (!avail.available) return { granted: false, reason: 'unavailable' };
     const res = await HealthBridge.requestAuthorization();
-    return { granted: !!res.granted };
+    return { granted: !!res.granted, reason: res.reason };
   } catch (e) {
     return { granted: false, reason: String(e) };
   }
@@ -29,7 +33,7 @@ export async function healthRequestAuthorization() {
 // duration (not "now"), so it logs to Health on the correct day.
 export async function healthSaveWorkout({ startMillis, durationSec, calories }) {
   const HealthBridge = plugin('HealthBridge');
-  if (!HealthBridge) return { saved: false, reason: 'not-native' };
+  if (!HealthBridge) return { saved: false, reason: unavailableReason('HealthBridge') };
   try {
     const res = await HealthBridge.saveWorkout({ startMillis, durationSec, calories: calories || 0 });
     return { saved: !!res.saved };
@@ -124,7 +128,7 @@ export async function bgCancelAnnouncements() {
 /* ---------------- Face ID / Touch ID ---------------- */
 export async function biometricIsAvailable() {
   const FaceIdBridge = plugin('FaceIdBridge');
-  if (!FaceIdBridge) return { available: false, reason: 'not-native' };
+  if (!FaceIdBridge) return { available: false, reason: unavailableReason('FaceIdBridge') };
   try {
     const res = await FaceIdBridge.isAvailable();
     return { available: !!(res && res.isAvailable), biometryType: res && res.biometryType, errorCode: res && res.errorCode };
@@ -135,7 +139,7 @@ export async function biometricIsAvailable() {
 
 export async function biometricVerify() {
   const FaceIdBridge = plugin('FaceIdBridge');
-  if (!FaceIdBridge) return true; // no biometric plugin (web) — don't block access
+  if (!FaceIdBridge) return !isNative();
   try {
     await FaceIdBridge.verifyIdentity({ reason: 'פתיחת AutoFit' });
     return true;
@@ -147,7 +151,7 @@ export async function biometricVerify() {
 /* ---------------- Local notifications ---------------- */
 export async function notificationsRequestPermission() {
   const N = plugin('NotificationsBridge');
-  if (!N) return { granted: false, reason: 'not-native' };
+  if (!N) return { granted: false, reason: unavailableReason('NotificationsBridge') };
   try {
     const res = await N.requestPermission();
     return { granted: !!(res && res.granted) };
@@ -186,7 +190,7 @@ export async function notificationsShow(title, body, delaySeconds) {
    exact same actions a tap would. Safe no-op on web/no-plugin. */
 export async function voiceRequestPermission() {
   const V = plugin('VoiceCommand');
-  if (!V) return { granted: false, reason: 'not-native' };
+  if (!V) return { granted: false, reason: unavailableReason('VoiceCommand') };
   try {
     const res = await V.requestPermission();
     return { granted: !!(res && res.granted) };
@@ -197,8 +201,13 @@ export async function voiceRequestPermission() {
 
 export async function voiceStartListening() {
   const V = plugin('VoiceCommand');
-  if (!V) return false;
-  try { await V.startListening(); return true; } catch (e) { return false; }
+  if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
+  try {
+    await V.startListening();
+    return { listening: true };
+  } catch (e) {
+    return { listening: false, reason: String(e) };
+  }
 }
 
 export async function voiceStopListening() {
@@ -213,4 +222,22 @@ export function onVoiceTranscript(callback) {
   const V = plugin('VoiceCommand');
   if (!V || !V.addListener) return;
   V.addListener('voiceTranscript', callback);
+}
+
+export function onVoiceError(callback) {
+  const V = plugin('VoiceCommand');
+  if (V && V.addListener) V.addListener('voiceError', callback);
+}
+
+/* ---------------- Native file sharing ---------------- */
+export async function shareFile(blob, filename) {
+  const S = plugin('ShareBridge');
+  if (!S) throw new Error(unavailableReason('ShareBridge'));
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('Cannot read share file'));
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+  return S.shareFile({ base64, filename });
 }

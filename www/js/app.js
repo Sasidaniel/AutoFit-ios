@@ -373,7 +373,6 @@ function init() {
   wireExercisesTab();
   wireProfileTab();
   wireHistoryTab();
-  wireContactTab();
   wireHomeTab();
   renderBrand();
   startLiveClock();
@@ -1197,6 +1196,7 @@ function handleVoiceTranscript(transcript) {
 // a voice command), so this is gated purely on tab + visibility + setting +
 // permission, independent of activeSession.running.
 let voiceListeningActive = false;
+let voiceListeningRevision = 0;
 let currentTab = 'home';
 async function updateVoiceListeningState() {
   if (!native.isNative()) return;
@@ -1204,9 +1204,13 @@ async function updateVoiceListeningState() {
     && document.visibilityState === 'visible'
     && settings.voiceCommandsEnabled === true;
   if (should === voiceListeningActive) return;
+  const revision = ++voiceListeningRevision;
   voiceListeningActive = should;
   if (should) {
-    await native.voiceStartListening();
+    const result = await native.voiceStartListening();
+    if (revision !== voiceListeningRevision) return;
+    voiceListeningActive = result.listening;
+    if (!result.listening) showToast('לא ניתן להפעיל פקודות קוליות — ' + result.reason);
   } else {
     voiceCountingState = null;
     await native.voiceStopListening();
@@ -1585,10 +1589,29 @@ function buildWorkoutSharePdf(workoutsArr) {
 // since neither wa.me nor mailto: support file attachments). Falls back to a
 // plain download so the user can still attach it manually.
 async function shareFile(blob, filename, mime) {
-  if (!blob) { showToast('היצירה נכשלה, נסה שוב'); return; }
+  if (!blob) { showToast('היצירה נכשלה, נסה שוב'); return false; }
+  if (native.isNative()) {
+    try {
+      await native.shareFile(blob, filename);
+      return true;
+    } catch (e) {
+      console.error('Native file sharing failed', e);
+      showToast('שיתוף הקובץ נכשל — ' + String(e.message || e));
+      return false;
+    }
+  }
   const file = new File([blob], filename, { type: mime });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'אימון AutoFit' }); return; } catch (e) { return; }
+    try {
+      await navigator.share({ files: [file], title: 'אימון AutoFit' });
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        console.error('File sharing failed', e);
+        showToast('שיתוף הקובץ נכשל — ' + String(e.message || e));
+        return false;
+      }
+    }
+    return true;
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1599,6 +1622,7 @@ async function shareFile(blob, filename, mime) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
   showToast('הקובץ הורד — אפשר לצרף ולשלוח אותו ידנית במייל/וואטסאפ');
+  return true;
 }
 
 // ---- Apple Health sync (via a one-time user-created Shortcuts automation) ----
@@ -1632,7 +1656,7 @@ async function syncWorkoutToHealth(workoutsArr) {
   }
   const auth = await native.healthRequestAuthorization();
   if (!auth.granted) {
-    showToast('אין הרשאה לכתוב לאפליקציית הבריאות — אשר בהגדרות > פרטיות > בריאות ⌚');
+    showToast('אין הרשאה לכתוב לאפליקציית הבריאות — ' + (auth.reason || 'אשר בהגדרות > פרטיות > בריאות ⌚'));
     return;
   }
   for (const w of workoutsArr) {
@@ -1702,16 +1726,23 @@ function openShareModal(workoutsArr) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseShare', overlay).addEventListener('click', close);
 
-  qs('#sharePdf', overlay).addEventListener('click', async () => {
-    const blob = buildWorkoutSharePdf(list);
-    await shareFile(blob, `autofit-${Date.now()}.pdf`, 'application/pdf');
-    close();
-  });
-  qs('#shareImage', overlay).addEventListener('click', async () => {
-    const blob = await buildWorkoutShareImage(list);
-    await shareFile(blob, `autofit-${Date.now()}.png`, 'image/png');
-    close();
-  });
+  async function shareWorkout(format) {
+    const button = qs(format === 'pdf' ? '#sharePdf' : '#shareImage', overlay);
+    button.disabled = true;
+    try {
+      const blob = format === 'pdf' ? buildWorkoutSharePdf(list) : await buildWorkoutShareImage(list);
+      const shared = await shareFile(blob, `autofit-${Date.now()}.${format}`,
+        format === 'pdf' ? 'application/pdf' : 'image/png');
+      if (shared) close();
+    } catch (e) {
+      console.error('Share file generation failed', e);
+      showToast('יצירת הקובץ נכשלה — ' + String(e.message || e));
+    } finally {
+      button.disabled = false;
+    }
+  }
+  qs('#sharePdf', overlay).addEventListener('click', () => shareWorkout('pdf'));
+  qs('#shareImage', overlay).addEventListener('click', () => shareWorkout('png'));
   if (!native.isNative()) {
     qs('#sendHealth', overlay).addEventListener('click', () => {
       syncWorkoutToHealth(list);
@@ -2479,44 +2510,6 @@ function renderBrand() {
   if (greetingEl) greetingEl.textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
 }
 
-/* ================= CONTACT TAB ================= */
-const CONTACT_EMAIL = 'sasid5000@gmail.com';
-function wireContactTab() {
-  el('btnSendContact').addEventListener('click', async () => {
-    const name = el('contactName').value.trim();
-    const phone = el('contactPhone').value.trim();
-    const summary = el('contactSummary').value.trim();
-    const message = el('contactMessage').value.trim();
-    if (!name || !message) { showToast('נא למלא שם ובקשה לפני שליחה'); return; }
-    const subject = summary || `פנייה חדשה מ-${name}`;
-    const btn = el('btnSendContact');
-    btn.disabled = true;
-    try {
-      // Sends the message directly in the background via FormSubmit.co — no mail
-      // app opens, no user action needed beyond tapping "send" once here.
-      const res = await fetch(`https://formsubmit.co/ajax/${CONTACT_EMAIL}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ name, phone: phone || '-', _subject: subject, message }),
-      });
-      const data = await res.json();
-      if (data && String(data.success) === 'false' && /activation/i.test(data.message || '')) {
-        showToast('הפנייה הראשונה נשלחה — יש לאשר פעם אחת קישור הפעלה שנשלח למייל, ואז הכל יעבוד אוטומטית ✅');
-      } else {
-        showToast('הפנייה נשלחה ✅');
-      }
-      el('contactName').value = '';
-      el('contactPhone').value = '';
-      el('contactSummary').value = '';
-      el('contactMessage').value = '';
-    } catch (e) {
-      showToast('השליחה נכשלה — ודא שיש חיבור לאינטרנט ונסה שוב');
-    } finally {
-      btn.disabled = false;
-    }
-  });
-}
-
 /* ================= HOME TAB ================= */
 function wireHomeTab() {
   el('btnHomePhoto').addEventListener('click', () => el('homePhotoInput').click());
@@ -2728,6 +2721,12 @@ async function bootstrap() {
     db.setSyncHook((key, value) => { native.cloudSetItem(key, JSON.stringify(value)); });
     native.onCloudChanged(() => { window.location.reload(); });
     native.onVoiceTranscript((data) => handleVoiceTranscript(data && data.transcript));
+    native.onVoiceError((data) => {
+      voiceListeningRevision++;
+      voiceListeningActive = false;
+      updateVoiceBadgeForListeningState();
+      showToast('זיהוי הדיבור הופסק — ' + data.reason);
+    });
   }
 
   await waitForSplashMinimum();

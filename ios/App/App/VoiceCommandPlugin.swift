@@ -44,6 +44,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var lastHandledAt = Date.distantPast
+    private var generation = UUID()
+    private var tapInstalled = false
 
     @objc func requestPermission(_ call: CAPPluginCall) {
         SFSpeechRecognizer.requestAuthorization { speechStatus in
@@ -57,8 +59,13 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func startListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.begin()
-            call.resolve()
+            do {
+                try self.begin()
+                call.resolve()
+            } catch {
+                self.end()
+                call.reject("Voice recognition could not start: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -69,33 +76,27 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func begin() {
+    private func begin() throws {
+        end()
         guard SFSpeechRecognizer.authorizationStatus() == .authorized,
-              AVAudioSession.sharedInstance().recordPermission == .granted else { return }
-        end() // tear down any previous engine/task before starting a fresh one
-        VoiceCommandPlugin.isListening = true
-
-        do {
-            let session = AVAudioSession.sharedInstance()
-            // .playAndRecord (not plain .playback) is required to read the mic while
-            // this runs; keeps ducking/mixing behavior and allows Bluetooth headset mics.
-            try session.setCategory(
-                .playAndRecord,
-                mode: .default,
-                options: [.mixWithOthers, .duckOthers, .allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
-            )
-            try session.setActive(true, options: [])
-        } catch {
-            print("VoiceCommand: audio session setup failed: \(error)")
-            VoiceCommandPlugin.isListening = false
-            return
+              AVAudioSession.sharedInstance().recordPermission == .granted else {
+            throw voiceError("Microphone or speech recognition permission is not granted")
         }
+        let currentGeneration = generation
+
+        let session = AVAudioSession.sharedInstance()
+        // .playAndRecord is required for the microphone, including Bluetooth headsets.
+        try session.setCategory(
+            .playAndRecord,
+            mode: .default,
+            options: [.mixWithOthers, .duckOthers, .allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+        )
+        try session.setActive(true, options: [])
 
         let recognizer = self.recognizer ?? (SFSpeechRecognizer(locale: Locale(identifier: "he-IL")) ?? SFSpeechRecognizer())
         self.recognizer = recognizer
         guard let recognizer = recognizer, recognizer.isAvailable else {
-            VoiceCommandPlugin.isListening = false
-            return
+            throw voiceError("Hebrew speech recognition is currently unavailable")
         }
 
         let req = SFSpeechAudioBufferRecognitionRequest()
@@ -107,31 +108,35 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.removeTap(onBus: 0)
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            throw voiceError("No microphone input is available")
+        }
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
+        tapInstalled = true
 
         audioEngine.prepare()
-        do {
-            try audioEngine.start()
-        } catch {
-            print("VoiceCommand: audio engine start failed: \(error)")
-            VoiceCommandPlugin.isListening = false
-            return
-        }
+        try audioEngine.start()
+        VoiceCommandPlugin.isListening = true
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
             guard let self = self else { return }
-            if let result = result {
-                self.handle(transcript: result.bestTranscription.formattedString, isFinal: result.isFinal)
-            }
-            if error != nil || (result?.isFinal ?? false) {
-                // The task that produced this callback has now ended (final result or
-                // error) — immediately start a new one so listening stays effectively
-                // continuous across separate spoken commands for the rest of the workout.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    if VoiceCommandPlugin.isListening { self.begin() }
+            DispatchQueue.main.async {
+                guard self.generation == currentGeneration, VoiceCommandPlugin.isListening else { return }
+                if let result = result {
+                    self.handle(transcript: result.bestTranscription.formattedString, isFinal: result.isFinal)
+                }
+                if error != nil || (result?.isFinal ?? false) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        guard self.generation == currentGeneration, VoiceCommandPlugin.isListening else { return }
+                        do {
+                            try self.begin()
+                        } catch {
+                            self.end()
+                            self.notifyListeners("voiceError", data: ["reason": error.localizedDescription])
+                        }
+                    }
                 }
             }
         }
@@ -139,14 +144,22 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func end() {
         VoiceCommandPlugin.isListening = false
+        generation = UUID()
         task?.cancel()
         task = nil
         request?.endAudio()
         request = nil
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        if tapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+    }
+
+    private func voiceError(_ message: String) -> NSError {
+        return NSError(domain: "AutoFit.VoiceCommand", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     // Hands the raw recognized phrase to JS, which does all keyword/number

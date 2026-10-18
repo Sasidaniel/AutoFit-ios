@@ -37,7 +37,11 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             if let error = error as NSError? {
                 call.reject("Authorization failed: \(error.localizedDescription) [\(error.domain)#\(error.code)]")
             } else {
-                call.resolve(["granted": success])
+                let granted = success && self.healthStore.authorizationStatus(for: workoutType) == .sharingAuthorized
+                call.resolve([
+                    "granted": granted,
+                    "reason": granted ? "" : "Workout write access is not granted in Apple Health"
+                ])
             }
         }
     }
@@ -52,6 +56,15 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let calories = call.getDouble("calories") ?? 0
+        guard startMillis.isFinite, durationSec.isFinite, durationSec > 0,
+              calories.isFinite, calories >= 0 else {
+            call.reject("Invalid workout date, duration or calories")
+            return
+        }
+        guard healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
+            call.reject("Workout write access is not granted in Apple Health")
+            return
+        }
         let startDate = Date(timeIntervalSince1970: startMillis / 1000.0)
         let endDate = startDate.addingTimeInterval(durationSec)
 
@@ -80,8 +93,10 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         builder.finishWorkout { workout, error in
                             if let error = error {
                                 call.reject("finishWorkout failed: \(error.localizedDescription)")
+                            } else if let workout = workout {
+                                call.resolve(["saved": true, "id": workout.uuid.uuidString])
                             } else {
-                                call.resolve(["saved": true, "id": workout?.uuid.uuidString ?? ""])
+                                call.reject("HealthKit returned no saved workout")
                             }
                         }
                     }
@@ -90,6 +105,10 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     addSamplesBlock(true)
                 } else {
                     builder.add(samples) { success, error in
+                        guard success else {
+                            call.reject("addSamples failed: \(error?.localizedDescription ?? "unknown")")
+                            return
+                        }
                         addSamplesBlock(success)
                     }
                 }

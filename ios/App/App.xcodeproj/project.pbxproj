@@ -25,6 +25,7 @@
 		AA11BB22CC33DD44EE55FF66 /* FaceIdBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BB22CC33DD44EE55FF66AA /* FaceIdBridgePlugin.swift */; };
 		22CC33DD44EE55FF66AA11BB /* NotificationsBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DD44EE55FF66AA11BB22CC /* NotificationsBridgePlugin.swift */; };
 		44EE55FF66AA11BB22CC33DD /* VoiceCommandPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55FF66AA11BB22CC33DD44EE /* VoiceCommandPlugin.swift */; };
+		66AA11BB22CC33DD44EE55FF /* ShareBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77BB22CC33DD44EE55FF66AA /* ShareBridgePlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,6 +49,7 @@
 		11BB22CC33DD44EE55FF66AA /* FaceIdBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FaceIdBridgePlugin.swift; path = App/FaceIdBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 		33DD44EE55FF66AA11BB22CC /* NotificationsBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NotificationsBridgePlugin.swift; path = App/NotificationsBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 		55FF66AA11BB22CC33DD44EE /* VoiceCommandPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceCommandPlugin.swift; path = App/VoiceCommandPlugin.swift; sourceTree = SOURCE_ROOT; };
+		77BB22CC33DD44EE55FF66AA /* ShareBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShareBridgePlugin.swift; path = App/ShareBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +76,7 @@
 				11BB22CC33DD44EE55FF66AA /* FaceIdBridgePlugin.swift */,
 				33DD44EE55FF66AA11BB22CC /* NotificationsBridgePlugin.swift */,
 				55FF66AA11BB22CC33DD44EE /* VoiceCommandPlugin.swift */,
+				77BB22CC33DD44EE55FF66AA /* ShareBridgePlugin.swift */,
 				81DA4F5E9FAE9EE288858608 /* CloudBridgePlugin.swift */,
 				1FAC4A4EBE0773B3BD9F2885 /* MainViewController.swift */,
 				1EE245D98DC5F48CA08BC2E1 /* App.entitlements */,
@@ -194,6 +197,7 @@
 				AA11BB22CC33DD44EE55FF66 /* FaceIdBridgePlugin.swift in Sources */,
 				22CC33DD44EE55FF66AA11BB /* NotificationsBridgePlugin.swift in Sources */,
 				44EE55FF66AA11BB22CC33DD /* VoiceCommandPlugin.swift in Sources */,
+				66AA11BB22CC33DD44EE55FF /* ShareBridgePlugin.swift in Sources */,
 				5874418F8C87933C14FC3161 /* CloudBridgePlugin.swift in Sources */,
 				E0CD47A18873BD4485441F3C /* MainViewController.swift in Sources */,
 			);

@@ -20,6 +20,9 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
+      - name: Run regression tests
+        run: npm test
+
       - name: Sync Capacitor iOS project
         run: npx cap sync ios
 
