@@ -1487,24 +1487,6 @@ test('denied Health permission survives a reload and retries with the same stabl
     healthRequestAuthorization: async () => ({ granted: false, reason: 'write denied' }),
   });
 
-  test('history/dashboard reloads during Health delivery cannot leave the current record pending', async () => {
-    const record = healthRecord();
-    let complete;
-    const { context, saved } = healthContext([record], {
-      healthSaveWorkout: () => new Promise((resolve) => { complete = resolve; }),
-    });
-    const syncing = context.syncWorkoutToHealth([record]);
-    await new Promise((resolve) => setImmediate(resolve));
-    context.workouts = JSON.parse(saved.at(-1));
-    assert.notEqual(context.workouts[0], record);
-    context.workouts[0].note = 'Keep concurrent changes';
-    complete({ saved: true });
-    await syncing;
-    const persisted = JSON.parse(saved.at(-1))[0];
-    assert.equal(persisted.healthSyncPending, false);
-    assert.equal(persisted.note, 'Keep concurrent changes');
-    assert.ok(persisted.healthSyncedAt);
-  });
   await first.context.syncWorkoutToHealth([record]);
   assert.equal(first.writes.length, 0);
   assert.match(first.messages[0], /write denied/);
@@ -1515,6 +1497,25 @@ test('denied Health permission survives a reload and retries with the same stabl
   assert.equal(second.writes[0].workoutID, record.id);
   assert.equal(restored[0].healthSyncPending, false);
   assert.match(app, /workouts.filter\(\(workout\) => workout.healthSyncPending === true\)/);
+});
+
+test('history/dashboard reloads during Health delivery cannot leave the current record pending', async () => {
+  const record = healthRecord();
+  let complete;
+  const { context, saved } = healthContext([record], {
+    healthSaveWorkout: () => new Promise((resolve) => { complete = resolve; }),
+  });
+  const syncing = context.syncWorkoutToHealth([record]);
+  await new Promise((resolve) => setImmediate(resolve));
+  context.workouts = JSON.parse(saved.at(-1));
+  assert.notEqual(context.workouts[0], record);
+  context.workouts[0].note = 'Keep concurrent changes';
+  complete({ saved: true });
+  await syncing;
+  const persisted = JSON.parse(saved.at(-1))[0];
+  assert.equal(persisted.healthSyncPending, false);
+  assert.equal(persisted.note, 'Keep concurrent changes');
+  assert.ok(persisted.healthSyncedAt);
 });
 
 test('failed Health saves stay pending and concurrent manual taps cannot dispatch duplicate writes', async () => {

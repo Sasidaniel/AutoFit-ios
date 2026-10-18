@@ -2,12 +2,19 @@ name: iOS Build & TestFlight
 
 on:
   workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Optional unused Apple build number for retrying a failed release'
+        required: false
+        type: string
   push:
     branches: [main, master]
 
 jobs:
   build:
     runs-on: macos-15
+    env:
+      APP_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,6 +82,7 @@ jobs:
       - name: Archive app
         run: |
           set -e
+          [[ "$APP_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid Apple build number"; exit 1; }
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
@@ -84,7 +92,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}"
+            CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER"
 
       - name: Export .ipa
         run: |

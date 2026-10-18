@@ -4,6 +4,12 @@
 
 Release candidate; native archive/upload and Apple processing remain pending.
 
+The initial Actions attempt `39128267250` stopped before native compilation:
+a new asynchronous regression was inadvertently nested and Node 22 cancelled
+it when its parent completed. It is now an independent test. Manual workflow
+dispatch can retain unused Apple build number 23 while retrying this release;
+automatic pushes retain their existing run-number-based numbering.
+
 - Announcements temporarily **duck** other audio instead of pausing it, as
   explicitly selected. The mixed session is released after the final queued
   sentence, restoring other audio rather than leaving it permanently ducked.
