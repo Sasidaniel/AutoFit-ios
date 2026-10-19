@@ -586,6 +586,23 @@ test('exercise categories have distinct icons and bundled muscle illustrations',
   }
 });
 
+test('workout ordering keeps a fixed-width field despite generic input styles', () => {
+  const css = read('www/css/style.css');
+  assert.match(css, /\.exercise-manage-main \.input\.exercise-order-input\s*\{[^}]*flex:\s*0 0 48px;[^}]*width:\s*48px;[^}]*margin-bottom:\s*0;/);
+  assert.match(css, /\.exercise-manage-main\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;/);
+  assert.match(css, /\.exercise-manage-copy\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;/);
+});
+
+test('settings uses a large vector icon anchored below the safe-area padding', () => {
+  const css = read('www/css/style.css');
+  const gear = css.match(/\.gear-btn\s*\{([^}]+)\}/)[1];
+  assert.match(gear, /bottom:\s*2px/);
+  assert.match(gear, /width:\s*48px;\s*height:\s*48px/);
+  assert.doesNotMatch(gear, /top:|translateY/);
+  assert.match(css, /\.gear-btn \.gear-icon\s*\{[^}]*width:\s*32px;\s*height:\s*32px/);
+  assert.match(read('www/index.html'), /id="btnOpenSettings"[^>]*aria-label="הגדרות"><svg[^>]*gear-icon/);
+});
+
 test('my workout contains only selected exercises, with warmup first and cooldown last', () => {
   const { context } = exerciseLibraryContext([
     { id: 'cooldown' }, { id: 'bench' }, { id: 'hidden', active: false }, { id: 'warmup' },
@@ -2023,7 +2040,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -2032,7 +2049,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });

@@ -1,5 +1,19 @@
 # AutoFit release notes
 
+## Version 1.0 (28): Workout-list layout and Settings button
+
+Release approved after user preview. Signed build and internal TestFlight
+availability are not yet confirmed.
+
+- Fixed My Workout position inputs expanding to full width and collapsing
+  exercise names into single-character columns. Position fields stay 48px wide,
+  while exercise text uses the remaining space and existing ordering is retained.
+- Settings now uses a 32px vector icon within a 48px touch target, anchored to
+  the bottom of the header content rather than its safe-area-inclusive midpoint.
+- Hebrew/English layouts were checked at 320px, 375px and 430px widths with
+  simulated top safe-area insets of 0px, 20px and 44px. Actual iPhone display
+  remains subject to device acceptance. Cache: `autofit-v48`.
+
 ## Version 1.0 (27): Gravitron in General
 
 Available to internal TestFlight testers. Apple confirmed `VALID` and
