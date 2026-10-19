@@ -1,5 +1,18 @@
 # AutoFit release notes
 
+## Version 1.0 (27): Gravitron in General
+
+Updated release approved while build 26 was still building; cancellation of
+the superseded build was requested before its upload step. Native build and
+internal TestFlight availability for build 27 are not yet confirmed.
+
+- Includes all bilingual, interface, contact-form and muscle-icon changes below.
+- Gravitron now belongs to General, not Back, for new installations. A one-time
+  migration updates the old back category on existing installations, preserving
+  exercise IDs, order, selection, sets, reps and active workout/history data.
+  Subsequent user category edits remain untouched.
+- Cache: `autofit-v47`. This release is internal TestFlight only.
+
 ## Version 1.0 (26): Bilingual app, personalized UI and direct contact
 
 Release preparation approved. Signed iOS build and internal TestFlight

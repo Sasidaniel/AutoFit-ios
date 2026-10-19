@@ -562,7 +562,8 @@ test('exercise library groups every existing exercise without changing its muscl
   const { context: library } = exerciseLibraryContext(records);
   for (const record of records) {
     const group = library.exerciseLibraryGroup(record);
-    assert.notEqual(group, 'general', record.name);
+    if (record.name === 'גרביטון') assert.equal(group, 'general');
+    else assert.notEqual(group, 'general', record.name);
     if (record.inputType === 'hold') assert.equal(group, 'static');
     if (record.inputType === 'cardio') assert.equal(group, 'warmup');
   }
@@ -1483,6 +1484,27 @@ test('fresh-install exercise defaults and later user rest/set edits survive the 
   assert.equal(vm.runInContext("exercises.find(e => e.name === 'לחיצת חזה').restSeconds", context), 120);
 });
 
+test('gravitron moves from back to general once without changing workout data or later edits', () => {
+  const context = migrationContext();
+  context.init();
+  const gravitron = context.exercises.find((exercise) => exercise.name === 'גרביטון');
+  assert.equal(gravitron.category, 'כללי');
+  Object.assign(gravitron, { category: 'גב עליון', defaultSets: 5, defaultReps: '7', active: false, notes: 'My notes' });
+  context.db.saveExercises(context.exercises);
+  const before = JSON.stringify({ ...gravitron, category: 'כללי' });
+  context.activeSession = { running: true, entries: [{ exerciseId: gravitron.id, sets: [{ weightKg: '31', reps: '7' }] }] };
+  const sessionBefore = JSON.stringify(context.activeSession);
+  delete context.settings.gravitronGeneralV1Applied;
+  context.init();
+  const migrated = context.exercises.find((exercise) => exercise.id === gravitron.id);
+  assert.equal(JSON.stringify(migrated), before);
+  assert.equal(JSON.stringify(context.activeSession), sessionBefore);
+  migrated.category = 'גב אמצעי';
+  context.db.saveExercises(context.exercises);
+  context.init();
+  assert.equal(context.exercises.find((exercise) => exercise.id === gravitron.id).category, 'גב אמצעי');
+});
+
 test('exercise migrations add each new exercise once and apply rest overrides before renaming', () => {
   const context = migrationContext();
   context.db.saveExercises([{ id: 'old', name: 'כפיפת מרפקים בישיבה (ביצפס)', defaultSets: 3 }]);
@@ -2001,7 +2023,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -2010,7 +2032,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });

@@ -372,6 +372,18 @@ function init() {
       db.saveSettings(settings);
     }
   }
+  if (!settings.gravitronGeneralV1Applied) {
+    let categoryChanged = false;
+    exercises.forEach((ex) => {
+      if (ex.name === 'גרביטון' && String(ex.category || '').startsWith('גב')) {
+        ex.category = 'כללי';
+        categoryChanged = true;
+      }
+    });
+    if (categoryChanged) db.saveExercises(exercises);
+    settings.gravitronGeneralV1Applied = true;
+    db.saveSettings(settings);
+  }
   // one-time bump: program week now defaults to 3 (full sets) instead of the old
   // ramp-up default of 1, since the program no longer needs a gradual sets ramp-up
   if (!settings.programWeekV2Applied) {

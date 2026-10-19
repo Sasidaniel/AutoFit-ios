@@ -11,7 +11,7 @@ export const SEED_EXERCISES = [
     notes: 'במכונה / מתח',
     images: ['images/p3_1.png'] },
 
-  { name: 'גרביטון', category: 'גב עליון', defaultSets: 3, defaultReps: '4', restSeconds: 90,
+  { name: 'גרביטון', category: 'כללי', defaultSets: 3, defaultReps: '4', restSeconds: 90,
     notes: 'עליות מתח בסיוע מכונת גרביטון' },
 
   { name: 'החזקה סטטית במתח', category: 'גב עליון', inputType: 'hold', holdSeconds: 20, defaultSets: 1, defaultReps: '',
