@@ -1,5 +1,32 @@
 # AutoFit release notes
 
+## Version 1.0 (26): Bilingual app, personalized UI and direct contact
+
+Release preparation approved. Signed iOS build and internal TestFlight
+availability are not yet confirmed.
+
+- Hebrew remains the default, with compact Hebrew/English flag selectors in
+  onboarding and Settings. The chosen language persists and controls interface
+  direction, seeded exercise display, charts, sharing, voice commands,
+  announcements and Live Activity labels. Authored names, history, active
+  workout values and unsaved profile edits are preserved.
+- Refreshed Home, personalized Workout greeting and shared profile-photo
+  controls across Home, Workout and Profile. Exercise library categories retain
+  program membership and ordering; seven muscle groups now have distinct local
+  illustrations instead of duplicate or unrelated emoji. Dashboard is labeled
+  Statistics in both languages.
+- Contact includes a validated Formspree form with required name/email,
+  duplicate-submit prevention and visible submission errors that retain the
+  draft. No workout, profile or Health records are attached automatically.
+  The user confirmed receipt of a real test submission. Redundant email and
+  version/date cards were removed, and About text was expanded.
+- Settings keeps Face ID, microphone controls, native permissions and command
+  help. System permissions now appear above command help; only the requested
+  explanatory paragraphs were removed, not the underlying capabilities.
+- Cache: `autofit-v46`. Native compilation and real-iPhone acceptance remain
+  necessary; browser checks do not prove voice, background audio or Lock Screen
+  behavior. No external beta review or App Store submission is requested.
+
 ## Version 1.0 (25): Music-safe microphone routing and strength classification
 
 Implementation prepared; native build and internal TestFlight processing pending.

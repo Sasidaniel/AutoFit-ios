@@ -29,12 +29,12 @@ private final class RecognitionAudioSink {
  * framework, so the user can keep their phone away and use headphones instead
  * of tapping the screen. This is an ADDITIONAL input method — every existing
  * manual tap/checkbox keeps working exactly as before; this plugin only emits
- * the raw recognized Hebrew phrase. ALL keyword/number matching and the actual
+ * the raw recognized Hebrew or English phrase. ALL keyword/number matching and the actual
  * dispatch to app actions happens on the JS side (app.js), not here, so the
  * command vocabulary can be extended/fixed without a native rebuild.
  *
  * Needs both NSMicrophoneUsageDescription and NSSpeechRecognitionUsageDescription
- * (declared in Info.plist). Prefers on-device Hebrew recognition when the
+ * (declared in Info.plist). Prefers on-device recognition for the chosen language when the
  * device supports it (no audio leaves the device); falls back to Apple's
  * standard (server-assisted) recognizer automatically otherwise.
  *
@@ -63,6 +63,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let audioEngine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
+    private var recognitionLanguage = "he-IL"
     private let audioSink = RecognitionAudioSink()
     private var task: SFSpeechRecognitionTask?
     private var utterance = SpeechUtteranceBuffer()
@@ -161,6 +162,16 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func startListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            let language = call.getString("language") ?? "he-IL"
+            guard ["he-IL", "en-US"].contains(language) else {
+                call.reject("Unsupported recognition language")
+                return
+            }
+            if language != self.recognitionLanguage {
+                self.endRecognition()
+                self.recognizer = nil
+                self.recognitionLanguage = language
+            }
             self.consecutiveFailures = 0
             self.lastInputName = ""
             Self.wantsMicrophone = true
@@ -204,20 +215,25 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
         try WorkoutAudioSession.activate(recording: true)
 
-        let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: "he-IL"))
+        let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
         self.recognizer = recognizer
         guard let recognizer = recognizer, recognizer.isAvailable else {
-            throw voiceError("Hebrew speech recognition is currently unavailable")
+            throw voiceError("Speech recognition is currently unavailable for \(recognitionLanguage)")
         }
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        req.contextualStrings = Array(([
+        let commands = recognitionLanguage == "en-US" ? [
+            "Start workout", "Finish workout", "Cancel workout", "Start set",
+            "Set complete", "Set done", "Done", "Skip rest", "Next exercise",
+            "Start", "Stop", "Pause", "Warmup", "Cooldown", "Plank", "Undo"
+        ] : [
             "התחל אימון", "סיים אימון", "בטל אימון", "התחל סט",
             "סט הושלם", "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא",
             "התחל", "התחל חימום", "חימום", "שחרור", "פלאנק", "פלנק",
             "עצור", "השהה", "עצור חימום", "עצור שחרור"
-        ] + contextualPhrases).prefix(100))
+        ]
+        req.contextualStrings = Array((commands + contextualPhrases).prefix(100))
         if recognizer.supportsOnDeviceRecognition {
             req.requiresOnDeviceRecognition = true
         }

@@ -3,6 +3,7 @@ import * as db from './db.js';
 import { SEED_EXERCISES } from './seed.js';
 import { Stopwatch, RestTimer, formatHMS, playBeep, speak, primeSpeech } from './timer.js';
 import * as native from './native-bridge.js';
+import * as i18n from './i18n.js';
 
 const KG_TO_LBS = 2.20462;
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -70,13 +71,13 @@ const restTimer = new RestTimer({
   },
   onInterval: (elapsedSeconds) => {
     if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
-      speak(`עברו ${elapsedSeconds} שניות`, 'he-IL', `rest:${restTimer.endAt}:${elapsedSeconds}`);
+      speak(`עברו ${elapsedSeconds} שניות`, i18n.locale(), `rest:${restTimer.endAt}:${elapsedSeconds}`);
     }
     persistRestTimerState();
   },
   onDone: (endAt) => {
     playBeep();
-    if (settings.voiceAnnouncements) speak(`זמן המנוחה הסתיים. ${restDoneMessage}`, 'he-IL', `rest:${endAt}:done`);
+    if (settings.voiceAnnouncements) speak(`זמן המנוחה הסתיים. ${restDoneMessage}`, i18n.locale(), `rest:${endAt}:done`);
     el('restOverlay').classList.add('hidden');
     showToast(`המנוחה הסתיימה — ${restDoneMessage} 💪`);
     notify('זמן המנוחה הסתיים', restDoneMessage);
@@ -123,7 +124,7 @@ function buildBackgroundAnnouncementItems() {
         announcementID: `hold:${key}:${state.startedAt}` });
     });
   }
-  return items;
+  return items.map((item) => ({ ...item, text: i18n.text(item.text), language: i18n.locale() }));
 }
 
 function syncNativeAnnouncementPlan() {
@@ -159,6 +160,8 @@ function syncNativeAnnouncementPlan() {
    even if the user briefly switched apps/tabs), and force every timer to re-check
    itself the instant the page becomes visible again. */
 function notify(title, body) {
+  title = i18n.text(title);
+  body = i18n.text(body);
   if (native.isNative()) { native.notificationsShow(title, body); return; }
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try { new Notification(title, { body, icon: 'icons/icon-192.png', tag: 'autofit-timer' }); } catch (e) { /* noop */ }
@@ -397,7 +400,7 @@ function init() {
       if (!activeSession.entries.some((e) => e.exerciseId === ex.id)) {
         const cooldownIdx = activeSession.entries.findIndex((e) => e.exerciseId === 'cooldown');
         const last = lastByExercise[ex.id];
-        const newEntry = {
+        const newEntry = ex.inputType === 'cardio' ? makeCardioEntry(ex.id) : {
           exerciseId: ex.id,
           exerciseName: ex.name,
           sets: Array.from({ length: setsForWeek(ex) }, () => ({ weightKg: last ? last.weightKg : '', reps: last ? last.reps : '', completed: false })),
@@ -430,6 +433,7 @@ function init() {
   wireProfileTab();
   wireHistoryTab();
   wireHomeTab();
+  wireContactTab();
   renderBrand();
   startLiveClock();
   setInterval(tickCardioTimers, 1000);
@@ -457,7 +461,8 @@ function init() {
     if (activeSession.rest) {
       const savedRest = activeSession.rest;
       restDoneMessage = savedRest.doneMessage || 'אפשר להמשיך לסט הבא';
-      el('restExerciseName').textContent = savedRest.exerciseName || '';
+      el('restExerciseName').setAttribute('data-exercise-name', savedRest.exerciseName || '');
+      el('restExerciseName').textContent = i18n.exerciseName(savedRest.exerciseName || '');
       el('restOverlay').classList.remove('hidden');
       try { restTimer.restore(savedRest); }
       catch (error) {
@@ -525,7 +530,7 @@ function switchTab(tab) {
 function startLiveClock() {
   const tick = () => {
     const now = new Date();
-    el('liveClock').textContent = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    el('liveClock').textContent = now.toLocaleTimeString(i18n.locale(), { hour: '2-digit', minute: '2-digit' });
   };
   tick();
   setInterval(tick, 30000);
@@ -543,7 +548,7 @@ function buildDraftSession() {
     running: false,
     entries: [
       ...(warmupEx ? [makeCardioEntry('warmup')] : []),
-      ...exercises.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ({
+      ...exercises.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ex.inputType === 'cardio' ? makeCardioEntry(ex.id) : ({
         exerciseId: ex.id,
         exerciseName: ex.name,
         sets: Array.from({ length: setsForWeek(ex) }, (_, i) => {
@@ -578,7 +583,7 @@ function applyProgramWeekToActiveSession() {
     if (entry.type === 'cardio') return;
     const ex = exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) return;
-    const desired = setsForWeek(ex);
+    const desired = Math.floor(setsForWeek(ex));
     while (entry.sets.length < desired) {
       const last = entry.sets.at(-1);
       entry.sets.push({ weightKg: last ? last.weightKg : '', reps: last ? last.reps : '', completed: false });
@@ -624,7 +629,7 @@ function wireWorkoutControls() {
   });
 
   el('btnFinishWorkout').addEventListener('click', () => {
-    if (!confirm('לסיים ולשמור את האימון?')) return;
+    if (!confirm(i18n.text('לסיים ולשמור את האימון?'))) return;
     finishWorkout();
   });
 
@@ -671,7 +676,7 @@ function cancelWorkoutGreeting() {
 // Cancels the current workout without saving anything to history, resetting
 // the draft back to a blank session (the opposite of finishWorkout's save path).
 function cancelWorkout() {
-  if (!confirm('לבטל את האימון הנוכחי ולאפס את כל הנתונים שמולאו? פעולה זו לא ניתנת לביטול.')) return;
+  if (!confirm(i18n.text('לבטל את האימון הנוכחי ולאפס את כל הנתונים שמולאו? פעולה זו לא ניתנת לביטול.'))) return;
   doCancelWorkout();
 }
 
@@ -798,7 +803,7 @@ function persistRestTimerState() {
   activeSession.rest = restTimer.isRunning() ? {
     endAt: restTimer.endAt, totalSeconds: restTimer.totalSeconds,
     lastAnnouncedElapsed: restTimer.lastAnnouncedElapsed,
-    exerciseName: el('restExerciseName').textContent, doneMessage: restDoneMessage,
+    exerciseName: el('restExerciseName').dataset?.exerciseName || el('restExerciseName').textContent, doneMessage: restDoneMessage,
   } : null;
   if (activeSession.running) db.saveActiveSession(activeSession);
   syncWorkoutActivity();
@@ -839,7 +844,8 @@ function buildWorkoutActivityPayload() {
   return {
     running: !preview, preview, sessionID: preview ? `ready:${activeSession.id}` : activeSession.id,
     startMillis: preview ? activityPreviewStartedAt : new Date(activeSession.startedAt).getTime(),
-    exerciseName: (current?.exerciseName || 'מוכן להתחיל אימון').slice(0, 120),
+    exerciseName: (current?.exerciseName ? i18n.exerciseName(current.exerciseName) : i18n.text('מוכן להתחיל אימון')).slice(0, 120),
+    language: i18n.getLanguage(),
     totalSets: strength.reduce((sum, entry) => sum + entry.sets.length, 0),
     completedSets: strength.reduce((sum, entry) => sum + entry.sets.filter((set) => set.completed).length, 0),
     phase, phaseStartMillis, phaseEndMillis,
@@ -927,9 +933,9 @@ function renderWorkoutTab() {
       <div style="display:flex;gap:8px;align-items:flex-start;">
         <span class="exercise-num">${exerciseNumber}</span>
         <div>
-          <div class="exercise-name">${escapeHtml(ex.name)}</div>
+          <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</div>
           <div class="exercise-muscle-line">${escapeHtml(ex.category)}</div>
-          <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות${ex.notes ? ' &middot; ' + escapeHtml(ex.notes) : ''}` : escapeHtml(ex.notes || '')}</div>
+          <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות` : ''}${ex.inputType === 'hold' && ex.notes ? ' &middot; ' : ''}<span data-no-translate data-exercise-notes="${escapeAttr(ex.notes || '')}">${escapeHtml(i18n.exerciseNotes(ex.notes || ''))}</span></div>
         </div>
       </div>
       <div class="exercise-head-right">
@@ -1076,7 +1082,7 @@ function removeLastWorkoutSet(entry) {
   const key = `${entry.exerciseId}:${entry.sets.length - 1}`;
   const timer = holdTimers.get(key);
   if ((set.completed || set.weightKg || set.reps || timer)
-    && !confirm('בסט האחרון יש נתונים או מדידה פעילה. למחוק את הסט הזה?')) return;
+    && !confirm(i18n.text('בסט האחרון יש נתונים או מדידה פעילה. למחוק את הסט הזה?'))) return;
   if (timer) { clearInterval(timer.intervalId); holdTimers.delete(key); }
   if (voiceCountingState?.set === set) {
     voiceCountingState = null;
@@ -1096,7 +1102,8 @@ function getWorkoutSetProgress() {
 }
 
 function cardioCompletionMessage(entry) {
-  const message = entry.exerciseId === 'warmup' ? 'החימום הסתיים' : 'השחרור הסתיים';
+  const message = entry.exerciseId === 'warmup' ? 'החימום הסתיים'
+    : entry.exerciseId === 'cooldown' ? 'השחרור הסתיים' : `התרגיל ${entry.exerciseName} הסתיים`;
   return `${message}. ${getWorkoutSetProgress().percent} אחוז מהאימון הושלמו`;
 }
 
@@ -1127,7 +1134,7 @@ function renderCardioCard(entry, number) {
       <div style="display:flex;gap:8px;align-items:flex-start;">
         <span class="exercise-num">${number}</span>
         <div>
-          <div class="exercise-name">${escapeHtml(entry.exerciseName)}</div>
+          <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
           <div class="exercise-meta">הליכה ${minutes} דקות</div>
         </div>
       </div>
@@ -1153,8 +1160,9 @@ function renderCardioCard(entry, number) {
     entry.location = e.target.value;
     persistActiveSession();
   });
+  i18n.localizeInput(qs('.cardioPace', card), entry.pace || '');
   qs('.cardioPace', card).addEventListener('input', (e) => {
-    entry.pace = e.target.value;
+    entry.pace = i18n.inputValue(e.target);
     persistActiveSession();
   });
   qs('.btnCardioStart', card).addEventListener('click', () => {
@@ -1211,7 +1219,7 @@ function tickCardioTimers() {
       persistActiveSession();
       playBeep();
       const msg = cardioCompletionMessage(entry);
-      if (settings.voiceAnnouncements) speak(msg, 'he-IL', announcementID);
+      if (settings.voiceAnnouncements) speak(msg, i18n.locale(), announcementID);
       showToast(`${msg} ✅`);
       notify('AutoFit', msg);
       needsRerender = true;
@@ -1235,7 +1243,7 @@ function startHoldTicking(display, state, target, set, key) {
       persistActiveSession();
       display.classList.add('reached');
       playBeep();
-      if (settings.voiceAnnouncements) speak(`${target} שניות הושלמו, אפשר לעצור`, 'he-IL', `hold:${key}:${state.startedAt}`);
+      if (settings.voiceAnnouncements) speak(`${target} שניות הושלמו, אפשר לעצור`, i18n.locale(), `hold:${key}:${state.startedAt}`);
       notify('AutoFit', `${target} שניות הושלמו — אפשר לעצור`);
     }
   }, 250);
@@ -1357,7 +1365,7 @@ function parseSpokenNumber(text) {
 }
 
 function normalizeVoiceText(text) {
-  return String(text || '').normalize('NFKC').toLowerCase().replace(/\p{M}/gu, '')
+  return i18n.canonicalVoice(text || '').normalize('NFKC').toLowerCase().replace(/\p{M}/gu, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
@@ -1394,6 +1402,7 @@ function firstNotDoneEntryIndex() {
 function voiceExerciseNames(entry) {
   const exercise = exercises.find((item) => item.id === entry.exerciseId);
   const names = [entry.exerciseName, exercise?.name];
+  names.push(...names.filter(Boolean).map((name) => i18n.text(name)));
   if (entry.exerciseId === 'warmup') names.push('חימום');
   if (entry.exerciseId === 'cooldown') names.push('שחרור', 'קירור');
   if (names.some((name) => ['פלאנק', 'פלנק'].includes(normalizeVoiceText(name)))) {
@@ -1695,7 +1704,7 @@ async function updateVoiceListeningState() {
   voiceListeningActive = should;
   if (should) {
     const phrases = [...new Set(activeSession.entries.flatMap(voiceExerciseNames))];
-    const result = await native.voiceStartListening(phrases);
+    const result = await native.voiceStartListening(phrases, i18n.locale());
     if (revision !== voiceListeningRevision) return;
     voiceListeningActive = result.listening;
     voiceListeningError = result.listening ? '' : result.reason;
@@ -1713,7 +1722,8 @@ async function updateVoiceListeningState() {
 function startRestTimer(ex, exerciseDone, nextExerciseName) {
   cancelWorkoutGreeting();
   const seconds = ex.restSeconds || settings.restSeconds || 90;
-  el('restExerciseName').textContent = ex.name;
+  el('restExerciseName').setAttribute('data-exercise-name', ex.name);
+  el('restExerciseName').textContent = i18n.exerciseName(ex.name);
   el('restOverlay').classList.remove('hidden');
   playBeep();
   if (exerciseDone) {
@@ -1753,6 +1763,7 @@ function renderHistoryTab() {
     const totalExercises = strengthEntries.length;
     const item = document.createElement('div');
     item.className = 'history-item' + (selectedWorkoutIds.has(w.id) ? ' selected' : '');
+    item.dataset.workoutId = w.id;
     item.innerHTML = `
       <div class="history-item-top">
         <input type="checkbox" class="history-select-check" ${selectedWorkoutIds.has(w.id) ? 'checked' : ''}>
@@ -1773,12 +1784,12 @@ function renderHistoryTab() {
       <div class="history-detail">
         ${w.entries.map((e) => e.type === 'cardio' ? `
           <div class="history-exercise-line">
-            <b>${e.exerciseId === 'warmup' ? '🔥' : '🧘'} ${escapeHtml(e.exerciseName)}</b>
+            <b>${e.exerciseId === 'warmup' ? '🔥' : '🧘'} <span data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</span></b>
             <div class="history-sets-line"><div>✅ בוצע (${Math.round(e.durationSec / 60)} דקות)${formatCardioExtra(e)}</div></div>
           </div>
         ` : `
           <div class="history-exercise-line">
-            <b>${escapeHtml(e.exerciseName)}</b>
+            <b data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</b>
             <div class="history-sets-line">
               ${e.sets.map((s, i) => `<div>סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps} חזרות</div>`).join('')}
             </div>
@@ -1802,7 +1813,7 @@ function renderHistoryTab() {
     });
     qs('.btnDeleteWorkout', item).addEventListener('click', (ev) => {
       ev.stopPropagation();
-      if (!confirm('למחוק את האימון הזה?')) return;
+      if (!confirm(i18n.text('למחוק את האימון הזה?'))) return;
       workouts = workouts.filter((x) => x.id !== w.id);
       db.saveWorkouts(workouts);
       renderHistoryTab();
@@ -1822,11 +1833,11 @@ function openEditWorkoutModal(workout) {
       <div class="edit-workout-body">
         ${clone.entries.map((e, ei) => e.type === 'cardio' ? `
           <div class="edit-exercise-block">
-            <div class="edit-exercise-title">${e.exerciseId === 'warmup' ? '🔥' : '🧘'} ${escapeHtml(e.exerciseName)} — ✅ בוצע</div>
+            <div class="edit-exercise-title">${e.exerciseId === 'warmup' ? '🔥' : '🧘'} <span data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</span> — ✅ בוצע</div>
           </div>
         ` : `
           <div class="edit-exercise-block" data-ei="${ei}">
-            <div class="edit-exercise-title">${escapeHtml(e.exerciseName)}</div>
+            <div class="edit-exercise-title" data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</div>
             ${e.sets.map((s, si) => `
               <div class="edit-set-row" data-si="${si}">
                 <span class="set-num">סט ${si + 1}</span>
@@ -1875,19 +1886,41 @@ function openEditWorkoutModal(workout) {
 /* ---------------- share workout(s) (email / WhatsApp / PDF / image) ---------------- */
 function formatCardioExtra(entry) {
   const parts = [];
-  if (entry.location === 'treadmill') parts.push('🏃 הליכון');
-  else if (entry.location === 'outside') parts.push('🌳 בחוץ');
-  if (entry.pace) parts.push(entry.pace);
+  if (entry.location === 'treadmill') parts.push(`🏃 ${i18n.text('הליכון')}`);
+  else if (entry.location === 'outside') parts.push(`🌳 ${i18n.text('בחוץ')}`);
+  if (entry.pace) parts.push(entry.pace === DEFAULT_CARDIO_PACE ? i18n.text(entry.pace) : entry.pace);
   return parts.length ? ` — ${parts.join(' · ')}` : '';
 }
 
 function buildWorkoutShareLines(workoutsArr) {
   const who = profile && profile.name ? ` — ${profile.name}` : '';
   const lines = [];
+  if (i18n.getLanguage() === 'en') {
+    if (workoutsArr.length > 1) {
+      const volume = workoutsArr.reduce((sum, workout) => sum + computeVolume(workout), 0);
+      lines.push(`💪 ${workoutsArr.length} AutoFit workouts${who}`, `📦 Total volume: ${Math.round(volume).toLocaleString(i18n.locale())} kg`, '');
+    }
+    workoutsArr.forEach((workout, index) => {
+      lines.push(workoutsArr.length > 1 ? `━━━ Workout ${index + 1} ━━━` : `💪 AutoFit workout${who}`,
+        `📅 ${formatDate(workout.dateISO)}`, `⏱ Workout duration: ${formatHMS(workout.durationSec)}`,
+        `📦 Volume: ${Math.round(computeVolume(workout)).toLocaleString(i18n.locale())} kg`, '');
+      workout.entries.forEach((entry) => {
+        if (entry.type === 'cardio') {
+          if (entry.completed) lines.push(`⏱ ${i18n.exerciseName(entry.exerciseName)}: ${Math.round(entry.durationSec / 60)} min${formatCardioExtra(entry)}`);
+        } else if (entry.sets.length) {
+          lines.push(`🏋️ ${i18n.exerciseName(entry.exerciseName)}`);
+          entry.sets.forEach((set, index) => lines.push(`   Set ${index + 1}: ${set.weightKg} kg × ${set.reps}`));
+        }
+      });
+      lines.push('');
+    });
+    lines.push('Shared from AutoFit');
+    return lines;
+  }
   if (workoutsArr.length > 1) {
     const totalVolume = workoutsArr.reduce((a, w) => a + computeVolume(w), 0);
     lines.push(`💪 ${workoutsArr.length} אימוני AutoFit${who}`);
-    lines.push(`📦 נפח מצטבר: ${Math.round(totalVolume).toLocaleString()} ק"ג`);
+    lines.push(`📦 נפח מצטבר: ${Math.round(totalVolume).toLocaleString(i18n.locale())} ק"ג`);
     lines.push('');
   }
   workoutsArr.forEach((w, wi) => {
@@ -1895,11 +1928,11 @@ function buildWorkoutShareLines(workoutsArr) {
     else lines.push(`💪 אימון AutoFit${who}`);
     lines.push(`📅 ${formatDate(w.dateISO)}`);
     lines.push(`⏱ משך האימון: ${formatHMS(w.durationSec)}`);
-    lines.push(`📦 נפח: ${Math.round(computeVolume(w)).toLocaleString()} ק"ג`);
+    lines.push(`📦 נפח: ${Math.round(computeVolume(w)).toLocaleString(i18n.locale())} ק"ג`);
     lines.push('');
     w.entries.forEach((e) => {
       if (e.type === 'cardio') {
-        if (e.completed) lines.push(`${e.exerciseId === 'warmup' ? '🔥 חימום' : '🧘 שחרור'}: ${Math.round(e.durationSec / 60)} דקות${formatCardioExtra(e)}`);
+        if (e.completed) lines.push(`${e.exerciseId === 'warmup' ? '🔥 חימום' : e.exerciseId === 'cooldown' ? '🧘 שחרור' : `⏱️ ${e.exerciseName}`}: ${Math.round(e.durationSec / 60)} דקות${formatCardioExtra(e)}`);
         return;
       }
       if (!e.sets.length) return;
@@ -1909,7 +1942,7 @@ function buildWorkoutShareLines(workoutsArr) {
     lines.push('');
   });
   lines.push('נשלח מתוך AutoFit 🚀');
-  return lines;
+  return lines.map((line) => i18n.text(line));
 }
 
 // Renders a styled, white-background, table-like summary onto a canvas (shared by
@@ -1923,6 +1956,10 @@ function* buildWorkoutShareCanvases(workoutsArr) {
   const scale = 2;
   const margin = 28;
   const innerWidth = width - margin * 2;
+  const english = i18n.getLanguage() === 'en';
+  const alignment = english ? 'left' : 'right';
+  const textEdge = english ? margin : width - margin;
+  const column = (fraction) => english ? margin + innerWidth * fraction : width - margin - innerWidth * fraction;
   const COLORS = {
     bg: '#ffffff', text: '#1f2430', muted: '#6b7280', border: '#e1e5f0',
     primary: '#96751f', primarySoft: '#f6ecd2', rowAlt: '#f7f9fc', success: '#16a34a',
@@ -1935,21 +1972,23 @@ function* buildWorkoutShareCanvases(workoutsArr) {
   add('title', 54, { text: `💪 AutoFit${who}` });
   if (workoutsArr.length > 1) {
     const totalVolume = workoutsArr.reduce((a, w) => a + computeVolume(w), 0);
-    add('stats', 46, { stats: [`${workoutsArr.length} אימונים`, `${Math.round(totalVolume).toLocaleString()} ק"ג נפח מצטבר`] });
+    add('stats', 46, { stats: [`${workoutsArr.length} אימונים`, `${Math.round(totalVolume).toLocaleString(i18n.locale())} ק"ג נפח מצטבר`] });
   }
   workoutsArr.forEach((w, wi) => {
     if (wi > 0) add('divider', 24, {});
     if (workoutsArr.length > 1) add('section', 34, { text: `אימון ${wi + 1} — ${formatDate(w.dateISO)}` });
-    add('stats', 46, { stats: [formatDate(w.dateISO), `⏱ ${formatHMS(w.durationSec)}`, `📦 ${Math.round(computeVolume(w)).toLocaleString()} ק"ג`] });
+    add('stats', 46, { stats: [formatDate(w.dateISO), `⏱ ${formatHMS(w.durationSec)}`, `📦 ${Math.round(computeVolume(w)).toLocaleString(i18n.locale())} ק"ג`] });
     w.entries.forEach((e) => {
       if (e.type === 'cardio') {
         if (!e.completed) return;
         const icon = e.exerciseId === 'warmup' ? '🔥' : '🧘';
-        add('cardio', 40, { text: `${icon} ${e.exerciseName} — ${Math.round(e.durationSec / 60)} דקות${formatCardioExtra(e)}` });
+        add('cardio', 40, { text: english
+          ? `${icon} ${i18n.exerciseName(e.exerciseName)} — ${Math.round(e.durationSec / 60)} min${formatCardioExtra(e)}`
+          : `${icon} ${e.exerciseName} — ${Math.round(e.durationSec / 60)} דקות${formatCardioExtra(e)}` });
         return;
       }
       if (!e.sets.length) return;
-      add('exTitle', 36, { text: e.exerciseName });
+      add('exTitle', 36, { text: i18n.exerciseName(e.exerciseName) });
       add('tableHeader', 28, {});
       e.sets.forEach((s, i) => add('tableRow', 26, { i, weightKg: s.weightKg, reps: s.reps }));
       add('spacer', 8, {});
@@ -1993,36 +2032,36 @@ function* buildWorkoutShareCanvases(workoutsArr) {
     // ---- Pass 2: draw ----
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, width, pageHeight);
-    ctx.direction = 'rtl';
+    ctx.direction = english ? 'ltr' : 'rtl';
     const right = width - margin;
     let y = margin;
 
     pages[pageIndex].forEach((b) => {
       const cy = y + b.h / 2;
       if (b.type === 'title') {
-        ctx.textAlign = 'right';
+        ctx.textAlign = alignment;
         ctx.fillStyle = COLORS.primary;
         ctx.font = 'bold 26px Arial';
-        ctx.fillText(b.text, right, y + 34, innerWidth);
+        ctx.fillText(i18n.text(b.text), textEdge, y + 34, innerWidth);
       } else if (b.type === 'section') {
-        ctx.textAlign = 'right';
+        ctx.textAlign = alignment;
         ctx.fillStyle = COLORS.text;
         ctx.font = 'bold 18px Arial';
-        ctx.fillText(b.text, right, y + 24, innerWidth);
+        ctx.fillText(i18n.text(b.text), textEdge, y + 24, innerWidth);
       } else if (b.type === 'stats') {
         const n = b.stats.length;
         const gap = 10;
         const boxW = (innerWidth - gap * (n - 1)) / n;
         b.stats.forEach((s, i) => {
-          const bx = right - boxW - i * (boxW + gap);
+          const bx = english ? margin + i * (boxW + gap) : right - boxW - i * (boxW + gap);
           ctx.fillStyle = COLORS.primarySoft;
           ctx.fillRect(bx, y, boxW, b.h - 8);
           ctx.fillStyle = COLORS.primary;
           ctx.font = 'bold 14px Arial';
           ctx.textAlign = 'center';
-          ctx.fillText(s, bx + boxW / 2, y + (b.h - 8) / 2 + 5);
+          ctx.fillText(i18n.text(s), bx + boxW / 2, y + (b.h - 8) / 2 + 5);
         });
-        ctx.textAlign = 'right';
+        ctx.textAlign = alignment;
       } else if (b.type === 'divider') {
         ctx.strokeStyle = COLORS.border;
         ctx.lineWidth = 2;
@@ -2035,25 +2074,25 @@ function* buildWorkoutShareCanvases(workoutsArr) {
       } else if (b.type === 'exTitle') {
         ctx.fillStyle = COLORS.text;
         ctx.font = 'bold 17px Arial';
-        ctx.textAlign = 'right';
-        ctx.fillText(`🏋️ ${b.text}`, right, y + 24, innerWidth);
+        ctx.textAlign = alignment;
+        ctx.fillText(`🏋️ ${b.text}`, textEdge, y + 24, innerWidth);
       } else if (b.type === 'cardio') {
         ctx.fillStyle = COLORS.rowAlt;
         ctx.fillRect(margin, y, innerWidth, b.h - 6);
         ctx.fillStyle = COLORS.text;
         ctx.font = '14px Arial';
-        ctx.textAlign = 'right';
-        ctx.fillText(b.text, right - 10, y + (b.h - 6) / 2 + 5, innerWidth - 20);
+        ctx.textAlign = alignment;
+        ctx.fillText(i18n.text(b.text), english ? margin + 10 : right - 10, y + (b.h - 6) / 2 + 5, innerWidth - 20);
       } else if (b.type === 'tableHeader') {
         ctx.fillStyle = COLORS.primary;
         ctx.fillRect(margin, y, innerWidth, b.h);
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 13px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('סט', right - innerWidth * 0.15, y + b.h / 2 + 4);
-        ctx.fillText('ק"ג', right - innerWidth * 0.5, y + b.h / 2 + 4);
-        ctx.fillText('חזרות', right - innerWidth * 0.85, y + b.h / 2 + 4);
-        ctx.textAlign = 'right';
+        ctx.fillText(i18n.text('סט'), column(0.15), y + b.h / 2 + 4);
+        ctx.fillText(i18n.text('ק"ג'), column(0.5), y + b.h / 2 + 4);
+        ctx.fillText(i18n.text('חזרות'), column(0.85), y + b.h / 2 + 4);
+        ctx.textAlign = alignment;
       } else if (b.type === 'tableRow') {
         if (b.i % 2 === 1) { ctx.fillStyle = COLORS.rowAlt; ctx.fillRect(margin, y, innerWidth, b.h); }
         ctx.strokeStyle = COLORS.border;
@@ -2062,16 +2101,16 @@ function* buildWorkoutShareCanvases(workoutsArr) {
         ctx.fillStyle = COLORS.text;
         ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(String(b.i + 1), right - innerWidth * 0.15, y + b.h / 2 + 5);
-        ctx.fillText(String(b.weightKg), right - innerWidth * 0.5, y + b.h / 2 + 5);
-        ctx.fillText(String(b.reps), right - innerWidth * 0.85, y + b.h / 2 + 5);
-        ctx.textAlign = 'right';
+        ctx.fillText(String(b.i + 1), column(0.15), y + b.h / 2 + 5);
+        ctx.fillText(String(b.weightKg), column(0.5), y + b.h / 2 + 5);
+        ctx.fillText(String(b.reps), column(0.85), y + b.h / 2 + 5);
+        ctx.textAlign = alignment;
       } else if (b.type === 'footer') {
         ctx.fillStyle = COLORS.muted;
         ctx.font = '13px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(b.text, width / 2, y + 24);
-        ctx.textAlign = 'right';
+        ctx.fillText(i18n.text(b.text), width / 2, y + 24);
+        ctx.textAlign = alignment;
       }
       y += b.h;
     });
@@ -2145,7 +2184,7 @@ async function shareFiles(files) {
   const sharedFiles = files.map(({ blob, filename, mime }) => new File([blob], filename, { type: mime }));
   if (navigator.canShare && navigator.canShare({ files: sharedFiles })) {
     try {
-      await navigator.share({ files: sharedFiles, title: 'אימון AutoFit' });
+      await navigator.share({ files: sharedFiles, title: i18n.text('אימון AutoFit') });
     } catch (e) {
       if (e.name !== 'AbortError') {
         console.error('File sharing failed', e);
@@ -2231,7 +2270,7 @@ async function syncWorkoutToHealth(workoutsArr) {
       }
       db.saveWorkouts(workouts);
     }
-    showToast(`נשמר באפליקציית הבריאות ✅ (${pending.length} אימון${pending.length > 1 ? 'ים' : ''})`);
+    showToast(`נשמר באפליקציית הבריאות ✅ (${pending.length} ${pending.length > 1 ? 'אימונים' : 'אימון'})`);
   } catch (error) {
     console.error('Apple Health synchronization failed', error);
     showToast('סנכרון לבריאות לא הושלם — ' + error.message);
@@ -2249,9 +2288,9 @@ function openHealthSyncHelp() {
       <div style="font-size:13px; line-height:1.9; color:var(--text);">
         <p>דפדפן/אפליקציית אינטרנט לא יכולה לכתוב ישירות ל-HealthKit של אפל — זו הגבלה של אפל שתקפה לכל אתר, לא רק ל-AutoFit. הדרך הריאלית: קיצור (Shortcut) חד-פעמי שאתה יוצר, שמקבל טקסט מ-AutoFit (עם משך האימון והתאריך האמיתי שלו, מופרדים ב-"|") ורושם את זה לבריאות.</p>
         <p><b>הגדרה (פעם אחת):</b></p>
-        <ol style="padding-right:18px; margin:0;">
+        <ol style="padding-inline-start:18px; margin:0;">
           <li>פתח את אפליקציית <b>קיצורים (Shortcuts)</b> באייפון.</li>
-          <li>צור קיצור חדש וקרא לו בדיוק: <b>${escapeHtml(HEALTH_SHORTCUT_NAME)}</b></li>
+          <li>צור קיצור חדש וקרא לו בדיוק: <b data-no-translate>${escapeHtml(HEALTH_SHORTCUT_NAME)}</b></li>
           <li>הוסף פעולה <b>"פיצול טקסט" (Split Text)</b> — על "קלט הקיצור" (Shortcut Input), עם מפריד מותאם אישית (Custom): <b>|</b></li>
           <li>הוסף פעולה <b>"קבלת פריט מתוך רשימה" (Get Item from List)</b> — פריט מספר <b>1</b> (זה מספר הדקות).</li>
           <li>הוסף פעולה נוספת <b>"קבלת פריט מתוך רשימה"</b> — פריט מספר <b>2</b> (זה התאריך).</li>
@@ -2361,8 +2400,8 @@ function computeVolume(workout) {
 
 function formatDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString('he-IL', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) +
-    ' ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString(i18n.locale(), { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' ' + d.toLocaleTimeString(i18n.locale(), { hour: '2-digit', minute: '2-digit' });
 }
 
 /* ================= DASHBOARD TAB ================= */
@@ -2393,7 +2432,7 @@ function renderStatsGrid() {
   const stats = [
     { label: 'שבוע תוכנית נוכחי', value: settings.programWeek || 3 },
     { label: 'סה"כ אימונים', value: totalWorkouts },
-    { label: 'נפח כולל (ק"ג)', value: Math.round(totalVolume).toLocaleString() },
+    { label: 'נפח כולל (ק"ג)', value: Math.round(totalVolume).toLocaleString(i18n.locale()) },
     { label: 'זמן ממוצע', value: formatHMS(avgDuration) },
     { label: 'רצף שבועות', value: streak },
     { label: `השבוע (יעד ${settings.weeklyGoal})`, value: `${weekCount}/${settings.weeklyGoal}` },
@@ -2437,13 +2476,13 @@ function renderVolumeChart() {
   if (!window.Chart) return;
   const ctx = el('volumeChart');
   const sorted = [...workouts].sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
-  const labels = sorted.map((w) => new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }));
+  const labels = sorted.map((w) => new Date(w.dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit' }));
   const data = sorted.map((w) => Math.round(computeVolume(w)));
 
   if (volumeChartInstance) volumeChartInstance.destroy();
   volumeChartInstance = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ label: 'נפח (ק"ג)', data, borderColor: '#96751f', backgroundColor: '#96751f33', tension: 0.3, fill: true }] },
+    data: { labels, datasets: [{ label: i18n.text('נפח (ק"ג)'), data, borderColor: '#96751f', backgroundColor: '#96751f33', tension: 0.3, fill: true }] },
     options: chartBaseOptions(),
   });
 }
@@ -2452,13 +2491,13 @@ function renderSetsChart() {
   if (!window.Chart) return;
   const ctx = el('setsChart');
   const sorted = [...workouts].sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
-  const labels = sorted.map((w) => new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }));
+  const labels = sorted.map((w) => new Date(w.dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit' }));
   const data = sorted.map((w) => w.entries.reduce((b, e) => b + (e.type === 'cardio' ? 0 : e.sets.length), 0));
 
   if (setsChartInstance) setsChartInstance.destroy();
   setsChartInstance = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ label: 'סטים', data, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.3, fill: true }] },
+    data: { labels, datasets: [{ label: i18n.text('סטים'), data, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.3, fill: true }] },
     options: chartBaseOptions(),
   });
 }
@@ -2466,7 +2505,7 @@ function renderSetsChart() {
 function renderExercisePicker() {
   const select = el('exercisePickerChart');
   const prev = select.value;
-  select.innerHTML = exercises.filter((e) => e.inputType !== 'cardio').map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  select.innerHTML = exercises.filter((e) => e.inputType !== 'cardio').map((e) => `<option value="${e.id}" data-no-translate data-exercise-name="${escapeAttr(e.name)}">${escapeHtml(i18n.exerciseName(e.name))}</option>`).join('');
   if (prev && exercises.some((e) => e.id === prev)) select.value = prev;
   select.onchange = renderExerciseChart;
   const metricSelect = el('exerciseMetricPicker');
@@ -2501,14 +2540,14 @@ function renderExerciseChart() {
     } else {
       value = Math.max(...completedSets.map((s) => Number(s.weightKg) || 0));
     }
-    points.push({ date: new Date(w.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }), value });
+    points.push({ date: new Date(w.dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit' }), value });
   });
   if (exerciseChartInstance) exerciseChartInstance.destroy();
   exerciseChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels: points.map((p) => p.date),
-      datasets: [{ label: EXERCISE_METRIC_LABELS[metric] || EXERCISE_METRIC_LABELS.weight, data: points.map((p) => Math.round(p.value * 10) / 10), borderColor: '#22c55e', backgroundColor: '#22c55e33', tension: 0.3, fill: true }],
+      datasets: [{ label: i18n.text(EXERCISE_METRIC_LABELS[metric] || EXERCISE_METRIC_LABELS.weight), data: points.map((p) => Math.round(p.value * 10) / 10), borderColor: '#22c55e', backgroundColor: '#22c55e33', tension: 0.3, fill: true }],
     },
     options: chartBaseOptions(),
   });
@@ -2530,7 +2569,7 @@ function renderConsistencyChart() {
   if (consistencyChartInstance) consistencyChartInstance.destroy();
   consistencyChartInstance = new Chart(ctx, {
     type: 'bar',
-    data: { labels: weeks, datasets: [{ label: 'אימונים בשבוע', data: counts, backgroundColor: counts.map((c) => c >= settings.weeklyGoal ? '#16a34a' : '#eab308') }] },
+    data: { labels: weeks, datasets: [{ label: i18n.text('אימונים בשבוע'), data: counts, backgroundColor: counts.map((c) => c >= settings.weeklyGoal ? '#16a34a' : '#eab308') }] },
     options: chartBaseOptions(),
   });
 }
@@ -2539,14 +2578,14 @@ function renderBodyWeightChart() {
   if (!window.Chart) return;
   const ctx = el('bodyWeightChart');
   const history = profile.weightHistory || [];
-  const labels = history.map((h) => new Date(h.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }));
+  const labels = history.map((h) => new Date(h.dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit' }));
   const data = history.map((h) => h.weightKg);
   if (bodyWeightChartInstance) bodyWeightChartInstance.destroy();
   bodyWeightChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
-      datasets: [{ label: 'משקל גוף (ק"ג)', data, borderColor: '#f59e0b', backgroundColor: '#f59e0b33', tension: 0.3, fill: true }],
+      datasets: [{ label: i18n.text('משקל גוף (ק"ג)'), data, borderColor: '#f59e0b', backgroundColor: '#f59e0b33', tension: 0.3, fill: true }],
     },
     options: chartBaseOptions(),
   });
@@ -2555,6 +2594,7 @@ function renderBodyWeightChart() {
 function chartBaseOptions() {
   return {
     responsive: true,
+    locale: i18n.locale(),
     plugins: { legend: { labels: { color: '#c8ccd8' } } },
     scales: {
       x: { ticks: { color: '#9aa0ad' }, grid: { color: '#20232e' } },
@@ -2564,9 +2604,89 @@ function chartBaseOptions() {
 }
 
 /* ================= EXERCISES TAB ================= */
+const EXERCISE_LIBRARY_CATEGORIES = [
+  { id: 'warmup', label: 'חימום / שחרור', icon: '🔥', category: 'קרדיו', inputType: 'cardio' },
+  { id: 'static', label: 'תרגילים סטטיים', icon: '⏱️', category: 'בטן', inputType: 'hold' },
+  { id: 'legs', label: 'רגליים', icon: '🦵', category: 'רגליים' },
+  { id: 'shoulders', label: 'כתפיים', icon: 'icons/muscle-shoulders.svg', category: 'כתפיים' },
+  { id: 'biceps', label: 'יד קדמית', icon: 'icons/muscle-biceps.svg', category: 'יד קדמית' },
+  { id: 'triceps', label: 'יד אחורית', icon: 'icons/muscle-triceps.svg', category: 'יד אחורית' },
+  { id: 'back', label: 'גב', icon: 'icons/muscle-back.svg', category: 'גב' },
+  { id: 'chest', label: 'חזה', icon: 'icons/muscle-chest.svg', category: 'חזה' },
+  { id: 'core', label: 'בטן', icon: 'icons/muscle-core.svg', category: 'בטן' },
+  { id: 'forearms', label: 'אמות וכף יד', icon: '✊', category: 'אמות' },
+  { id: 'traps', label: 'טרפז', icon: 'icons/muscle-traps.svg', category: 'טרפז' },
+  { id: 'general', label: 'כללי', icon: '➕', category: 'כללי' },
+];
+let exerciseLibraryCategory = null;
+
+function exerciseLibraryCount(count) {
+  return count === 1 ? 'תרגיל אחד' : `${count} תרגילים`;
+}
+
+function exerciseLibraryGroup(ex) {
+  if (ex.inputType === 'cardio' || ex.id === 'warmup' || ex.id === 'cooldown') return 'warmup';
+  if (ex.inputType === 'hold') return 'static';
+  const category = String(ex.category || '').trim();
+  if (category.startsWith('רגליים')) return 'legs';
+  if (category.startsWith('כתפיים')) return 'shoulders';
+  if (category.startsWith('גב')) return 'back';
+  if (category === 'מפרקי כף יד') return 'forearms';
+  return EXERCISE_LIBRARY_CATEGORIES.find((group) =>
+    !['warmup', 'static', 'general'].includes(group.id) && group.category === category)?.id || 'general';
+}
+
+function myWorkoutExercises() {
+  const selected = exercises.filter((ex) => ex.active !== false);
+  return [
+    ...selected.filter((ex) => ex.id === 'warmup'),
+    ...selected.filter((ex) => ex.id !== 'warmup' && ex.id !== 'cooldown'),
+    ...selected.filter((ex) => ex.id === 'cooldown'),
+  ];
+}
+
+function saveMyWorkoutOrder(ids) {
+  const selected = myWorkoutExercises();
+  const byId = new Map(selected.map((ex) => [ex.id, ex]));
+  if (ids.length !== selected.length || new Set(ids).size !== ids.length || ids.some((id) => !byId.has(id))) {
+    showToast('לא ניתן לשמור את הסדר — נסה שוב');
+    renderExercisesTab();
+    return;
+  }
+  const ordered = [
+    ...selected.filter((ex) => ex.id === 'warmup'),
+    ...ids.filter((id) => id !== 'warmup' && id !== 'cooldown').map((id) => byId.get(id)),
+    ...selected.filter((ex) => ex.id === 'cooldown'),
+  ];
+  let index = 0;
+  exercises = exercises.map((ex) => byId.has(ex.id) ? ordered[index++] : ex);
+  db.saveExercises(exercises);
+  renderExercisesTab();
+  reorderActiveSessionToMatchExercises();
+}
+
+function setExerciseInMyWorkout(ex, included) {
+  ex.active = included;
+  if (included) {
+    saveMyWorkoutOrder([...myWorkoutExercises().filter((item) => item.id !== ex.id).map((item) => item.id), ex.id]);
+  } else {
+    db.saveExercises(exercises);
+    renderExercisesTab();
+    reorderActiveSessionToMatchExercises();
+  }
+  showToast(included ? `"${ex.name}" נוסף לאימון שלי` : `"${ex.name}" הוסר מהאימון שלי ונשאר בספרייה`);
+}
+
 function wireExercisesTab() {
+  el('btnBackExerciseCategories').addEventListener('click', () => {
+    exerciseLibraryCategory = null;
+    renderExercisesTab();
+  });
   el('btnAddExercise').addEventListener('click', () => {
-    const draft = { id: db.uid(), name: '', category: 'כללי', defaultSets: 3, defaultReps: '12', restSeconds: 90, notes: '', images: [], active: true };
+    const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
+    const draft = { id: db.uid(), name: '', category: group?.category || 'כללי', defaultSets: 3, defaultReps: '12',
+      restSeconds: 90, notes: '', images: [], active: exerciseLibraryCategory === 'my',
+      inputType: group?.inputType || 'reps', durationMinutes: 5, holdSeconds: 15 };
     openExerciseEditModal(draft, { isNew: true });
   });
 }
@@ -2576,12 +2696,47 @@ const DEFAULT_COOLDOWN_NAME = 'שחרור-הליכה';
 const DEFAULT_CARDIO_PACE = 'קצב 6 בהליכון';
 
 function renderExercisesTab() {
+  const selected = myWorkoutExercises();
+  const grid = el('exerciseCategoryGrid');
+  grid.classList.toggle('hidden', !!exerciseLibraryCategory);
+  grid.innerHTML = `
+    <button class="exercise-category-button my-workout" data-category="my" aria-pressed="${exerciseLibraryCategory === 'my'}">
+      <span class="exercise-category-icon" aria-hidden="true">📋</span>
+      <span><span class="exercise-category-label">האימון שלי</span><span class="exercise-category-count">${exerciseLibraryCount(selected.length)} ${selected.length === 1 ? 'נבחר' : 'נבחרו'} · סדר, עריכה והתאמה אישית</span></span>
+    </button>
+    ${EXERCISE_LIBRARY_CATEGORIES.map((group) => `
+      <button class="exercise-category-button" data-category="${group.id}" aria-pressed="${exerciseLibraryCategory === group.id}">
+        <span class="exercise-category-icon" aria-hidden="true">${group.icon.endsWith('.svg') ? `<img src="${group.icon}" alt="" width="32" height="32">` : group.icon}</span>
+        <span class="exercise-category-label">${group.label}</span>
+        <span class="exercise-category-count">${exerciseLibraryCount(exercises.filter((ex) => exerciseLibraryGroup(ex) === group.id).length)}</span>
+      </button>`).join('')}`;
+  qsa('[data-category]', grid).forEach((button) => {
+    button.addEventListener('click', () => {
+      exerciseLibraryCategory = button.dataset.category;
+      renderExercisesTab();
+    });
+  });
   const list = el('exerciseManageList');
   list.innerHTML = '';
-  exercises.forEach((ex, index) => {
+  list.onpointerdown = null;
+  el('exerciseLibraryPanel').classList.toggle('hidden', !exerciseLibraryCategory);
+  if (!exerciseLibraryCategory) {
+    list.innerHTML = '<div class="exercise-library-empty">בחר קטגוריה כדי לעיין בספרייה, או פתח את ״האימון שלי״ לניהול התוכנית שלך.</div>';
+    return;
+  }
+  const isMyWorkout = exerciseLibraryCategory === 'my';
+  const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
+  const visible = isMyWorkout ? selected : exercises.filter((ex) => exerciseLibraryGroup(ex) === exerciseLibraryCategory);
+  el('exerciseLibraryTitle').textContent = isMyWorkout ? 'האימון שלי' : group.label;
+  el('exerciseLibraryCount').textContent = exerciseLibraryCount(visible.length);
+  el('exerciseLibraryHint').textContent = isMyWorkout
+    ? 'אלה התרגילים שנבחרו לטאב אימון. גרור בידית או שנה את מספר המיקום; חימום נשאר ראשון ושחרור אחרון. לעריכת סטים, חזרות ומנוחה לחץ על העיפרון. נתונים שכבר הוזנו באימון נשמרים גם אם התוכנית משתנה.'
+    : 'הוסף תרגילים לאימון שלי, או צור תרגיל חדש בקטגוריה. הסרה מהאימון אינה מוחקת את התרגיל מהספרייה או את ההיסטוריה.';
+  visible.forEach((ex, index) => {
     const isCardio = ex.inputType === 'cardio';
+    const fixedPosition = ex.id === 'warmup' || ex.id === 'cooldown';
     const item = document.createElement('div');
-    item.className = 'exercise-manage-item sortable-item' + (ex.active === false ? ' inactive' : '');
+    item.className = 'exercise-manage-item' + (isMyWorkout ? ' sortable-item' : '');
     item.dataset.id = ex.id;
     const metaLine = isCardio
       ? `${escapeHtml(ex.category)} &middot; ${ex.durationMinutes || 5} דקות`
@@ -2590,50 +2745,57 @@ function renderExercisesTab() {
         : `${escapeHtml(ex.category)} &middot; ${ex.defaultSets} סטים × ${escapeHtml(ex.defaultReps)}`;
     item.innerHTML = `
       <div class="exercise-manage-head">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span class="drag-handle" title="גרור לשינוי סדר">⠿</span>
-          <span class="exercise-num">${index + 1}</span>
-          <div>
-            <b>${escapeHtml(ex.name)}</b>
+        <div class="exercise-manage-main">
+          ${isMyWorkout ? fixedPosition
+            ? `<span class="exercise-num" title="חימום ראשון ושחרור אחרון">${index + 1}</span>`
+            : `<span class="drag-handle" title="גרור לשינוי סדר">⠿</span>
+               <input type="number" class="input exercise-order-input" min="${selected.some((item) => item.id === 'warmup') ? 2 : 1}"
+                 max="${selected.length - (selected.some((item) => item.id === 'cooldown') ? 1 : 0)}" value="${index + 1}" aria-label="מיקום ${escapeAttr(ex.name)} באימון">`
+            : ''}
+          <div class="exercise-manage-copy">
+            <b data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</b>
             <div class="exercise-meta">${metaLine}</div>
-            <label class="checkbox-row ex-active-toggle"><input type="checkbox" class="exActiveCheck" ${ex.active !== false ? 'checked' : ''}> כלול באימון</label>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:4px;">
+        <div class="exercise-manage-actions">
           ${!isCardio && ex.images && ex.images.length ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
-          <button class="btn-icon btnEditEx">✏️</button>
-          ${isCardio ? '' : '<button class="btn-icon btnDeleteEx">🗑️</button>'}
+          <button class="btn-icon btnEditEx" aria-label="עריכת ${escapeAttr(ex.name)}">✏️</button>
+          ${fixedPosition || isMyWorkout ? '' : `<button class="btn-icon btnDeleteEx" aria-label="מחיקת ${escapeAttr(ex.name)} מהספרייה">🗑️</button>`}
         </div>
       </div>
+      <button class="btn btn-secondary btn-small exercise-membership-button" aria-pressed="${ex.active !== false}">
+        ${isMyWorkout ? 'הסר מהאימון שלי' : ex.active !== false ? '✓ באימון שלי · הסר מהאימון' : '+ הוסף לאימון שלי'}
+      </button>
     `;
     qs('.btnEditEx', item).addEventListener('click', () => openExerciseEditModal(ex));
-    if (!isCardio) {
+    if (!fixedPosition && !isMyWorkout) {
       qs('.btnDeleteEx', item).addEventListener('click', () => {
-        if (!confirm(`למחוק את "${ex.name}"? אימוני עבר יישמרו.`)) return;
+        if (!confirm(i18n.text(`למחוק את "${ex.name}"? אימוני עבר יישמרו.`))) return;
         exercises = exercises.filter((e) => e.id !== ex.id);
         db.saveExercises(exercises);
         renderExercisesTab();
         reorderActiveSessionToMatchExercises();
       });
     }
-    qs('.exActiveCheck', item).addEventListener('change', (e) => {
-      ex.active = e.target.checked;
-      db.saveExercises(exercises);
-      renderExercisesTab();
-      reorderActiveSessionToMatchExercises();
-      showToast(ex.active ? `"${ex.name}" ייכלל באימונים הבאים` : `"${ex.name}" לא ייכלל באימונים הבאים (נשאר שמור)`);
+    qs('.exercise-membership-button', item).addEventListener('click', () => setExerciseInMyWorkout(ex, ex.active === false));
+    const positionInput = qs('.exercise-order-input', item);
+    if (positionInput) positionInput.addEventListener('change', () => {
+      const position = Number(positionInput.value);
+      if (!Number.isInteger(position) || position < Number(positionInput.min) || position > Number(positionInput.max)) {
+        positionInput.value = String(index + 1);
+        showToast('בחר מספר מיקום בטווח המוצג');
+        return;
+      }
+      const ids = selected.filter((item) => item.id !== ex.id).map((item) => item.id);
+      ids.splice(position - 1, 0, ex.id);
+      saveMyWorkoutOrder(ids);
     });
     const photoBtnManage = qs('.btnShowPhotoManage', item);
     if (photoBtnManage) photoBtnManage.addEventListener('click', () => openPhotoModal(ex));
     list.appendChild(item);
   });
-  makeSortable(list, (newOrderIds) => {
-    const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
-    exercises = newOrderIds.map((id) => byId[id]).filter(Boolean);
-    db.saveExercises(exercises);
-    renderExercisesTab();
-    reorderActiveSessionToMatchExercises();
-  });
+  if (!visible.length) list.innerHTML = `<div class="exercise-library-empty">${isMyWorkout ? 'האימון שלך עדיין ריק. בחר תרגילים מהקטגוריות למעלה.' : 'אין עדיין תרגילים בקטגוריה. אפשר להוסיף תרגיל חדש.'}</div>`;
+  if (isMyWorkout) makeSortable(list, saveMyWorkoutOrder);
 }
 
 /* ---- image upload helper: downsizes to keep localStorage small ---- */
@@ -2665,7 +2827,7 @@ function fileToResizedDataUrl(file) {
 }
 
 function openExerciseEditModal(ex, options = {}) {
-  if (ex.inputType === 'cardio') return openCardioEditModal(ex);
+  if (ex.inputType === 'cardio') return openCardioEditModal(ex, options);
   const isNew = !!options.isNew;
   let currentImages = [...(ex.images || [])];
   let inputType = ex.inputType || 'reps';
@@ -2726,6 +2888,10 @@ function openExerciseEditModal(ex, options = {}) {
       });
     });
   }
+  i18n.localizeInput(qs('#editExName', overlay), ex.name, 'name');
+  i18n.localizeInput(qs('#editExCategory', overlay), ex.category);
+  i18n.localizeInput(qs('#editExReps', overlay), ex.defaultReps || '');
+  i18n.localizeInput(qs('#editExNotes', overlay), ex.notes || '', 'notes');
   renderImageGrid();
 
   qs('#editExInputType', overlay).addEventListener('change', (e) => {
@@ -2754,10 +2920,10 @@ function openExerciseEditModal(ex, options = {}) {
   qs('.btnCloseExEdit', overlay).addEventListener('click', close);
   qs('#btnCancelExEdit', overlay).addEventListener('click', close);
   qs('#btnSaveExEdit', overlay).addEventListener('click', () => {
-    const name = qs('#editExName', overlay).value.trim();
+    const name = i18n.inputValue(qs('#editExName', overlay)).trim();
     if (!name) { showToast('נא להזין שם לתרגיל'); return; }
     ex.name = name;
-    ex.category = qs('#editExCategory', overlay).value.trim() || ex.category || 'כללי';
+    ex.category = i18n.inputValue(qs('#editExCategory', overlay)).trim() || ex.category || 'כללי';
     ex.defaultSets = Math.max(1, Number(qs('#editExSets', overlay).value) || 1);
     ex.inputType = inputType === 'hold' ? 'hold' : 'reps';
     if (ex.inputType === 'hold') {
@@ -2765,15 +2931,16 @@ function openExerciseEditModal(ex, options = {}) {
       ex.defaultReps = `${ex.holdSeconds} שניות החזקה`;
     } else {
       delete ex.holdSeconds;
-      ex.defaultReps = qs('#editExReps', overlay).value.trim();
+      ex.defaultReps = i18n.inputValue(qs('#editExReps', overlay)).trim();
     }
     const restValue = qs('#editExRest', overlay).value.trim();
     ex.restSeconds = restValue === '' ? 0 : Math.max(10, Number(restValue) || 90);
-    ex.notes = qs('#editExNotes', overlay).value.trim();
+    ex.notes = i18n.inputValue(qs('#editExNotes', overlay)).trim();
     ex.active = qs('#editExActive', overlay).checked;
     ex.images = currentImages;
     if (isNew) {
       exercises.push(ex);
+      exerciseLibraryCategory = exerciseLibraryCategory === 'my' && ex.active ? 'my' : exerciseLibraryGroup(ex);
     }
     db.saveExercises(exercises);
     syncExerciseNameEverywhere(ex);
@@ -2786,12 +2953,13 @@ function openExerciseEditModal(ex, options = {}) {
 
 /* lightweight edit modal for the warm-up/cool-down cardio "exercises" — just a
    name + duration (minutes), no sets/reps/images since their data is duration-based */
-function openCardioEditModal(ex) {
+function openCardioEditModal(ex, options = {}) {
+  const isNew = !!options.isNew;
   const overlay = document.createElement('div');
   overlay.className = 'photo-overlay';
   overlay.innerHTML = `
     <div class="photo-modal">
-      <div class="photo-modal-head"><b>עריכת תרגיל</b><button class="btn-icon btnCloseExEdit">✕</button></div>
+      <div class="photo-modal-head"><b>${isNew ? 'תרגיל חדש' : 'עריכת תרגיל'}</b><button class="btn-icon btnCloseExEdit">✕</button></div>
       <label class="field-label">שם</label>
       <input class="input" id="editCardioName" value="${escapeAttr(ex.name)}">
       <label class="field-label">משך (דקות)</label>
@@ -2806,17 +2974,23 @@ function openCardioEditModal(ex) {
     </div>
   `;
   document.body.appendChild(overlay);
+  i18n.localizeInput(qs('#editCardioName', overlay), ex.name, 'name');
+  i18n.localizeInput(qs('#editCardioPace', overlay), ex.pace || '');
   const close = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseExEdit', overlay).addEventListener('click', close);
   qs('#btnCancelExEdit', overlay).addEventListener('click', close);
   qs('#btnSaveExEdit', overlay).addEventListener('click', () => {
-    const name = qs('#editCardioName', overlay).value.trim();
+    const name = i18n.inputValue(qs('#editCardioName', overlay)).trim();
     if (!name) { showToast('נא להזין שם'); return; }
     ex.name = name;
     ex.durationMinutes = Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5);
-    ex.pace = qs('#editCardioPace', overlay).value.trim();
+    ex.pace = i18n.inputValue(qs('#editCardioPace', overlay)).trim();
     ex.active = qs('#editCardioActive', overlay).checked;
+    if (isNew) {
+      exercises.push(ex);
+      exerciseLibraryCategory = 'warmup';
+    }
     db.saveExercises(exercises);
     syncExerciseNameEverywhere(ex);
     renderExercisesTab();
@@ -2889,7 +3063,8 @@ function reorderActiveSessionToMatchExercises() {
   // completed sets. Otherwise editing the Exercises tab before checking off a single set
   // would wipe out everything the user already typed in the Workout tab.
   const hasProgress = activeSession.entries.some((e) =>
-    e.type === 'cardio' ? e.completed || e.startedAt || e.elapsedSec > 0 : e.sets.some((s) => s.completed || s.weightKg || s.reps));
+    e.type === 'cardio' ? e.completed || e.startedAt || e.elapsedSec > 0
+      : e.sets.some((s) => s.completed || s.weightKg || s.reps || s.holdStartedAt));
 
   const warmupLogged = byExId.warmup && (byExId.warmup.completed || byExId.warmup.startedAt || byExId.warmup.elapsedSec > 0);
   const cooldownLogged = byExId.cooldown && (byExId.cooldown.completed || byExId.cooldown.startedAt || byExId.cooldown.elapsedSec > 0);
@@ -2909,10 +3084,16 @@ function reorderActiveSessionToMatchExercises() {
     // fresh draft: fully sync to the currently-active exercise list (add new, drop deselected)
     const lastByExercise = getLastCompletedValuesByExercise();
     const synced = strengthExercises.filter((ex) => ex.active !== false).map((ex) => {
+      if (ex.inputType === 'cardio') return byExId[ex.id] || makeCardioEntry(ex.id);
       const last = lastByExercise[ex.id];
       if (byExId[ex.id]) {
         const entry = byExId[ex.id];
         const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
+        if (isBlank) {
+          const desired = setsForWeek(ex);
+          while (entry.sets.length < desired) entry.sets.push({ weightKg: '', reps: '', completed: false });
+          entry.sets.length = desired;
+        }
         if (isBlank && last) entry.sets.forEach((s) => { s.weightKg = last.weightKg; s.reps = last.reps; });
         return entry;
       }
@@ -2935,7 +3116,7 @@ function openPhotoModal(ex) {
   overlay.className = 'photo-overlay';
   overlay.innerHTML = `
     <div class="photo-modal">
-      <div class="photo-modal-head"><b>${escapeHtml(ex.name)}</b><button class="btn-icon btnClosePhoto">✕</button></div>
+      <div class="photo-modal-head"><b data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</b><button class="btn-icon btnClosePhoto">✕</button></div>
       <div class="photo-grid">
         ${ex.images.map((src) => `<img src="${src}" alt="${escapeAttr(ex.name)}" loading="lazy">`).join('')}
       </div>
@@ -2948,6 +3129,100 @@ function openPhotoModal(ex) {
 }
 
 /* ================= SETTINGS TAB ================= */
+function wireContactTab() {
+  const form = el('contactForm');
+  const button = el('btnSendContact');
+  const status = el('contactStatus');
+  const fields = ['contactName', 'contactEmail', 'contactMessage'].map(el);
+  let sending = false;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (sending || !form.reportValidity()) return;
+    const [name, email, message] = fields.map((field) => field.value.trim());
+    if (!name || !email || !message) {
+      status.textContent = i18n.text('יש למלא שם, כתובת מייל ותוכן פנייה.');
+      return;
+    }
+    sending = true;
+    button.disabled = true;
+    fields.forEach((field) => { field.disabled = true; });
+    form.setAttribute('aria-busy', 'true');
+    button.textContent = i18n.text('שולח…');
+    status.textContent = i18n.text('שולח את הפנייה…');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message, _subject: 'AutoFit — Contact' }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        status.textContent = i18n.text('השירות לא אישר את השליחה. הפנייה נשמרה בטופס. אפשר לנסות שוב מאוחר יותר.');
+        return;
+      }
+      const result = await response.json();
+      if (result.ok !== true) {
+        status.textContent = i18n.text('לא התקבל אישור שליחה. הפנייה נשמרה בטופס. בדוק את החיבור לפני ניסיון נוסף.');
+        return;
+      }
+      form.reset();
+      status.textContent = i18n.text('הפנייה נשלחה בהצלחה. תודה!');
+    } catch (error) {
+      console.error('Contact submission failed', error.name);
+      status.textContent = i18n.text('לא התקבל אישור שליחה. הפנייה נשמרה בטופס. בדוק את החיבור לפני ניסיון נוסף.');
+    } finally {
+      clearTimeout(timeout);
+      sending = false;
+      button.disabled = false;
+      fields.forEach((field) => { field.disabled = false; });
+      form.setAttribute('aria-busy', 'false');
+      button.textContent = i18n.text('שלח פנייה');
+    }
+  });
+}
+
+function wireLanguageControls() {
+  const buttons = qsa('[data-language]');
+  buttons.forEach((button) => button.addEventListener('click', async () => {
+    if (button.dataset.language === i18n.getLanguage()) return;
+    buttons.forEach((item) => { item.disabled = true; });
+    try {
+      const updated = { ...settings, language: button.dataset.language };
+      db.saveSettings(updated);
+      settings = updated;
+      i18n.setLanguage(settings.language);
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      announcementPlanKey = '';
+      activitySnapshotKey = '';
+      syncNativeAnnouncementPlan();
+      syncWorkoutActivity();
+      if (appInitialized) {
+        renderBrand();
+        renderHomeTab();
+        if (currentTab === 'dashboard') renderDashboard();
+        if (currentTab === 'history') renderHistoryTab();
+        if (voiceListeningActive) {
+          voiceListeningRevision++;
+          voiceListeningActive = false;
+          if (!await native.voiceStopListening()) throw new Error(i18n.text('לא ניתן להחליף את שפת המיקרופון. נסה שוב.'));
+        }
+        await updateVoiceListeningState();
+      }
+    } catch (error) {
+      console.error('Language change failed', error);
+      if (appInitialized && !voiceListeningActive && settings.voiceCommandsEnabled) {
+        voiceListeningError = error.message;
+        updateVoiceBadgeForListeningState();
+      }
+      showToast(i18n.text('החלפת השפה לא הושלמה: {0}').replace('{0}', error.message));
+    } finally {
+      buttons.forEach((item) => { item.disabled = false; });
+    }
+  }));
+}
+
 function wireSettings() {
   el('settingRestSeconds').addEventListener('change', (e) => {
     settings.restSeconds = Math.max(10, Number(e.target.value) || 90);
@@ -3058,7 +3333,43 @@ function recordWeightHistory(p) {
     p.weightHistory.push({ dateISO: new Date().toISOString(), weightKg: w });
   }
 }
+function wireProfilePhoto(buttonId, inputId) {
+  const input = el(inputId);
+  el(buttonId).addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    el('btnHomePhoto').disabled = true;
+    el('btnProfilePhoto').disabled = true;
+    try {
+      const photoDataUrl = await fileToResizedDataUrl(file);
+      const updated = { ...profile, photoDataUrl };
+      db.saveProfile(updated);
+      profile = updated;
+      renderProfilePhotos();
+      showToast('תמונת הפרופיל עודכנה');
+    } catch (error) {
+      console.error('Profile photo update failed', error);
+      showToast('לא ניתן לשמור את התמונה. נסה תמונה אחרת או בדוק שיש מקום פנוי במכשיר.');
+    } finally {
+      input.value = '';
+      el('btnHomePhoto').disabled = false;
+      el('btnProfilePhoto').disabled = false;
+    }
+  });
+}
+
+function renderProfilePhotos() {
+  const src = profile.photoDataUrl || 'icons/icon-192.png';
+  for (const id of ['homePhoto', 'workoutProfilePhoto', 'profilePhoto']) {
+    const image = el(id);
+    if (image.getAttribute('src') !== src) image.src = src;
+  }
+  el('profilePhotoAction').textContent = profile.photoDataUrl ? 'החלף תמונת פרופיל' : 'העלה תמונת פרופיל';
+}
+
 function wireProfileTab() {
+  wireProfilePhoto('btnProfilePhoto', 'profilePhotoInput');
   el('btnSaveProfile').addEventListener('click', () => {
     const name = el('profileName').value.trim();
     if (!name) { showToast('שם המתאמן הוא שדה חובה'); return; }
@@ -3074,6 +3385,7 @@ function wireProfileTab() {
   });
 }
 function renderProfileTab() {
+  renderProfilePhotos();
   el('profileName').value = profile.name || '';
   el('profileAge').value = profile.age || '';
   el('profileHeight').value = profile.heightCm || '';
@@ -3082,30 +3394,92 @@ function renderProfileTab() {
 function renderBrand() {
   el('appBrand').textContent = 'AutoFit';
   const greetingEl = el('greetingText');
-  if (greetingEl) greetingEl.textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
+  const name = String(profile.name || '').trim();
+  if (greetingEl) greetingEl.textContent = `${i18n.text('אימון מוצלח')}${name ? ` ${name}` : ''}`;
 }
 
 /* ================= HOME TAB ================= */
 function wireHomeTab() {
-  el('btnHomePhoto').addEventListener('click', () => el('homePhotoInput').click());
-  el('homePhotoInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      profile.photoDataUrl = await fileToResizedDataUrl(file);
-      db.saveProfile(profile);
-      renderHomeTab();
-      showToast('התמונה עודכנה ✅');
-    } catch (err) {
-      showToast('לא ניתן היה לטעון את התמונה');
-    }
-  });
+  wireProfilePhoto('btnHomePhoto', 'homePhotoInput');
   el('btnHomeToDashboard').addEventListener('click', () => switchTab('dashboard'));
   el('btnHomeProgress').addEventListener('click', openHomeProgressModal);
+  el('btnHomeStartWorkout').addEventListener('click', () => {
+    if (!activeSession.entries.length) {
+      exerciseLibraryCategory = null;
+      renderExercisesTab();
+      switchTab('exercises');
+      return;
+    }
+    switchTab('workout');
+    if (!activeSession.running) el('btnStartWorkout').click();
+  });
+  el('btnHomeEditWorkout').addEventListener('click', () => {
+    exerciseLibraryCategory = 'my';
+    renderExercisesTab();
+    switchTab('exercises');
+  });
+  el('btnHomeLastWorkout').addEventListener('click', () => {
+    const id = el('btnHomeLastWorkout').dataset.workoutId;
+    switchTab('history');
+    const item = qsa('.history-item', el('historyList')).find((row) => row.dataset.workoutId === id);
+    if (item) {
+      item.classList.add('open');
+      item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
 }
+
+function buildHomeOverview() {
+  const entries = activeSession.entries;
+  const goal = Math.max(1, Math.round(Number(settings.weeklyGoal) || 3));
+  const weekCount = countThisWeek();
+  const last = [...workouts].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO))[0];
+  return {
+    exerciseCount: entries.length,
+    sets: entries.filter((entry) => entry.type !== 'cardio').reduce((sum, entry) => sum + entry.sets.length, 0),
+    running: activeSession.running,
+    goal, weekCount, percent: Math.min(100, Math.round(weekCount / goal * 100)),
+    streak: computeStreak(), total: workouts.length, last,
+  };
+}
+
 function renderHomeTab() {
-  el('homePhoto').src = profile.photoDataUrl || 'icons/icon-192.png';
-  el('homeGreeting').textContent = profile.name ? `שלום ${profile.name} 👋` : 'שלום! 👋';
+  workouts = db.getWorkouts();
+  const overview = buildHomeOverview();
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 5 ? 'שלום' : hour < 12 ? 'בוקר טוב' : hour < 17 ? 'צהריים טובים' : 'ערב טוב';
+  renderProfilePhotos();
+  el('homeGreeting').setAttribute('data-no-translate', '');
+  el('homeGreeting').textContent = profile.name ? `${i18n.text(greeting)}, ${profile.name}` : `${i18n.text(greeting)}!`;
+  el('homeDate').textContent = now.toLocaleDateString(i18n.locale(), { weekday: 'long', day: 'numeric', month: 'long' });
+  el('homeWorkoutState').textContent = overview.running ? 'אימון פעיל' : overview.exerciseCount ? 'מוכן לאימון' : 'מתחילים כאן';
+  el('homeWorkoutSummary').textContent = overview.exerciseCount
+    ? `${exerciseLibraryCount(overview.exerciseCount)} · ${overview.sets ? `${overview.sets} סטים בתוכנית` : 'אימון מבוסס זמן'}`
+    : 'בחר תרגילים מהספרייה ובנה את התוכנית שמתאימה לך.';
+  el('homeStartLabel').textContent = overview.running ? 'המשך אימון' : overview.exerciseCount ? 'התחל אימון' : 'בנה את האימון שלי';
+  el('homeWeekCount').textContent = overview.weekCount;
+  el('homeWeekGoal').textContent = `מתוך ${overview.goal} ${overview.goal === 1 ? 'אימון' : 'אימונים'}`;
+  el('homeWeekFill').style.width = `${overview.percent}%`;
+  el('homeWeeklyProgress').setAttribute('aria-valuemax', overview.goal);
+  el('homeWeeklyProgress').setAttribute('aria-valuenow', Math.min(overview.weekCount, overview.goal));
+  el('homeWeeklyProgress').setAttribute('aria-valuetext', `${overview.weekCount} מתוך ${overview.goal} אימונים`);
+  el('homeWeekHint').textContent = overview.weekCount >= overview.goal
+    ? 'היעד השבועי הושג. כל הכבוד על ההתמדה!'
+    : overview.weekCount ? 'עוד צעד קדימה. ממשיכים בקצב שלך.' : 'שבוע חדש, הזדמנות חדשה להתחזק.';
+  el('homeStreak').textContent = overview.streak;
+  el('homeTotalWorkouts').textContent = overview.total;
+  const last = overview.last;
+  el('btnHomeLastWorkout').classList.toggle('hidden', !last);
+  el('btnHomeLastWorkout').dataset.workoutId = last?.id || '';
+  if (last) {
+    const sets = last.entries.filter((entry) => entry.type !== 'cardio').reduce((sum, entry) => sum + entry.sets.length, 0);
+    el('homeLastDate').textContent = new Date(last.dateISO).toLocaleDateString(i18n.locale(), { weekday: 'short', day: 'numeric', month: 'long' });
+    el('homeLastSummary').textContent = `משך: ${formatHMS(last.durationSec)} · ${exerciseLibraryCount(last.entries.length)}${sets ? ` · ${sets} סטים` : ''}`;
+  } else {
+    el('homeLastDate').textContent = 'האימון הראשון שלך מחכה לך';
+    el('homeLastSummary').textContent = 'אחרי שתסיים ותשמור אימון, הסיכום שלו יופיע כאן.';
+  }
 }
 
 function buildHomeStatCards() {
@@ -3114,7 +3488,7 @@ function buildHomeStatCards() {
   const streak = computeStreak();
   const sorted = [...workouts].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   const lastWorkoutText = sorted.length
-    ? new Date(sorted[0].dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })
+    ? new Date(sorted[0].dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit' })
     : 'אין עדיין';
 
   const history = profile.weightHistory || [];
@@ -3163,14 +3537,14 @@ function buildWeekWorkoutsDetailHtml() {
     .sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   if (!thisWeek.length) return '<div class="card-hint">עדיין לא בוצע אימון השבוע</div>';
   return `<ul class="home-detail-list">${thisWeek.map((w) => `
-    <li><b>${formatDate(w.dateISO)}</b><br>משך: ${formatHMS(w.durationSec)} &middot; נפח: ${Math.round(computeVolume(w)).toLocaleString()} ק"ג</li>
+    <li><b>${formatDate(w.dateISO)}</b><br>משך: ${formatHMS(w.durationSec)} &middot; נפח: ${Math.round(computeVolume(w)).toLocaleString(i18n.locale())} ק"ג</li>
   `).join('')}</ul>`;
 }
 function buildWeightHistoryDetailHtml() {
   const history = [...(profile.weightHistory || [])].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO)).slice(0, 8);
   if (!history.length) return '<div class="card-hint">אין עדיין נתוני משקל שמורים — עדכן בטאב "אישי"</div>';
   return `<ul class="home-detail-list">${history.map((h) => `
-    <li><b>${new Date(h.dateISO).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</b> — ${h.weightKg} ק"ג</li>
+    <li><b>${new Date(h.dateISO).toLocaleDateString(i18n.locale(), { day: '2-digit', month: '2-digit', year: 'numeric' })}</b> — ${h.weightKg} ק"ג</li>
   `).join('')}</ul>`;
 }
 function buildStreakDetailHtml() {
@@ -3184,13 +3558,13 @@ function buildStreakDetailHtml() {
     rows.push({ key: key.replace(/^\d+-/, ''), count });
   }
   return `<ul class="home-detail-list">${rows.map((r) => `
-    <li>${r.key} — ${r.count} אימון${r.count === 1 ? '' : 'ים'} ${r.count >= (settings.weeklyGoal || 3) ? '✅' : ''}</li>
+    <li>${r.key} — ${r.count} ${r.count === 1 ? 'אימון' : 'אימונים'} ${r.count >= (settings.weeklyGoal || 3) ? '✅' : ''}</li>
   `).join('')}</ul>`;
 }
 function buildActiveExercisesDetailHtml() {
   const active = exercises.filter((e) => e.active !== false);
   if (!active.length) return '<div class="card-hint">אין תרגילים פעילים</div>';
-  return `<ul class="home-detail-list">${active.map((e, i) => `<li>${i + 1}. ${escapeHtml(e.name)} <span class="card-hint">(${escapeHtml(e.category)})</span></li>`).join('')}</ul>`;
+  return `<ul class="home-detail-list">${active.map((e, i) => `<li>${i + 1}. <span data-no-translate data-exercise-name="${escapeAttr(e.name)}">${escapeHtml(i18n.exerciseName(e.name))}</span> <span class="card-hint">(${escapeHtml(e.category)})</span></li>`).join('')}</ul>`;
 }
 
 function openHomeProgressModal() {
@@ -3201,7 +3575,7 @@ function openHomeProgressModal() {
     <div class="photo-modal">
       <div class="photo-modal-head"><b>ההתקדמות שלי</b><button class="btn-icon btnCloseHomeProgress">✕</button></div>
       <div class="home-stats-grid" id="homeProgressGrid"></div>
-      <button class="btn btn-secondary home-dashboard-btn" id="btnHomeProgressToDashboard">📈 לדשבורד המלא</button>
+      <button class="btn btn-secondary home-dashboard-btn" id="btnHomeProgressToDashboard">📈 לסטטיסטיקה המלאה</button>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -3244,7 +3618,7 @@ function openHomeDetailModal(title, bodyHtml) {
 /* ================= UTIL ================= */
 function showToast(msg) {
   const t = el('toast');
-  t.textContent = msg;
+  t.textContent = i18n.text(msg);
   t.classList.remove('hidden');
   clearTimeout(showToast._timer);
   showToast._timer = setTimeout(() => t.classList.add('hidden'), 2600);
@@ -3303,6 +3677,8 @@ async function unlockWithBiometrics() {
 // returning users who enabled it, then either launch onboarding (first run)
 // or the main app.
 async function bootstrap() {
+  i18n.start(settings.language || 'he');
+  wireLanguageControls();
   if (native.isNative()) {
     await restoreFromCloudIfEmpty();
     // Cloud restore writes straight to localStorage — reload the in-memory
@@ -3311,6 +3687,7 @@ async function bootstrap() {
     profile = db.getProfile();
     workouts = db.getWorkouts();
     activeSession = db.getActiveSession();
+    i18n.setLanguage(settings.language || 'he');
 
     if (settings.onboardingComplete && settings.faceIdEnabled !== false) {
       const bio = await native.biometricIsAvailable();
@@ -3400,6 +3777,11 @@ function runOnboarding() {
 
   const stepDetails = el('onboardingStepDetails');
   const stepPermissions = el('onboardingStepPermissions');
+  el('btnOnboardingLanguage').addEventListener('click', () => {
+    el('onboardingStepLanguage').classList.remove('active');
+    stepDetails.classList.add('active');
+    el('obName').focus();
+  });
 
   function finishOnboarding() {
     settings.onboardingComplete = true;

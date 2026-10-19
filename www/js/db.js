@@ -40,6 +40,7 @@ function write(key, value) {
 }
 
 export const DEFAULT_SETTINGS = {
+  language: 'he',
   restSeconds: 90,
   weeklyGoal: 3,
   programWeek: 3, // week 1 = 1 set/exercise, week 2 = 2 sets, week 3+ = full (defaultSets)

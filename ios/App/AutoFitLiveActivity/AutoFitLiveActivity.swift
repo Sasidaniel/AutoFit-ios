@@ -29,11 +29,11 @@ private struct WorkoutSummary: View {
 
     private var phaseTitle: String {
         switch state.phase {
-        case .ready: return "מוכן לאימון"
-        case .workout: return "זמן אימון"
-        case .rest: return "מנוחה"
-        case .hold: return "החזקה"
-        case .cardio: return "חימום / שחרור"
+        case .ready: return state.isEnglish ? "Ready to train" : "מוכן לאימון"
+        case .workout: return state.isEnglish ? "Workout time" : "זמן אימון"
+        case .rest: return state.isEnglish ? "Rest" : "מנוחה"
+        case .hold: return state.isEnglish ? "Hold" : "החזקה"
+        case .cardio: return state.isEnglish ? "Warmup / cooldown" : "חימום / שחרור"
         }
     }
 
@@ -42,7 +42,7 @@ private struct WorkoutSummary: View {
             HStack {
                 Label("AutoFit", systemImage: "dumbbell.fill").foregroundStyle(accent)
                 Spacer()
-                Text("\(state.completedSets) / \(state.totalSets) סטים")
+                Text("\(state.completedSets) / \(state.totalSets) \(state.isEnglish ? "sets" : "סטים")")
                     .font(.caption).monospacedDigit()
             }
             Text(state.exerciseName).font(.headline).lineLimit(1).privacySensitive()
@@ -54,7 +54,7 @@ private struct WorkoutSummary: View {
                 if state.phase != .workout && state.phase != .ready {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("זמן אימון").font(.caption).foregroundStyle(.secondary)
+                        Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption).foregroundStyle(.secondary)
                         ActivityClock(state: state, elapsed: true).font(.title3)
                     }
                 }
@@ -64,7 +64,7 @@ private struct WorkoutSummary: View {
         }
         .padding(14)
         .foregroundStyle(.white)
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(\.layoutDirection, state.isEnglish ? .leftToRight : .rightToLeft)
     }
 }
 

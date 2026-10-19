@@ -5,12 +5,23 @@ struct WorkoutActivityStateTests {
     static func main() throws {
         let now = 1792300000000.0
         func state(_ phase: String = "workout", start: Double? = nil, end: Double? = nil,
-                   completed: Int = 2, total: Int = 6, name: String = "Bench") throws -> WorkoutActivityState {
+                   completed: Int = 2, total: Int = 6, name: String = "Bench", language: String = "he") throws -> WorkoutActivityState {
             try WorkoutActivityState(startMillis: now - 60000, exerciseName: name,
                                      completedSets: completed, totalSets: total, phase: phase,
-                                     phaseStartMillis: start, phaseEndMillis: end, nowMillis: now)
+                                     phaseStartMillis: start, phaseEndMillis: end, nowMillis: now, language: language)
         }
         let workout = try state()
+        precondition(!workout.isEnglish)
+        let english = try WorkoutActivityState(startMillis: now - 60000, exerciseName: "Bench",
+            completedSets: 2, totalSets: 6, phase: "workout",
+            phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, language: "en")
+        let englishRoundTrip = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(english))
+        precondition(englishRoundTrip.isEnglish)
+        var legacyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(workout)) as! [String: Any]
+        legacyJSON.removeValue(forKey: "language")
+        let legacy = try JSONDecoder().decode(WorkoutActivityState.self,
+            from: JSONSerialization.data(withJSONObject: legacyJSON))
+        precondition(legacy.language == nil && !legacy.isEnglish)
         precondition(workout.workoutStartedAt.timeIntervalSince1970 == (now - 60000) / 1000)
         precondition(workout.phaseStartedAt == nil && workout.phaseEndsAt == nil)
         let ready = try state("ready")
@@ -39,6 +50,7 @@ struct WorkoutActivityStateTests {
             { try state(total: 10001) },
             { try state(name: " ") },
             { try state(name: String(repeating: "x", count: 121)) },
+            { try state(language: "fr") },
         ]
         for make in invalid {
             do {

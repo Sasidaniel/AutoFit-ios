@@ -1,5 +1,6 @@
 // timer.js — workout stopwatch + rest countdown with sound/vibration
 import { isNative, announce, beep } from './native-bridge.js';
+import * as i18n from './i18n.js';
 export function formatHMS(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -69,9 +70,10 @@ export function playBeep() {
 
 // Voice announcement via Web Speech API (plays through connected headphones too).
 // Must first be triggered from a user gesture (tap) on iOS, otherwise it's silently blocked.
-export function speak(text, lang = 'he-IL', announcementID) {
+export function speak(text, lang = i18n.locale(), announcementID) {
+  text = i18n.text(text);
   if (isNative()) {
-    announce(text, announcementID).catch(reportAudioError);
+    announce(text, announcementID, lang).catch(reportAudioError);
     return;
   }
   try {

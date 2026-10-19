@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 190 100">
+  <path fill="#b22234" d="M0 0h190v100H0z"/>
+  <path stroke="#fff" stroke-width="7.6923" d="M0 11.5385h190M0 26.9231h190M0 42.3077h190M0 57.6923h190M0 73.0769h190M0 88.4615h190"/>
+  <path fill="#3c3b6e" d="M0 0h76v53.8462H0z"/>
+  <defs>
+    <path id="star" fill="#fff" d="m0-2.8.629 1.935h2.035L1.018.33l.629 1.935L0 1.069-1.647 2.265l.629-1.935-1.646-1.195h2.035z"/>
+    <g id="six">
+      <use xlink:href="#star" x="6.333"/><use xlink:href="#star" x="19"/>
+      <use xlink:href="#star" x="31.667"/><use xlink:href="#star" x="44.333"/>
+      <use xlink:href="#star" x="57"/><use xlink:href="#star" x="69.667"/>
+    </g>
+    <g id="five">
+      <use xlink:href="#star" x="12.667"/><use xlink:href="#star" x="25.333"/>
+      <use xlink:href="#star" x="38"/><use xlink:href="#star" x="50.667"/><use xlink:href="#star" x="63.333"/>
+    </g>
+  </defs>
+  <use xlink:href="#six" y="5.385"/><use xlink:href="#five" y="10.769"/>
+  <use xlink:href="#six" y="16.154"/><use xlink:href="#five" y="21.538"/>
+  <use xlink:href="#six" y="26.923"/><use xlink:href="#five" y="32.308"/>
+  <use xlink:href="#six" y="37.692"/><use xlink:href="#five" y="43.077"/><use xlink:href="#six" y="48.462"/>
+</svg>

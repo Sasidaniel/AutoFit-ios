@@ -8,6 +8,11 @@ struct ScheduledWorkoutAnnouncementTests {
             "text": "Rest finished", "announcementID": "rest:done", "fireAtMillis": now + 90000
         ]
         let announcement = try ScheduledWorkoutAnnouncement(item)
+        precondition(announcement.language == "he-IL")
+        var englishItem = item
+        englishItem["language"] = "en-US"
+        let englishAnnouncement = try ScheduledWorkoutAnnouncement(englishItem)
+        precondition(englishAnnouncement.language == "en-US")
         let timer = announcement.timer { _ in }
         precondition(announcement.identifier == "rest:done")
         precondition(abs(timer.fireDate.timeIntervalSince1970 * 1000 - (now + 90000)) < 0.001)
@@ -33,7 +38,9 @@ struct ScheduledWorkoutAnnouncementTests {
             ["text": "Done", "announcementID": "id", "fireAtMillis": Double.nan],
             ["text": "Done", "announcementID": "id", "fireAtMillis": Double.infinity],
             ["text": "Done", "announcementID": "id", "fireAtMillis": -1.0],
-            ["text": "Done", "announcementID": "id", "delaySeconds": 90.0]
+            ["text": "Done", "announcementID": "id", "delaySeconds": 90.0],
+            ["text": "Done", "announcementID": "id", "fireAtMillis": now, "language": "fr-FR"],
+            ["text": "Done", "announcementID": "id", "fireAtMillis": now, "language": 123]
         ] as [[String: Any]] {
             do {
                 _ = try ScheduledWorkoutAnnouncement(invalid)

@@ -109,7 +109,8 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         }
         DispatchQueue.main.async {
             do {
-                try self.speak(text, announcementID: call.getString("announcementID"))
+                try self.speak(text, language: call.getString("language") ?? "he-IL",
+                               announcementID: call.getString("announcementID"))
                 call.resolve()
             } catch {
                 call.reject("Announcement audio failed: \(error.localizedDescription)")
@@ -190,7 +191,8 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             for announcement in announcements {
                 let timer = announcement.timer { [weak self] _ in
                     do {
-                        try self?.speak(announcement.text, announcementID: announcement.identifier)
+                        try self?.speak(announcement.text, language: announcement.language,
+                                        announcementID: announcement.identifier)
                     } catch {
                         self?.notifyListeners("announcementError", data: ["reason": error.localizedDescription])
                     }
@@ -214,7 +216,12 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         pendingTimers.removeAll()
     }
 
-    private func speak(_ text: String, announcementID: String? = nil) throws {
+    private func speak(_ text: String, language: String = "he-IL", announcementID: String? = nil) throws {
+        guard ["he-IL", "en-US"].contains(language),
+              let voice = AVSpeechSynthesisVoice(language: language) else {
+            throw NSError(domain: "AutoFit.Audio", code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "Requested announcement voice is unavailable"])
+        }
         if let announcementID = announcementID, recentAnnouncementIDs.contains(announcementID) { return }
         guard !audioInterrupted else {
             throw NSError(domain: "AutoFit.Audio", code: 4,
@@ -231,7 +238,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             }
         }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "he-IL")
+        utterance.voice = voice
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         pendingSpeechCount += 1
         speechSynthesizer.speak(utterance)

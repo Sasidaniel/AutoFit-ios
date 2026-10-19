@@ -13,15 +13,18 @@ struct WorkoutActivityState: Codable, Hashable {
     let phase: Phase
     let phaseStartedAt: Date?
     let phaseEndsAt: Date?
+    // Optional for activities encoded by older app versions.
+    let language: String?
+    var isEnglish: Bool { language == "en" }
 
     init(startMillis: Double, exerciseName: String, completedSets: Int, totalSets: Int,
          phase: String, phaseStartMillis: Double?, phaseEndMillis: Double?,
-         nowMillis: Double = Date().timeIntervalSince1970 * 1000) throws {
+         nowMillis: Double = Date().timeIntervalSince1970 * 1000, language: String = "he") throws {
         guard startMillis.isFinite, startMillis > 0, startMillis <= nowMillis + 60000,
               !exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               exerciseName.count <= 120,
               completedSets >= 0, totalSets >= completedSets, totalSets <= 10000,
-              let phase = Phase(rawValue: phase) else {
+              let phase = Phase(rawValue: phase), ["he", "en"].contains(language) else {
             throw NSError(domain: "AutoFit.LiveActivity", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Invalid workout Live Activity data"])
         }
@@ -43,6 +46,7 @@ struct WorkoutActivityState: Codable, Hashable {
         self.completedSets = completedSets
         self.totalSets = totalSets
         self.phase = phase
+        self.language = language
         phaseStartedAt = phaseStartMillis.map { Date(timeIntervalSince1970: $0 / 1000) }
         phaseEndsAt = phaseEndMillis.map { Date(timeIntervalSince1970: $0 / 1000) }
     }

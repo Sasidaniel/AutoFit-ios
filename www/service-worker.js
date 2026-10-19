@@ -1,5 +1,5 @@
 // service-worker.js — app shell caching for offline + installability
-const CACHE_NAME = 'autofit-v44';
+const CACHE_NAME = 'autofit-v46';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -9,10 +9,21 @@ const PRECACHE_URLS = [
   './js/seed.js',
   './js/timer.js',
   './js/native-bridge.js',
+  './js/i18n.js',
+  './js/translations-en.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
+  './icons/flag-il.svg',
+  './icons/flag-us.svg',
+  './icons/muscle-chest.svg',
+  './icons/muscle-shoulders.svg',
+  './icons/muscle-biceps.svg',
+  './icons/muscle-triceps.svg',
+  './icons/muscle-core.svg',
+  './icons/muscle-back.svg',
+  './icons/muscle-traps.svg',
   './images/p2_1.png', './images/p2_2.png', './images/p2_3.png', './images/p2_4.png',
   './images/p3_1.png', './images/p3_2.png', './images/p3_3.png',
   './images/p4_1.png', './images/p4_2.png', './images/p4_3.png',

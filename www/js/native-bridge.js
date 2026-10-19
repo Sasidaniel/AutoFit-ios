@@ -115,10 +115,10 @@ export async function bgStartKeepAlive() {
   }
 }
 
-export async function announce(text, announcementID) {
+export async function announce(text, announcementID, language = 'he-IL') {
   const announcer = plugin('BackgroundAnnouncer');
   if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
-  await announcer.speakNow({ text, announcementID });
+  await announcer.speakNow({ text, announcementID, language });
 }
 
 export async function beep() {
@@ -228,11 +228,11 @@ export async function voiceRequestPermission() {
   }
 }
 
-export async function voiceStartListening(contextualStrings = []) {
+export async function voiceStartListening(contextualStrings = [], language = 'he-IL') {
   const V = plugin('VoiceCommand');
   if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
   try {
-    const result = await V.startListening({ contextualStrings });
+    const result = await V.startListening({ contextualStrings, language });
     return { listening: true, inputName: result?.inputName || '' };
   } catch (e) {
     return { listening: false, reason: String(e) };

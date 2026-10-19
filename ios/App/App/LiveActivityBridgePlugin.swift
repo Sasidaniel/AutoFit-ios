@@ -85,7 +85,8 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     let state = try WorkoutActivityState(
                         startMillis: start, exerciseName: name, completedSets: completed, totalSets: total,
                         phase: phase, phaseStartMillis: call.getDouble("phaseStartMillis"),
-                        phaseEndMillis: call.getDouble("phaseEndMillis"))
+                        phaseEndMillis: call.getDouble("phaseEndMillis"),
+                        language: call.getString("language") ?? "he")
                     let content = ActivityContent(state: state, staleDate: state.phaseEndsAt)
                     let activities = Activity<WorkoutActivityAttributes>.activities
                     let existing = activities.first(where: {

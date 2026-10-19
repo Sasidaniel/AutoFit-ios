@@ -1,13 +1,27 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
+const nodeVM = require('node:vm');
 const { test } = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
+function localizationContext(extras = {}) {
+  const context = nodeVM.createContext(extras);
+  nodeVM.runInContext(read('www/js/translations-en.js').replace(/^export /gm, ''), context);
+  nodeVM.runInContext(read('www/js/seed.js').replace(/^export /gm, ''), context);
+  nodeVM.runInContext(read('www/js/i18n.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  return context;
+}
+const vm = {
+  ...nodeVM,
+  createContext(values = {}) {
+    const i18n = localizationContext();
+    return nodeVM.createContext({ i18n, wireLanguageControls: () => {}, ...values });
+  },
+};
 
 function section(start, end) {
   const from = app.indexOf(start);
@@ -24,6 +38,173 @@ function bridgeContext(plugins = {}, native = true, extras = {}) {
   vm.runInContext(bridge, context);
   return context;
 }
+
+test('Hebrew is the default and both language pickers use the same bilingual flag cards', () => {
+  assert.match(read('www/js/db.js'), /language: 'he'/);
+  const html = read('www/index.html');
+  for (const id of ['onboardingStepLanguage', 'tab-settings']) {
+    const picker = html.slice(html.indexOf(`id="${id}"`)).split('</div>')[0];
+    assert.match(picker, /data-language="he" aria-pressed="true"/);
+    assert.match(picker, /data-language="en" aria-pressed="false"/);
+    assert.match(picker, /flag-il\.svg/);
+    assert.match(picker, /flag-us\.svg/);
+    assert.match(picker, /עברית.*Hebrew/s);
+    assert.match(picker, /אנגלית.*English/s);
+  }
+});
+
+test('localization translates nested messages, decorations and locales and restores Hebrew', () => {
+  const context = localizationContext();
+  assert.equal(context.getLanguage(), 'he');
+  assert.equal(context.locale(), 'he-IL');
+  context.setLanguage('en');
+  assert.equal(context.locale(), 'en-US');
+  assert.equal(context.text('אימון מוצלח'), 'Have a great workout');
+  assert.equal(context.text('🎙️ מקשיב (iPhone) — תרגיל נוכחי: לחיצת חזה'), '🎙️ Listening (iPhone) — current exercise: Chest press');
+  assert.equal(context.text('החימום הסתיים. 50 אחוז מהאימון הושלמו ✅'), 'Warmup complete. 50 percent of your workout complete ✅');
+  assert.equal(context.text('הליכה 5 דקות'), 'Walk for 5 min');
+  assert.throws(() => context.setLanguage('fr'), /Unsupported language/);
+  context.setLanguage('he');
+  assert.equal(context.text('אימון מוצלח'), 'אימון מוצלח');
+});
+
+test('translation round trips preserve text node identity and use the latest rendered source', () => {
+  const context = localizationContext();
+  const node = { nodeType: 3, nodeValue: 'אימון', parentElement: { closest: () => null } };
+  context.setLanguage('en');
+  context.translateDOM(node);
+  assert.equal(node.nodeValue, 'Workout');
+  node.nodeValue = 'סיים אימון';
+  context.translateDOM(node);
+  assert.equal(node.nodeValue, 'Finish workout');
+  context.setLanguage('he');
+  context.translateDOM(node);
+  assert.equal(node.nodeValue, 'סיים אימון');
+  node.parentElement.closest = () => ({});
+  context.setLanguage('en');
+  node.nodeValue = 'ראשי';
+  context.translateDOM(node);
+  assert.equal(node.nodeValue, 'ראשי');
+});
+
+test('exercise translations never rename stored models or translate authored exercise names and notes', () => {
+  const context = localizationContext();
+  context.setLanguage('en');
+  assert.equal(context.exerciseName('לחיצת חזה'), 'Chest press');
+  assert.equal(context.exerciseName('ראשי'), 'ראשי');
+  assert.equal(context.exerciseNotes('לכל יד'), 'Each arm');
+  assert.equal(context.exerciseNotes('אימון אישי שלי'), 'אימון אישי שלי');
+  const input = { value: '', setAttribute() {} };
+  context.localizeInput(input, 'לחיצת חזה', 'name');
+  assert.equal(input.value, 'Chest press');
+  assert.equal(context.inputValue(input), 'לחיצת חזה');
+  input.value = 'My custom chest press';
+  assert.equal(context.inputValue(input), 'My custom chest press');
+});
+
+test('every static Hebrew UI caption and accessibility attribute has an English translation', () => {
+  const context = localizationContext();
+  context.setLanguage('en');
+  const html = read('www/index.html').replace(/<!--[\s\S]*?-->/g, '');
+  const intentional = new Set(['בחירת שפה · Language', 'עברית', 'אנגלית']);
+  const values = [...html.matchAll(/>([^<>]*)</g)].map((match) => match[1].trim());
+  values.push(...[...html.matchAll(/(?:title|placeholder|aria-label|alt)="([^"]*)"/g)].map((match) => match[1]));
+  const decoded = values.map((value) => value.replace(/&(gt|lt|quot|amp|#39);/g,
+    (_, entity) => ({ gt: '>', lt: '<', quot: '"', amp: '&', '#39': "'" }[entity])));
+  for (const value of decoded.filter((value) => /[\u0590-\u05ff]/.test(value) && !intentional.has(value))) {
+    assert.doesNotMatch(context.text(value), /[\u0590-\u05ff]/, value);
+  }
+});
+
+for (const [phrase, expected] of [
+  ['Start workout', 'startWorkout'], ['Start the workout', 'startWorkout'],
+  ['Finish workout', 'finishWorkout'], ['End workout', 'finishWorkout'],
+  ['Cancel workout', 'cancelWorkout'], ['Start set', 'startSet'],
+  ['Set complete', 'setDone'], ['Set finished', 'setDone'], ['Done', 'setDone'],
+  ['Skip rest', 'skipRest'], ['Rest finished', 'skipRest'], ['Next exercise', 'nextExercise'],
+  ['Start', 'startExercise'], ['Stop', 'stopExercise'], ['Pause exercise', 'stopExercise'], ['Undo', 'undo'],
+  ["Don't cancel workout", null], ['Do not finish workout', null], ['Do not start set', null],
+]) {
+  test(`English voice classification: ${phrase}`, () => {
+    assert.equal(voiceContext().context.classifyVoiceCommand(phrase), expected);
+  });
+}
+
+test('English rep counting, named exercise selection and set completion use the existing workout actions', () => {
+  const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ completed: false, reps: '' }] };
+  const { context, session, calls } = voiceContext([entry]);
+  context.i18n.setLanguage('en');
+  context.handleVoiceTranscript('Start chest press');
+  assert.equal(session.currentExerciseId, 'bench');
+  assert.ok(calls.includes('start'));
+  context.handleVoiceTranscript('twenty-one set complete');
+  assert.equal(entry.sets[0].reps, 21);
+  assert.equal(entry.sets[0].completed, true);
+  assert.ok(calls.includes('rest'));
+  for (const [phrase, number] of [['zero', 0], ['one two twelve', 12], ['thirty nine', 39], ['ninety-nine', 99]]) {
+    assert.equal(context.parseSpokenNumber(phrase), number, phrase);
+  }
+});
+
+test('English speech and recognition forward the selected locale through native bridges', async () => {
+  const calls = [];
+  const bridge = bridgeContext({
+    BackgroundAnnouncer: { speakNow: async (item) => calls.push(item) },
+    VoiceCommand: { startListening: async (item) => { calls.push(item); return {}; } },
+  });
+  await bridge.announce('Rest complete', 'rest:done', 'en-US');
+  await bridge.voiceStartListening(['Chest press'], 'en-US');
+  assert.equal(calls[0].language, 'en-US');
+  assert.equal(calls[1].language, 'en-US');
+  const context = vm.createContext({
+    isNative: () => true, announce: async (text, id, language) => calls.push({ text, id, language }),
+  });
+  context.i18n.setLanguage('en');
+  vm.runInContext(read('www/js/timer.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  context.speak('עברו 30 שניות', undefined, 'rest:30');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls.at(-1), { text: '30 seconds elapsed', id: 'rest:30', language: 'en-US' });
+});
+
+test('changing announcement language replaces the native plan without changing deadlines or stable identities', async () => {
+  const { context, calls } = nativePlanContext();
+  context.restTimer.start(90);
+  await settlePlan(context);
+  context.i18n.setLanguage('en');
+  context.syncNativeAnnouncementPlan();
+  await settlePlan(context);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].every((item) => item.language === 'en-US' && !/[\u0590-\u05ff]/.test(item.text)));
+  assert.deepEqual(calls[1].map((item) => [item.fireAtMillis, item.announcementID]),
+    calls[0].map((item) => [item.fireAtMillis, item.announcementID]));
+});
+
+test('language changes are durable, restart recognition in the new locale and do not rerender workout or profile forms', async () => {
+  const handlers = [], calls = [], buttons = ['he', 'en'].map((language) => ({
+    dataset: { language }, addEventListener: (_, callback) => handlers.push(callback),
+  }));
+  const session = { startedAt: 12345, entries: [{ sets: [{ reps: '9', weightKg: '22.5' }] }] };
+  const context = vm.createContext({
+    qsa: () => buttons, settings: { language: 'he' }, activeSession: session,
+    db: { saveSettings: (value) => calls.push(['saved', value.language]) },
+    appInitialized: true, currentTab: 'workout', voiceListeningActive: true, voiceListeningRevision: 0,
+    window: { speechSynthesis: { cancel() {} } }, console,
+    syncNativeAnnouncementPlan() {}, syncWorkoutActivity() {}, renderBrand() {}, renderHomeTab() {},
+    native: { voiceStopListening: async () => { calls.push(['stop']); return true; } },
+    updateVoiceListeningState: async () => calls.push(['start', context.i18n.locale()]),
+    renderWorkoutTab: () => assert.fail('Do not rebuild typed workout controls'),
+    renderProfileTab: () => assert.fail('Do not rebuild unsaved profile controls'),
+    showToast: (message) => assert.fail(message),
+  });
+  vm.runInContext(section('function wireLanguageControls()', 'function wireSettings()'), context);
+  context.wireLanguageControls();
+  await handlers[1]();
+  assert.deepEqual(calls, [['saved', 'en'], ['stop'], ['start', 'en-US']]);
+  assert.equal(context.settings.language, 'en');
+  assert.equal(context.activeSession, session);
+  assert.equal(session.entries[0].sets[0].reps, '9');
+  assert.equal(buttons[0].disabled, false);
+});
 
 test('scene startup uses the controller that registers every custom native plugin', () => {
   const scene = read('ios/App/App/SceneDelegate.swift');
@@ -232,13 +413,542 @@ test('browser cancellation is quiet, but real share errors are visible', async (
   }
 });
 
-test('contact submission is visibly unavailable and cannot falsely claim delivery', () => {
+test('contact form uses the configured Formspree endpoint without a redundant contact-details card', () => {
   const html = read('www/index.html');
-  assert.match(html, /id="btnSendContact"[^>]* disabled/);
-  assert.match(html, /role="status">[^<]*אינה זמינה/);
-  assert.match(html, /href="mailto:/);
-  assert.match(html, /href="https:\/\/wa.me\//);
-  assert.doesNotMatch(app, /formsubmit\.co|wireContactTab|CONTACT_EMAIL/);
+  assert.match(html, /id="contactForm" action="https:\/\/formspree\.io\/f\/xljgvvyb" method="post"/);
+  assert.match(html, /id="btnSendContact" type="submit"/);
+  assert.match(html, /id="contactStatus"[^>]*role="status"/);
+  for (const id of ['contactName', 'contactEmail', 'contactMessage']) {
+    assert.match(html, new RegExp(`id="${id}"[^>]*required`));
+  }
+  const contact = html.slice(html.indexOf('<section id="tab-contact"'), html.indexOf('</section>', html.indexOf('<section id="tab-contact"')));
+  assert.doesNotMatch(contact, /contactEmailLink|mailto:|פרטי יצירת קשר/);
+  assert.doesNotMatch(app, /במייל שמופיע למעלה/);
+  for (const id of ['contactName', 'contactEmail']) {
+    assert.match(contact, new RegExp(`for="${id}"[^>]*>[^<]*<span class="required-mark"`));
+  }
+  assert.match(contact, /id="contactName"[^>]*pattern="\.\*\\S\.\*"/);
+  assert.match(contact, /id="contactEmail"[^>]*type="email"[^>]*required/);
+  assert.match(contact, /כתובת אימייל/);
+  assert.doesNotMatch(contact, /הפנייה נשלחת דרך Formspree|כתובת מייל לתשובה/);
+  assert.doesNotMatch(contact, /wa\.me|וואטסאפ|וואצפ|contactWhatsappLink|050-914-4233/);
+  assert.doesNotMatch(contact, /השליחה אינה זמינה/);
+  assert.match(app, /  wireContactTab\(\);/);
+});
+
+function contactContext(fetchImpl) {
+  const elements = new Map();
+  for (const [id, value] of [
+    ['contactName', ' Test name '], ['contactEmail', 'user@example.test'], ['contactMessage', ' My message '],
+    ['btnSendContact', ''], ['contactStatus', ''],
+  ]) {
+    elements.set(id, { value, textContent: '', disabled: false });
+  }
+  const form = {
+    action: 'https://formspree.io/f/xljgvvyb', attributes: {},
+    reportValidity: () => true,
+    setAttribute(name, value) { this.attributes[name] = value; },
+    addEventListener(name, handler) { this.submit = handler; },
+    reset() {
+      for (const id of ['contactName', 'contactEmail', 'contactMessage']) elements.get(id).value = '';
+    },
+  };
+  elements.set('contactForm', form);
+  const calls = [], errors = [];
+  const context = vm.createContext({
+    el: (id) => elements.get(id), AbortController, setTimeout, clearTimeout,
+    console: { error: (...args) => errors.push(args) },
+    fetch: async (...args) => {
+      calls.push(args);
+      return fetchImpl ? fetchImpl(...args) : { ok: true, json: async () => ({ ok: true }) };
+    },
+  });
+  vm.runInContext(section('function wireContactTab()', 'function wireLanguageControls()'), context);
+  context.wireContactTab();
+  return { context, form, calls, errors, element: (id) => elements.get(id), submit: () => form.submit({ preventDefault() {} }) };
+}
+
+test('contact submission sends only authored fields and clears them after confirmed success', async () => {
+  const { submit, calls, form, element } = contactContext();
+  await submit();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'https://formspree.io/f/xljgvvyb');
+  assert.equal(calls[0][1].method, 'POST');
+  assert.equal(calls[0][1].headers.Accept, 'application/json');
+  assert.deepEqual(JSON.parse(calls[0][1].body), {
+    name: 'Test name', email: 'user@example.test', message: 'My message', _subject: 'AutoFit — Contact',
+  });
+  assert.equal(element('contactMessage').value, '');
+  assert.match(element('contactStatus').textContent, /בהצלחה/);
+  assert.equal(element('btnSendContact').disabled, false);
+  assert.equal(form.attributes['aria-busy'], 'false');
+});
+
+test('contact form blocks duplicate requests and edits while sending', async () => {
+  let finish;
+  const { submit, calls, element } = contactContext(() => new Promise((resolve) => { finish = resolve; }));
+  const pending = submit();
+  assert.equal(element('btnSendContact').disabled, true);
+  assert.equal(element('contactMessage').disabled, true);
+  await submit();
+  assert.equal(calls.length, 1);
+  finish({ ok: true, json: async () => ({ ok: true }) });
+  await pending;
+  assert.equal(element('contactMessage').disabled, false);
+});
+
+test('contact form rejects invalid or whitespace-only input without sending', async () => {
+  for (const invalid of ['browser', 'blank']) {
+    const { submit, calls, form, element } = contactContext();
+    if (invalid === 'browser') form.reportValidity = () => false;
+    else element('contactMessage').value = '   ';
+    await submit();
+    assert.equal(calls.length, 0);
+    assert.equal(element('btnSendContact').disabled, false);
+  }
+});
+
+test('contact errors retain the draft and never claim success', async () => {
+  const failures = [
+    async () => ({ ok: false, status: 422 }),
+    async () => ({ ok: false, status: 429 }),
+    async () => ({ ok: true, json: async () => ({ ok: false }) }),
+    async () => ({ ok: true, json: async () => { throw new SyntaxError('Invalid JSON'); } }),
+    async () => { throw new TypeError('Network unavailable'); },
+    async () => { const error = new Error('Timed out'); error.name = 'AbortError'; throw error; },
+  ];
+  for (const failure of failures) {
+    const { submit, element, form } = contactContext(failure);
+    await submit();
+    assert.equal(element('contactMessage').value, ' My message ');
+    assert.match(element('contactStatus').textContent, /לא.*אישר|לא התקבל אישור/);
+    assert.doesNotMatch(element('contactStatus').textContent, /בהצלחה/);
+    assert.equal(element('btnSendContact').disabled, false);
+    assert.equal(element('contactMessage').disabled, false);
+    assert.equal(form.attributes['aria-busy'], 'false');
+  }
+});
+
+test('contact submission follows the chosen language without translating authored content', async () => {
+  const { context, submit, calls, element } = contactContext();
+  context.i18n.setLanguage('en');
+  element('contactMessage').value = 'שלום, זו הודעה אישית';
+  await submit();
+  assert.equal(JSON.parse(calls[0][1].body).message, 'שלום, זו הודעה אישית');
+  assert.equal(element('contactStatus').textContent, 'Your message was sent successfully. Thank you!');
+  assert.equal(element('btnSendContact').textContent, 'Send message');
+});
+
+function exerciseLibraryContext(records, session = { entries: [], running: false }) {
+  const saved = [], messages = [];
+  const context = vm.createContext({
+    exercises: records, activeSession: session, settings: { programWeek: 3 }, workouts: [],
+    db: { uid: () => 'draft', saveExercises: (data) => saved.push(JSON.stringify(data)) },
+    renderExercisesTab() {}, renderWorkoutTab() {}, persistActiveSession() {},
+    showToast: (message) => messages.push(message), getLastCompletedValuesByExercise: () => ({}),
+    DEFAULT_WARMUP_NAME: 'Warmup', DEFAULT_COOLDOWN_NAME: 'Cooldown', DEFAULT_CARDIO_PACE: '6',
+  });
+  vm.runInContext(section('const EXERCISE_LIBRARY_CATEGORIES =', 'function wireExercisesTab('), context);
+  vm.runInContext(section('function buildDraftSession()', 'function applyProgramWeekToActiveSession('), context);
+  vm.runInContext(section('function reorderActiveSessionToMatchExercises()', '/* ---- photo modal ---- */'), context);
+  return { context, saved, messages };
+}
+
+test('exercise library groups every existing exercise without changing its muscle group or program membership', () => {
+  const context = vm.createContext({});
+  vm.runInContext(read('www/js/seed.js').replace('export const SEED_EXERCISES', 'globalThis.seeds'), context);
+  const records = JSON.parse(JSON.stringify(context.seeds));
+  const before = JSON.stringify(records);
+  const { context: library } = exerciseLibraryContext(records);
+  for (const record of records) {
+    const group = library.exerciseLibraryGroup(record);
+    assert.notEqual(group, 'general', record.name);
+    if (record.inputType === 'hold') assert.equal(group, 'static');
+    if (record.inputType === 'cardio') assert.equal(group, 'warmup');
+  }
+  assert.equal(library.exerciseLibraryGroup({ category: 'קטגוריה אישית' }), 'general');
+  assert.equal(library.exerciseLibraryGroup({ category: 'מפרקי כף יד' }), 'forearms');
+  assert.equal(library.exerciseLibraryGroup({ category: 'גב תחתון' }), 'back');
+  assert.equal(JSON.stringify(records), before);
+});
+
+test('exercise categories have distinct icons and bundled muscle illustrations', () => {
+  const { context } = exerciseLibraryContext([]);
+  const groups = vm.runInContext('EXERCISE_LIBRARY_CATEGORIES', context);
+  assert.equal(new Set(groups.map((group) => group.icon)).size, groups.length);
+  const worker = read('www/service-worker.js');
+  for (const id of ['biceps', 'triceps', 'shoulders', 'chest', 'core', 'back', 'traps']) {
+    const icon = groups.find((group) => group.id === id).icon;
+    assert.equal(icon, `icons/muscle-${id}.svg`);
+    assert.match(read(`www/${icon}`), /<svg[^>]*viewBox="0 0 64 64"/);
+    assert.ok(worker.includes(`'./${icon}'`), `Missing offline icon: ${icon}`);
+  }
+});
+
+test('my workout contains only selected exercises, with warmup first and cooldown last', () => {
+  const { context } = exerciseLibraryContext([
+    { id: 'cooldown' }, { id: 'bench' }, { id: 'hidden', active: false }, { id: 'warmup' },
+  ]);
+  assert.deepEqual(Array.from(context.myWorkoutExercises(), (ex) => ex.id), ['warmup', 'bench', 'cooldown']);
+});
+
+test('reordering a selected subset preserves all unselected library entries and every custom value', () => {
+  const records = [
+    { id: 'warmup', inputType: 'cardio' },
+    { id: 'one', defaultSets: 5, defaultReps: '9', notes: 'custom', images: ['photo'] },
+    { id: 'hidden', active: false, defaultSets: 7 },
+    { id: 'two', defaultSets: 2 }, { id: 'cooldown', inputType: 'cardio' },
+  ];
+  const { context, saved } = exerciseLibraryContext(records);
+  context.saveMyWorkoutOrder(['two', 'cooldown', 'one', 'warmup']);
+  assert.deepEqual(Array.from(context.myWorkoutExercises(), (ex) => ex.id), ['warmup', 'two', 'one', 'cooldown']);
+  assert.equal(context.exercises.length, 5);
+  assert.equal(context.exercises.find((ex) => ex.id === 'hidden'), records[2]);
+  assert.equal(context.exercises.find((ex) => ex.id === 'one'), records[1]);
+  assert.equal(records[1].defaultSets, 5);
+  assert.equal(saved.length, 1);
+  assert.deepEqual(Array.from(context.activeSession.entries, (entry) => entry.exerciseId), ['warmup', 'two', 'one', 'cooldown']);
+});
+
+test('invalid or partial workout reorder cannot drop exercises from the library', () => {
+  const { context, saved, messages } = exerciseLibraryContext([{ id: 'one' }, { id: 'two' }]);
+  for (const ids of [['one'], ['one', 'one'], ['one', 'unknown']]) context.saveMyWorkoutOrder(ids);
+  assert.equal(saved.length, 0);
+  assert.equal(messages.length, 3);
+  assert.deepEqual(Array.from(context.exercises, (entry) => entry.id), ['one', 'two']);
+});
+
+test('adding from the library appends to my workout; removing keeps the library object and future drafts in sync', () => {
+  const records = [
+    { id: 'warmup', inputType: 'cardio' }, { id: 'new', active: false, defaultSets: 2 },
+    { id: 'existing', defaultSets: 1 }, { id: 'cooldown', inputType: 'cardio' },
+  ];
+  const { context } = exerciseLibraryContext(records);
+  context.setExerciseInMyWorkout(records[1], true);
+  assert.deepEqual(Array.from(context.myWorkoutExercises(), (ex) => ex.id), ['warmup', 'existing', 'new', 'cooldown']);
+  context.setExerciseInMyWorkout(records[1], false);
+  assert.equal(context.exercises.length, 4);
+  assert.equal(context.exercises.find((ex) => ex.id === 'new'), records[1]);
+  assert.deepEqual(Array.from(context.buildDraftSession().entries, (entry) => entry.exerciseId), ['warmup', 'existing', 'cooldown']);
+});
+
+test('changing my workout never discards already recorded sets or running timer progress', () => {
+  const records = [{ id: 'bench', defaultSets: 3 }, { id: 'walk', inputType: 'cardio', durationMinutes: 3 }];
+  const session = { running: true, entries: [
+    { exerciseId: 'bench', sets: [{ completed: true, weightKg: 27.5, reps: 12 }] },
+    { exerciseId: 'walk', type: 'cardio', elapsedSec: 30, durationSec: 180, startedAt: 123 },
+  ] };
+  const original = JSON.stringify(session.entries);
+  const { context } = exerciseLibraryContext(records, session);
+  context.setExerciseInMyWorkout(records[0], false);
+  context.setExerciseInMyWorkout(records[1], false);
+  assert.equal(JSON.stringify(session.entries), original);
+  assert.equal(context.buildDraftSession().entries.length, 0);
+});
+
+test('removing a running static exercise from future workouts preserves its current timer and set', () => {
+  const record = { id: 'plank', inputType: 'hold', defaultSets: 3 };
+  const set = { holdStartedAt: 1234, completed: false, weightKg: '', reps: '' };
+  const session = { running: true, entries: [{ exerciseId: 'plank', sets: [set] }] };
+  const { context } = exerciseLibraryContext([record], session);
+  context.setExerciseInMyWorkout(record, false);
+  assert.equal(session.entries[0].sets[0], set);
+  assert.equal(set.holdStartedAt, 1234);
+  assert.equal(context.buildDraftSession().entries.length, 0);
+});
+
+test('editing default sets updates an untouched draft without truncating any recorded set', () => {
+  const record = { id: 'bench', defaultSets: 4 };
+  const session = { running: false, entries: [{ exerciseId: 'bench',
+    sets: [{ completed: false, weightKg: '', reps: '' }] }] };
+  const { context } = exerciseLibraryContext([record], session);
+  context.reorderActiveSessionToMatchExercises();
+  assert.equal(session.entries[0].sets.length, 4);
+  session.entries[0].sets[3].weightKg = 32.5;
+  record.defaultSets = 1;
+  context.reorderActiveSessionToMatchExercises();
+  assert.equal(session.entries[0].sets.length, 4);
+  assert.equal(session.entries[0].sets[3].weightKg, 32.5);
+});
+
+test('custom warmup-library exercises create cardio timers rather than strength sets', () => {
+  const { context } = exerciseLibraryContext([
+    { id: 'custom-walk', name: 'Custom walk', inputType: 'cardio', durationMinutes: 3, pace: '5' },
+  ]);
+  const entry = context.buildDraftSession().entries[0];
+  assert.equal(entry.exerciseId, 'custom-walk');
+  assert.equal(entry.exerciseName, 'Custom walk');
+  assert.equal(entry.type, 'cardio');
+  assert.equal(entry.durationSec, 180);
+  assert.equal(entry.pace, '5');
+  assert.equal(entry.sets, undefined);
+  context.reorderActiveSessionToMatchExercises();
+  assert.equal(context.activeSession.entries[0].type, 'cardio');
+});
+
+function homeScreenContext(records = [], entries = [{ exerciseId: 'bench', sets: [{}, {}, {}] }]) {
+  const elements = new Map(), tabs = [];
+  let starts = 0, libraryRenders = 0;
+  const element = (id) => {
+    if (!elements.has(id)) {
+      const classes = new Set();
+      elements.set(id, {
+        textContent: '', style: {}, dataset: {}, attributes: {}, listeners: {},
+        classList: { add: (value) => classes.add(value), contains: (value) => classes.has(value),
+          toggle: (value, force) => force ? classes.add(value) : classes.delete(value) },
+        addEventListener(name, callback) { this.listeners[name] = callback; },
+        setAttribute(name, value) { this.attributes[name] = String(value); },
+        click() { this.listeners.click?.(); },
+      });
+    }
+    return elements.get(id);
+  };
+  const context = vm.createContext({
+    workouts: records, db: { getWorkouts: () => records }, profile: { name: 'Test' },
+    settings: { weeklyGoal: 3 }, activeSession: { entries, running: false },
+    countThisWeek: () => 2, computeStreak: () => 3, formatHMS: (seconds) => `${seconds}s`,
+    el: element, qsa: () => [], switchTab: (tab) => tabs.push(tab),
+    renderExercisesTab: () => libraryRenders++, openHomeProgressModal() {},
+    wireProfilePhoto() {}, renderProfilePhotos() {},
+    exerciseLibraryCategory: null,
+  });
+  element('btnStartWorkout').listeners.click = () => { starts++; context.activeSession.running = true; };
+  vm.runInContext(section('function exerciseLibraryCount(', 'function exerciseLibraryGroup('), context);
+  vm.runInContext(section('function wireHomeTab()', 'function buildHomeStatCards('), context);
+  context.wireHomeTab();
+  return { context, element, tabs, starts: () => starts, libraryRenders: () => libraryRenders };
+}
+
+test('home overview shows real current exercise/set counts and clamps weekly progress at the goal', () => {
+  const { context, element } = homeScreenContext([], [
+    { exerciseId: 'warmup', type: 'cardio' }, { exerciseId: 'bench', sets: [{}, {}, {}, {}] },
+  ]);
+  context.countThisWeek = () => 5;
+  context.renderHomeTab();
+  const overview = context.buildHomeOverview();
+  assert.equal(overview.exerciseCount, 2);
+  assert.equal(overview.sets, 4);
+  assert.equal(overview.weekCount, 5);
+  assert.equal(overview.percent, 100);
+  assert.equal(element('homeWeekFill').style.width, '100%');
+  assert.equal(element('homeWeeklyProgress').attributes['aria-valuenow'], '3');
+  assert.match(element('homeWeeklyProgress').attributes['aria-valuetext'], /^5 מתוך 3/);
+});
+
+test('home start delegates to the existing start control, and resume does not restart the workout', () => {
+  const { context, element, tabs, starts } = homeScreenContext();
+  element('btnHomeStartWorkout').click();
+  assert.equal(starts(), 1);
+  assert.equal(context.activeSession.running, true);
+  context.renderHomeTab();
+  assert.equal(element('homeStartLabel').textContent, 'המשך אימון');
+  element('btnHomeStartWorkout').click();
+  assert.equal(starts(), 1);
+  assert.deepEqual(tabs, ['workout', 'workout']);
+});
+
+test('home empty program opens the library without starting an empty workout', () => {
+  const { context, element, tabs, starts, libraryRenders } = homeScreenContext([], []);
+  context.renderHomeTab();
+  assert.equal(element('homeStartLabel').textContent, 'בנה את האימון שלי');
+  element('btnHomeStartWorkout').click();
+  assert.deepEqual(tabs, ['exercises']);
+  assert.equal(starts(), 0);
+  assert.equal(libraryRenders(), 1);
+  assert.equal(context.exerciseLibraryCategory, null);
+});
+
+test('home program-edit shortcut opens my workout rather than starting or clearing the session', () => {
+  const { context, element, tabs, starts } = homeScreenContext();
+  const original = JSON.stringify(context.activeSession);
+  element('btnHomeEditWorkout').click();
+  assert.equal(context.exerciseLibraryCategory, 'my');
+  assert.deepEqual(tabs, ['exercises']);
+  assert.equal(starts(), 0);
+  assert.equal(JSON.stringify(context.activeSession), original);
+});
+
+test('home last workout is actually the most recent date and does not reorder stored history', () => {
+  const records = [
+    { id: 'recent', dateISO: '2026-10-19T07:00:00Z', durationSec: 5400, entries: [{ sets: [{}, {}] }] },
+    { id: 'older', dateISO: '2026-10-01T07:00:00Z', durationSec: 120, entries: [] },
+  ];
+  const { context, element } = homeScreenContext(records);
+  context.renderHomeTab();
+  assert.equal(element('btnHomeLastWorkout').dataset.workoutId, 'recent');
+  assert.match(element('homeLastSummary').textContent, /5400s/);
+  assert.match(element('homeLastSummary').textContent, /2 סטים/);
+  assert.deepEqual(records.map((record) => record.id), ['recent', 'older']);
+  records.length = 0;
+  context.renderHomeTab();
+  assert.equal(element('btnHomeLastWorkout').dataset.workoutId, '');
+  assert.equal(element('btnHomeLastWorkout').classList.contains('hidden'), true);
+  assert.match(element('homeLastDate').textContent, /האימון הראשון/);
+});
+
+test('home last-workout shortcut expands the matching history entry rather than an unrelated row', () => {
+  const { context, element, tabs } = homeScreenContext();
+  let opened = false, scrolled = false;
+  context.qsa = () => [{ dataset: { workoutId: 'chosen' },
+    classList: { add: (name) => { opened = name === 'open'; } },
+    scrollIntoView: () => { scrolled = true; } }];
+  element('btnHomeLastWorkout').dataset.workoutId = 'chosen';
+  element('btnHomeLastWorkout').click();
+  assert.deepEqual(tabs, ['history']);
+  assert.equal(opened, true);
+  assert.equal(scrolled, true);
+});
+
+test('home cardio-only program never presents a fake strength-set total', () => {
+  const { context, element } = homeScreenContext([], [{ exerciseId: 'walk', type: 'cardio' }]);
+  context.renderHomeTab();
+  assert.match(element('homeWorkoutSummary').textContent, /מבוסס זמן/);
+  assert.doesNotMatch(element('homeWorkoutSummary').textContent, /0 סטים/);
+});
+
+function profilePhotoContext(options = {}) {
+  const nodes = new Map(), saved = [], messages = [], errors = [];
+  const element = (id) => {
+    if (!nodes.has(id)) {
+      const node = { value: '', files: [], listeners: {}, attrs: {}, disabled: false,
+        addEventListener(name, callback) { this.listeners[name] = callback; },
+        getAttribute(name) { return this.attrs[name]; },
+        click() { this.clicked = true; } };
+      Object.defineProperty(node, 'src', { get: () => node.attrs.src, set: (value) => { node.attrs.src = value; } });
+      nodes.set(id, node);
+    }
+    return nodes.get(id);
+  };
+  const context = vm.createContext({
+    profile: { name: 'Saved name', photoDataUrl: 'data:image/jpeg;base64,old', weightKg: '70' },
+    el: element, db: { saveProfile: (record) => saved.push(JSON.stringify(record)), ...options.db },
+    fileToResizedDataUrl: options.resize || (async () => 'data:image/jpeg;base64,new'),
+    showToast: (message) => messages.push(message),
+    console: { error: (...args) => errors.push(args) },
+  });
+  vm.runInContext(section('function wireProfilePhoto(', 'function wireProfileTab('), context);
+  context.wireProfilePhoto('btnHomePhoto', 'homePhotoInput');
+  context.wireProfilePhoto('btnProfilePhoto', 'profilePhotoInput');
+  return { context, element, saved, messages, errors };
+}
+
+for (const inputId of ['homePhotoInput', 'profilePhotoInput']) {
+  test(`profile photo selected through ${inputId} saves once and updates all three screens without resetting form fields`, async () => {
+    const { context, element, saved } = profilePhotoContext();
+    element('profileName').value = 'Unsaved edit';
+    const input = element(inputId);
+    input.files = [{ type: 'image/png' }];
+    input.value = 'chosen-file';
+    await input.listeners.change();
+    for (const id of ['homePhoto', 'workoutProfilePhoto', 'profilePhoto']) {
+      assert.equal(element(id).src, 'data:image/jpeg;base64,new');
+    }
+    assert.equal(saved.length, 1);
+    assert.equal(JSON.parse(saved[0]).name, 'Saved name');
+    assert.equal(element('profileName').value, 'Unsaved edit');
+    assert.equal(context.profile.photoDataUrl, 'data:image/jpeg;base64,new');
+    assert.equal(input.value, '');
+    assert.equal(element('btnHomePhoto').disabled, false);
+    assert.equal(element('btnProfilePhoto').disabled, false);
+    assert.match(element('profilePhotoAction').textContent, /החלף/);
+  });
+}
+
+test('a cancelled image picker leaves the profile unchanged', async () => {
+  const { context, element, saved, messages } = profilePhotoContext();
+  await element('profilePhotoInput').listeners.change();
+  assert.equal(saved.length, 0);
+  assert.equal(messages.length, 0);
+  assert.equal(context.profile.photoDataUrl, 'data:image/jpeg;base64,old');
+});
+
+test('photo decoding or local save failure preserves the saved image and allows retrying the same file', async () => {
+  for (const options of [
+    { resize: async () => { throw new Error('decode failed'); } },
+    { db: { saveProfile: () => { throw new Error('storage full'); } } },
+  ]) {
+    const { context, element, saved, messages, errors } = profilePhotoContext(options);
+    const input = element('profilePhotoInput');
+    input.files = [{}];
+    input.value = 'chosen-file';
+    await input.listeners.change();
+    assert.equal(context.profile.photoDataUrl, 'data:image/jpeg;base64,old');
+    assert.equal(saved.length, 0);
+    assert.equal(input.value, '');
+    assert.equal(element('btnProfilePhoto').disabled, false);
+    assert.match(messages[0], /לא ניתן לשמור/);
+    assert.equal(errors.length, 1);
+  }
+});
+
+test('photo processing preserves concurrent saved profile changes and prevents a second upload while busy', async () => {
+  let finish;
+  const { context, element } = profilePhotoContext({ resize: () => new Promise((resolve) => { finish = resolve; }) });
+  element('profilePhotoInput').files = [{}];
+  const pending = element('profilePhotoInput').listeners.change();
+  assert.equal(element('btnHomePhoto').disabled, true);
+  assert.equal(element('btnProfilePhoto').disabled, true);
+  context.profile.name = 'New saved name';
+  finish('data:image/jpeg;base64,new');
+  await pending;
+  assert.equal(context.profile.name, 'New saved name');
+  assert.equal(context.profile.weightKg, '70');
+});
+
+test('default profile art is consistent across home, workout and personal area', () => {
+  const { context, element } = profilePhotoContext();
+  context.profile.photoDataUrl = '';
+  context.renderProfilePhotos();
+  for (const id of ['homePhoto', 'workoutProfilePhoto', 'profilePhoto']) {
+    assert.equal(element(id).src, 'icons/icon-192.png');
+  }
+  assert.match(element('profilePhotoAction').textContent, /העלה/);
+  assert.match(app, /wireProfilePhoto\('btnProfilePhoto', 'profilePhotoInput'\)/);
+  assert.match(app, /wireProfilePhoto\('btnHomePhoto', 'homePhotoInput'\)/);
+});
+
+test('workout banner includes the saved profile name and follows the selected language', () => {
+  const nodes = { appBrand: {}, greetingText: {} };
+  const context = vm.createContext({ el: (id) => nodes[id], profile: { name: 'ששי דניאל' } });
+  vm.runInContext(section('function renderBrand()', '/* ================= HOME TAB ================= */'), context);
+  context.renderBrand();
+  assert.equal(nodes.greetingText.textContent, 'אימון מוצלח ששי דניאל');
+  context.i18n.setLanguage('en');
+  context.renderBrand();
+  assert.equal(nodes.greetingText.textContent, 'Have a great workout ששי דניאל');
+  context.profile.name = '  שלום  ';
+  context.renderBrand();
+  assert.equal(nodes.greetingText.textContent, 'Have a great workout שלום');
+  context.profile.name = ' ';
+  context.renderBrand();
+  assert.equal(nodes.greetingText.textContent, 'Have a great workout');
+  context.i18n.setLanguage('he');
+  context.renderBrand();
+  assert.equal(nodes.greetingText.textContent, 'אימון מוצלח');
+  assert.match(read('www/index.html'), /id="greetingText"[^>]*data-no-translate/);
+});
+
+test('statistics labels replace dashboard wording without changing the destination', () => {
+  const html = read('www/index.html');
+  assert.match(html, /data-tab="dashboard"[^>]*>[\s\S]*?<span>סטטיסטיקה<\/span>/);
+  assert.match(html, /id="tab-dashboard"[^>]*>\s*<h2 class="section-title">סטטיסטיקה<\/h2>/);
+  assert.match(html, /לסטטיסטיקה המלאה/);
+  assert.match(app, /id="btnHomeProgressToDashboard">📈 לסטטיסטיקה המלאה/);
+  assert.doesNotMatch(html + app, /דשבורד/);
+  const context = localizationContext();
+  context.setLanguage('en');
+  assert.equal(context.text('סטטיסטיקה'), 'Statistics');
+  assert.equal(context.text('לסטטיסטיקה המלאה'), 'Full statistics');
+});
+
+test('bottom navigation retains seven labeled destinations with consistent local vector icons', () => {
+  const nav = read('www/index.html').match(/<nav class="tabbar">([\s\S]*?)<\/nav>/)[1];
+  assert.equal((nav.match(/class="ui-icon nav-icon"/g) || []).length, 7);
+  for (const tab of ['home', 'workout', 'history', 'dashboard', 'exercises', 'profile', 'contact']) {
+    assert.match(nav, new RegExp(`data-tab="${tab}"`));
+  }
+  assert.equal((nav.match(/aria-hidden="true"/g) || []).length, 7);
+  assert.doesNotMatch(nav, /<img|https?:/);
 });
 
 function voiceContext(entries = []) {
@@ -499,7 +1209,7 @@ function greetingContext() {
     setTimeout: (callback, delay) => { pending.set(++nextID, { at: now + delay, callback }); return nextID; },
     clearTimeout: (id) => pending.delete(id),
     persistActiveSession() {}, requestWakeLock() {}, stopwatch: { start() {} },
-    el: () => ({ textContent: '', classList: { add() {}, remove() {} } }),
+    el: () => ({ textContent: '', setAttribute() {}, classList: { add() {}, remove() {} } }),
     native: { isNative: () => false }, speak: (text) => spoken.push({ text, at: now }),
     playBeep() {}, restTimer: { start() {} },
   });
@@ -629,6 +1339,35 @@ test('share pages stay high-resolution and bounded, with every logged set render
   assert.deepEqual(reps, expected);
   const continuation = drawn.filter((item) => item.text === '🏋️ Exercise 0');
   assert.ok(continuation.length > 1, 'split tables repeat their exercise heading');
+});
+
+test('English share output uses English labels and left-to-right columns without translating personal content', () => {
+  const drawn = [], directions = [];
+  const context = vm.createContext({
+    profile: { name: 'שם אישי' }, computeVolume: () => 120, DEFAULT_CARDIO_PACE: 'קצב 6 בהליכון',
+    formatDate: () => '10/19/2026', formatHMS: () => '30:00',
+    document: { createElement: () => ({ getContext: () => new Proxy({}, {
+      get: (_, key) => key === 'fillText' ? (text, x) => drawn.push({ text, x }) : () => {},
+      set: (_, key, value) => { if (key === 'direction') directions.push(value); return true; },
+    }) }) },
+  });
+  context.i18n.setLanguage('en');
+  vm.runInContext(section('function formatCardioExtra(', 'async function buildWorkoutShareImages('), context);
+  const records = [{ durationSec: 1800, entries: [
+    { exerciseName: 'לחיצת חזה', sets: [{ weightKg: 10, reps: 12 }] },
+    { exerciseName: 'ראשי', sets: [{ weightKg: 20, reps: 10 }] },
+  ] }];
+  [...context.buildWorkoutShareCanvases(records)];
+  assert.deepEqual(directions, ['ltr']);
+  const setColumn = drawn.find((item) => item.text === 'Set');
+  const repColumn = drawn.find((item) => item.text === 'Reps');
+  assert.ok(setColumn.x < repColumn.x);
+  assert.ok(drawn.some((item) => item.text === '🏋️ Chest press'));
+  assert.ok(drawn.some((item) => item.text === '🏋️ ראשי'));
+  const lines = Array.from(context.buildWorkoutShareLines(records));
+  assert.ok(lines.includes('🏋️ ראשי'));
+  assert.ok(lines.includes('   Set 1: 10 kg × 12'));
+  assert.ok(lines.some((line) => line.includes('שם אישי')));
 });
 
 test('PNG export failure rejects instead of returning an empty successful file', async () => {
@@ -1262,7 +2001,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -1271,7 +2010,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -1290,8 +2029,8 @@ test('pausing and resuming cardio banks elapsed time without shortening the hist
   const entry = { exerciseId: 'warmup', type: 'cardio', exerciseName: 'Walk', durationSec: 300 };
   const context = vm.createContext({
     Date: { now: () => now }, exercises: [], activeSession: { entries: [entry] }, settings: {},
-    document: { createElement: () => ({}) }, formatHMS: String, escapeHtml: String,
-    qs: (selector) => ({ addEventListener: (name, callback) => { callbacks[selector] = callback; } }),
+    document: { createElement: () => ({}) }, formatHMS: String, escapeHtml: String, escapeAttr: String,
+    qs: (selector) => ({ setAttribute() {}, addEventListener: (name, callback) => { callbacks[selector] = callback; } }),
     ensureWorkoutStarted() {}, persistActiveSession() {}, renderWorkoutTab() {},
     restTimer: { stop() {} }, el: () => ({ classList: { add() {} } }),
   });
@@ -1673,7 +2412,7 @@ test('timer speech carries the same stable identity through foreground and backg
   const swift = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(swift, /recentAnnouncementIDs.contains\(announcementID\)/);
   assert.match(swift, /recentAnnouncementIDs.count > 512/);
-  assert.match(swift, /self\?\.speak\(announcement.text, announcementID: announcement.identifier\)/);
+  assert.match(swift, /self\?\.speak\(announcement.text, language: announcement.language,\s*announcementID: announcement.identifier\)/);
   assert.match(swift, /restorePlaybackAfterMicrophone/);
 });
 
@@ -1809,7 +2548,7 @@ function progressSpeechContext(entries) {
     cancelWorkoutGreeting() {}, playBeep() {},
     restTimer: { start() {} }, speak: (message) => messages.push(message),
     el: (id) => {
-      if (!nodes.has(id)) nodes.set(id, { style: {}, classList: { remove() {} } });
+      if (!nodes.has(id)) nodes.set(id, { style: {}, setAttribute() {}, classList: { remove() {} } });
       return nodes.get(id);
     },
   });

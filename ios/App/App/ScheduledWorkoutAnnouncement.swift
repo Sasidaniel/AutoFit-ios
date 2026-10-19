@@ -4,6 +4,7 @@ struct ScheduledWorkoutAnnouncement {
     let text: String
     let identifier: String
     let fireDate: Date
+    let language: String
 
     init(_ item: [String: Any]) throws {
         guard let text = item["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -12,6 +13,12 @@ struct ScheduledWorkoutAnnouncement {
             throw NSError(domain: "AutoFit.Announcements", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Invalid announcement text, identifier or deadline"])
         }
+        guard let language = (item["language"] ?? "he-IL") as? String,
+              ["he-IL", "en-US"].contains(language) else {
+            throw NSError(domain: "AutoFit.Announcements", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Unsupported announcement language"])
+        }
+        self.language = language
         self.text = text
         self.identifier = identifier
         self.fireDate = Date(timeIntervalSince1970: millis / 1000)
