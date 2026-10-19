@@ -2,9 +2,14 @@
 
 ## Version 1.0 (27): Gravitron in General
 
-Updated release approved while build 26 was still building; cancellation of
-the superseded build was requested before its upload step. Native build and
-internal TestFlight availability for build 27 are not yet confirmed.
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING` for build `bb9707aa-e9c6-4893-ab29-0f65dc425698`;
+export compliance is complete.
+[Native release run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39239615033)
+passed regression tests, all four standalone Swift suites, app/extension
+archive/signing, export and upload. Released source: `6939c48`.
+Build 26 was cancelled before upload to include the requested category correction.
+No external beta review or App Store submission was made.
 
 - Includes all bilingual, interface, contact-form and muscle-icon changes below.
 - Gravitron now belongs to General, not Back, for new installations. A one-time
@@ -15,8 +20,8 @@ internal TestFlight availability for build 27 are not yet confirmed.
 
 ## Version 1.0 (26): Bilingual app, personalized UI and direct contact
 
-Release preparation approved. Signed iOS build and internal TestFlight
-availability are not yet confirmed.
+Superseded by build 27. Build 26 was cancelled during archive, before export
+or upload; the changes below shipped in build 27.
 
 - Hebrew remains the default, with compact Hebrew/English flag selectors in
   onboarding and Settings. The chosen language persists and controls interface
@@ -36,9 +41,9 @@ availability are not yet confirmed.
 - Settings keeps Face ID, microphone controls, native permissions and command
   help. System permissions now appear above command help; only the requested
   explanatory paragraphs were removed, not the underlying capabilities.
-- Cache: `autofit-v46`. Native compilation and real-iPhone acceptance remain
-  necessary; browser checks do not prove voice, background audio or Lock Screen
-  behavior. No external beta review or App Store submission is requested.
+- Cache in this candidate: `autofit-v46`, advanced to `autofit-v47` in build 27.
+  Native compilation passed in build 27; real-iPhone acceptance remains
+  necessary for voice, background audio and Lock Screen behavior.
 
 ## Version 1.0 (25): Music-safe microphone routing and strength classification
 
