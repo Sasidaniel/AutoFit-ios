@@ -2,8 +2,13 @@
 
 ## Version 1.0 (28): Workout-list layout and Settings button
 
-Release approved after user preview. Signed build and internal TestFlight
-availability are not yet confirmed.
+Available to internal TestFlight testers. Apple confirmed `VALID` and
+`IN_BETA_TESTING` for build `5422f2fd-7f9d-41b8-ac06-cac39ff37102`;
+export compliance is complete.
+[Native release run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39249226323)
+passed regression tests, all four standalone Swift suites, app/extension
+archive/signing, export and upload. Released source: `d5812e6`.
+No external beta review or App Store submission was made.
 
 - Fixed My Workout position inputs expanding to full width and collapsing
   exercise names into single-character columns. Position fields stay 48px wide,
