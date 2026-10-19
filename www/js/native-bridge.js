@@ -232,8 +232,8 @@ export async function voiceStartListening(contextualStrings = []) {
   const V = plugin('VoiceCommand');
   if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
   try {
-    await V.startListening({ contextualStrings });
-    return { listening: true };
+    const result = await V.startListening({ contextualStrings });
+    return { listening: true, inputName: result?.inputName || '' };
   } catch (e) {
     return { listening: false, reason: String(e) };
   }
@@ -256,6 +256,11 @@ export function onVoiceTranscript(callback) {
 export function onVoiceError(callback) {
   const V = plugin('VoiceCommand');
   if (V && V.addListener) V.addListener('voiceError', callback);
+}
+
+export function onVoiceInputChanged(callback) {
+  const V = plugin('VoiceCommand');
+  if (V && V.addListener) V.addListener('voiceInputChanged', callback);
 }
 
 /* ---------------- Lock Screen / Dynamic Island Live Activity ---------------- */

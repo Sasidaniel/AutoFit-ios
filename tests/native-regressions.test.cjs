@@ -1136,7 +1136,7 @@ test('native announcements use system-managed speech, without permanently duckin
   assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking \{ options.insert\(.duckOthers\) \}/);
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(announcer, /usesRecordingSession, ducking: true/);
-  assert.match(announcer, /audioEngine.stop\(\)[\s\S]*setActive\(false, options: .notifyOthersOnDeactivation\)/);
+  assert.match(announcer, /audioEngine.stop\(\)[\s\S]*WorkoutAudioSession.deactivate\(\)/);
 });
 
 test('native beep and speech never create a WebView audio context that could interrupt Apple Music', async () => {
@@ -1158,14 +1158,100 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   const voice = read('ios/App/App/VoiceCommandPlugin.swift');
   assert.match(delegate, /options: AVAudioSession.CategoryOptions = \[.mixWithOthers\]/);
-  assert.match(delegate, /session.category != category/);
+  assert.match(delegate, /let changed = !matches\(recording: recording, ducking: ducking\)/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
   assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession\)/);
   assert.match(voice, /WorkoutAudioSession.activate\(recording: true\)/);
   assert.match(voice, /!BackgroundAnnouncerPlugin.isAnnouncing/);
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
-  assert.match(announcer, /notifyOthersOnDeactivation/);
+  assert.match(delegate, /notifyOthersOnDeactivation/);
   assert.doesNotMatch(announcer + voice, /setCategory\(/);
+});
+
+test('music routing never opts into HFP or voice-chat mode and capability-gates microphone enhancements', () => {
+  const swift = read('ios/App/App/AppDelegate.swift');
+  assert.doesNotMatch(swift, /\.voiceChat|\.allowBluetooth\b|overrideOutputAudioPort/);
+  assert.match(swift, /setCategory\(category, mode: .default/);
+  assert.match(swift, /#available\(iOS 26.0, \*\).*bluetoothHighQualityRecording/);
+  assert.match(swift, /highQualityRecording.isSupported == true/);
+  assert.match(swift, /case .builtIn: preferred = inputs.first \{ \$0.portType == .builtInMic \}/);
+  assert.match(swift, /#available\(iOS 18.2, \*\), session.isEchoCancelledInputAvailable/);
+  assert.match(swift, /setPrefersEchoCancelledInput\(true\)/);
+  assert.match(swift, /if !active \|\| changed/);
+  assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /WorkoutAudioSession.wasInterrupted/);
+  assert.match(read('ios/App/App.xcodeproj/project.pbxproj'), /WorkoutAudioPolicy.swift in Sources/);
+  assert.match(read('.github/workflows/ios-build.yml'), /WorkoutAudioPolicyTests.swift/);
+});
+
+test('recognition task replacement reuses capture and synchronizes request access with the audio thread', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  const begin = swift.slice(swift.indexOf('private func begin()'), swift.indexOf('private func endRecognition()'));
+  assert.doesNotMatch(begin.slice(0, begin.indexOf('let currentGeneration')), /\bend\(\)|audioEngine.stop\(\)/);
+  assert.match(begin, /if !audioEngine.isRunning \{[\s\S]*installTap[\s\S]*audioEngine.start\(\)/);
+  assert.match(begin, /audioSink.replace\(with: req\)/);
+  assert.match(swift, /private let lock = NSLock\(\)/);
+  assert.match(swift, /lock.lock\(\)[\s\S]*request\?\.endAudio\(\)[\s\S]*request = next[\s\S]*lock.unlock\(\)/);
+  assert.match(swift, /lock.lock\(\)[\s\S]*request\?\.append\(buffer\)[\s\S]*lock.unlock\(\)/);
+  assert.match(swift, /captureGeneration == capture/);
+});
+
+test('actual microphone name survives the bridge and route-change events', async () => {
+  const listeners = {};
+  const context = bridgeContext({ VoiceCommand: {
+    startListening: async () => ({ inputName: 'iPhone microphone' }),
+    addListener: (name, callback) => { listeners[name] = callback; },
+  } });
+  assert.equal((await context.voiceStartListening()).inputName, 'iPhone microphone');
+  let inputName;
+  context.onVoiceInputChanged((data) => { inputName = data.inputName; });
+  listeners.voiceInputChanged({ inputName: 'AirPods' });
+  assert.equal(inputName, 'AirPods');
+  assert.match(app, /native.onVoiceInputChanged\(\(data\) =>/);
+  assert.match(app, /voiceInputName = result.inputName \|\| ''/);
+});
+
+test('listening badge identifies the actual microphone alongside the selected exercise', () => {
+  const badge = { classList: { add() {}, remove() {}, toggle() {} }, textContent: '' };
+  const context = vm.createContext({
+    native: { isNative: () => true }, el: () => badge,
+    activeSession: { currentExerciseId: 'bench', entries: [{ exerciseId: 'bench', exerciseName: 'Bench' }] },
+    voiceListeningActive: true, voiceListeningError: '', voiceCountingState: null,
+    voiceInputName: 'iPhone microphone',
+  });
+  vm.runInContext(section('function setVoiceBadge(', 'function handleVoiceTranscript('), context);
+  context.updateVoiceBadgeForListeningState();
+  assert.match(badge.textContent, /iPhone microphone.*Bench/);
+});
+
+test('repeated selection of the same exercise does not serialize or back up unchanged workout state', () => {
+  let writes = 0;
+  const context = vm.createContext({
+    activeSession: { entries: [{ exerciseId: 'one' }, { exerciseId: 'two' }] },
+    voiceCountingState: null, persistActiveSession: () => writes++,
+    updateVoiceBadgeForListeningState() {},
+  });
+  vm.runInContext(section('function selectVoiceExercise(', 'function voiceTargetEntryIndex('), context);
+  context.selectVoiceExercise(0, false);
+  context.selectVoiceExercise(0, false);
+  context.selectVoiceExercise(0, false);
+  assert.equal(writes, 1);
+  context.selectVoiceExercise(1, false);
+  assert.equal(writes, 2);
+});
+
+test('subsecond rest ticks do not repeatedly replace unchanged visible timer text', () => {
+  let text = '', writes = 0;
+  const context = vm.createContext({
+    el: () => ({ get textContent() { return text; }, set textContent(value) { text = value; writes++; } }),
+    formatHMS: (seconds) => String(Math.ceil(seconds)),
+  });
+  const tick = section('onTick: (remaining) => {', 'onInterval:')
+    .replace('onTick: ', '').replace(/,\s*$/, '');
+  vm.runInContext(`globalThis.tick = ${tick}`, context);
+  for (const remaining of [120, 119.75, 119.5, 119.25]) context.tick(remaining);
+  assert.equal(writes, 1);
+  context.tick(119);
+  assert.equal(writes, 2);
 });
 
 test('offline navigation with query parameters falls back to the cached app without deleting unrelated caches', async () => {
@@ -1176,7 +1262,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -1185,7 +1271,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -1243,7 +1329,7 @@ test('cloud-restored history and active weights enter memory before initializati
     settings: {}, profile: {}, workouts: [], activeSession: null, console,
     native: { isNative: () => true, cloudGetAll: async () => data,
       onCloudChanged: (callback) => { cloudChanged = callback; },
-      onCloudError() {}, onVoiceTranscript() {}, onVoiceError() {}, onWorkoutActivityOpen() {},
+      onCloudError() {}, onVoiceTranscript() {}, onVoiceError() {}, onVoiceInputChanged() {}, onWorkoutActivityOpen() {},
       onWorkoutActivityAvailable() {}, onAnnouncementError() {} },
     localStorage: { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) },
     db: {
@@ -1431,11 +1517,9 @@ test('a foreground retry of the exact same activity supersedes an older failed r
   assert.equal(messages.length, 0);
 });
 
-test('voice capture uses processed mono audio and preserves the requested microphone state through announcements', () => {
+test('voice capture uses mono without voice-chat processing and preserves requested listening through announcements', () => {
   const swift = read('ios/App/App/VoiceCommandPlugin.swift');
-  assert.match(swift, /setVoiceProcessingEnabled\(true\)/);
-  assert.match(swift, /isVoiceProcessingAGCEnabled = true/);
-  assert.match(swift, /enableAdvancedDucking: true, duckingLevel: .mid/);
+  assert.doesNotMatch(swift, /setVoiceProcessingEnabled|isVoiceProcessingAGCEnabled|voiceProcessingOtherAudioDucking/);
   assert.match(swift, /channels: 1/);
   assert.match(swift, /buffer.floatChannelData\?\[0\]/);
   assert.match(swift, /announcementWillStart\(\)[\s\S]*if Self.wantsMicrophone \{ end\(\) \}/);
@@ -1552,7 +1636,9 @@ test('Health bridge carries workout identifiers and summary; native samples have
   assert.equal(result.id, 'native-id');
   const swift = read('ios/App/App/HealthBridgePlugin.swift');
   assert.match(swift, /HKMetadataKeySyncIdentifier: "autofit.\\\(workoutID\)"/);
-  assert.match(swift, /HKMetadataKeySyncVersion: 1/);
+  assert.equal((swift.match(/HKMetadataKeySyncVersion: 2/g) || []).length, 2);
+  assert.match(swift, /activityType = .traditionalStrengthTraining/);
+  assert.doesNotMatch(swift, /functionalStrengthTraining/);
   assert.match(swift, /"AutoFitExerciseSummary": summary/);
   assert.match(swift, /builder.addMetadata\(metadata\)/);
   assert.match(swift, /autofit.\\\(workoutID\).energy/);

@@ -64,7 +64,9 @@ let restDoneMessage = 'אפשר להמשיך לסט הבא';
 const restTimer = new RestTimer({
   onChange: () => persistRestTimerState(),
   onTick: (remaining) => {
-    el('restTimeDisplay').textContent = formatHMS(remaining);
+    const display = el('restTimeDisplay');
+    const text = formatHMS(remaining);
+    if (display.textContent !== text) display.textContent = text;
   },
   onInterval: (elapsedSeconds) => {
     if (settings.voiceAnnouncements && settings.voiceIntervalAnnouncements !== false) {
@@ -1422,8 +1424,10 @@ function selectVoiceExercise(index, highlight = true) {
   const entry = activeSession.entries[index];
   if (!entry) return;
   if (voiceCountingState?.entry !== entry) voiceCountingState = null;
-  activeSession.currentExerciseId = entry.exerciseId;
-  persistActiveSession();
+  if (activeSession.currentExerciseId !== entry.exerciseId) {
+    activeSession.currentExerciseId = entry.exerciseId;
+    persistActiveSession();
+  }
   updateVoiceBadgeForListeningState();
   if (!highlight) return;
   const card = qs(`.exercise-card[data-entry-index="${index}"]`, el('exerciseList'));
@@ -1450,7 +1454,7 @@ function setVoiceBadge(text, counting) {
   const badge = el('voiceStatusBadge');
   if (!badge) return;
   if (!text) { badge.classList.add('hidden'); return; }
-  badge.textContent = text;
+  if (badge.textContent !== text) badge.textContent = text;
   badge.classList.remove('hidden');
   badge.classList.toggle('counting', !!counting);
 }
@@ -1460,9 +1464,10 @@ function updateVoiceBadgeForListeningState() {
   el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive);
   if (voiceCountingState) return; // counting badge takes priority, left as-is
   const current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId);
+  const microphone = voiceInputName ? ` (${voiceInputName})` : '';
   setVoiceBadge(voiceListeningActive ? current
-    ? `🎙️ מקשיב — תרגיל נוכחי: ${current.exerciseName}`
-    : '🎙️ מקשיב — אמור שם תרגיל ואז ״התחל״'
+    ? `🎙️ מקשיב${microphone} — תרגיל נוכחי: ${current.exerciseName}`
+    : `🎙️ מקשיב${microphone} — אמור שם תרגיל ואז ״התחל״`
     : voiceListeningError ? `🎙️ לא פעיל: ${voiceListeningError}`
       : '🎙️ המיקרופון אינו מקשיב. להפעלה לחץ על הכפתור למטה');
 }
@@ -1665,6 +1670,7 @@ function handleVoiceTranscript(transcript) {
 let voiceListeningActive = false;
 let voiceListeningRevision = 0;
 let voiceListeningError = '';
+let voiceInputName = '';
 let currentTab = 'home';
 async function requestVoiceActivation() {
   const result = await native.voiceRequestPermission();
@@ -1693,9 +1699,11 @@ async function updateVoiceListeningState() {
     if (revision !== voiceListeningRevision) return;
     voiceListeningActive = result.listening;
     voiceListeningError = result.listening ? '' : result.reason;
+    voiceInputName = result.inputName || '';
     if (!result.listening) showToast('לא ניתן להפעיל פקודות קוליות — ' + result.reason);
   } else {
     voiceCountingState = null;
+    voiceInputName = '';
     await native.voiceStopListening();
   }
   updateVoiceBadgeForListeningState();
@@ -2249,7 +2257,7 @@ function openHealthSyncHelp() {
           <li>הוסף פעולה נוספת <b>"קבלת פריט מתוך רשימה"</b> — פריט מספר <b>2</b> (זה התאריך).</li>
           <li>הוסף פעולה <b>"קבלת תאריכים מהקלט" (Get Dates from Input)</b> — תפעל על התוצאה של "פריט 2" ותהפוך אותו לתאריך.</li>
           <li>הוסף פעולה <b>"רישום אימון" (Log Workout)</b>.</li>
-          <li>בחר סוג אימון (למשל: אימון כוח פונקציונלי).</li>
+          <li>בחר סוג אימון: אימון כוח מסורתי (Traditional Strength Training).</li>
           <li>בשדה <b>תאריך (Date)</b> הקש על הערך ובחר את התוצאה של "קבלת תאריכים מהקלט".</li>
           <li>בשדה <b>משך (Duration)</b> הקש על הערך ובחר את התוצאה של "פריט 1", וודא שהיחידה מוגדרת לדקות.</li>
           <li>שמור את הקיצור.</li>
@@ -3323,6 +3331,10 @@ async function bootstrap() {
       console.info('iCloud backup changed; keeping the local workout intact instead of reloading.');
     });
     native.onVoiceTranscript((data) => handleVoiceTranscript(data && data.transcript));
+    native.onVoiceInputChanged((data) => {
+      voiceInputName = data.inputName || '';
+      updateVoiceBadgeForListeningState();
+    });
     native.onWorkoutActivityOpen(() => {
       if (appInitialized) switchTab('workout');
       else pendingWorkoutNavigation = true;

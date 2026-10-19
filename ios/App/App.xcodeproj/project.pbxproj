@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CCDDEEFF0000000000000001 /* WorkoutAudioPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDDEEFF0000000000000002 /* WorkoutAudioPolicy.swift */; };
 		BBCCDDEE0000000000000001 /* ScheduledWorkoutAnnouncement.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCCDDEE0000000000000002 /* ScheduledWorkoutAnnouncement.swift */; };
 		AABBCCDD0000000000000001 /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCCDD0000000000000008 /* WorkoutActivityAttributes.swift */; };
 		AABBCCDD0000000000000002 /* LiveActivityBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCCDD0000000000000009 /* LiveActivityBridgePlugin.swift */; };
@@ -58,6 +59,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CCDDEEFF0000000000000002 /* WorkoutAudioPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutAudioPolicy.swift; path = App/WorkoutAudioPolicy.swift; sourceTree = SOURCE_ROOT; };
 		BBCCDDEE0000000000000002 /* ScheduledWorkoutAnnouncement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScheduledWorkoutAnnouncement.swift; path = App/ScheduledWorkoutAnnouncement.swift; sourceTree = SOURCE_ROOT; };
 		AABBCCDD0000000000000008 /* WorkoutActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutActivityAttributes.swift; path = App/WorkoutActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
 		AABBCCDD0000000000000009 /* LiveActivityBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiveActivityBridgePlugin.swift; path = App/LiveActivityBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
@@ -124,6 +126,7 @@
 				77BB22CC33DD44EE55FF66AA /* ShareBridgePlugin.swift */,
 				99DD44EE55FF66AA11BB22CC /* SpeechUtteranceBuffer.swift */,
 				BBCCDDEE0000000000000002 /* ScheduledWorkoutAnnouncement.swift */,
+				CCDDEEFF0000000000000002 /* WorkoutAudioPolicy.swift */,
 				81DA4F5E9FAE9EE288858608 /* CloudBridgePlugin.swift */,
 				1FAC4A4EBE0773B3BD9F2885 /* MainViewController.swift */,
 				1EE245D98DC5F48CA08BC2E1 /* App.entitlements */,
@@ -292,6 +295,7 @@
 				66AA11BB22CC33DD44EE55FF /* ShareBridgePlugin.swift in Sources */,
 				88CC33DD44EE55FF66AA11BB /* SpeechUtteranceBuffer.swift in Sources */,
 				BBCCDDEE0000000000000001 /* ScheduledWorkoutAnnouncement.swift in Sources */,
+				CCDDEEFF0000000000000001 /* WorkoutAudioPolicy.swift in Sources */,
 				5874418F8C87933C14FC3161 /* CloudBridgePlugin.swift in Sources */,
 				E0CD47A18873BD4485441F3C /* MainViewController.swift in Sources */,
 			);

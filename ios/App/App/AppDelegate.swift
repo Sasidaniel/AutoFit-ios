@@ -4,19 +4,76 @@ import AVFoundation
 import UserNotifications
 
 enum WorkoutAudioSession {
-    static func activate(recording: Bool, ducking: Bool = false) throws {
-        let session = AVAudioSession.sharedInstance()
-        let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
+    private static var active = false
+
+    private static func options(recording: Bool, ducking: Bool) -> AVAudioSession.CategoryOptions {
         var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
         if ducking { options.insert(.duckOthers) }
         if recording {
-            options.formUnion([.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+            options.formUnion([.allowBluetoothA2DP, .defaultToSpeaker])
+            if #available(iOS 26.0, *) { options.insert(.bluetoothHighQualityRecording) }
         }
-        let mode: AVAudioSession.Mode = recording ? .voiceChat : .default
-        if session.category != category || session.mode != mode || session.categoryOptions != options {
-            try session.setCategory(category, mode: mode, options: options)
+        return options
+    }
+
+    static func matches(recording: Bool, ducking: Bool = false) -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        return session.category == (recording ? .playAndRecord : .playback)
+            && session.mode == .default && session.categoryOptions == options(recording: recording, ducking: ducking)
+    }
+
+    static func activate(recording: Bool, ducking: Bool = false) throws {
+        let session = AVAudioSession.sharedInstance()
+        let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
+        let changed = !matches(recording: recording, ducking: ducking)
+        if changed {
+            try session.setCategory(category, mode: .default, options: options(recording: recording, ducking: ducking))
         }
-        try session.setActive(true)
+        if !active || changed {
+            try session.setActive(true)
+            active = true
+        }
+        if recording { try selectInput(session) }
+    }
+
+    private static func selectInput(_ session: AVAudioSession) throws {
+        let inputs = session.availableInputs ?? []
+        let bluetoothOutput = session.currentRoute.outputs.contains {
+            [AVAudioSession.Port.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType)
+        }
+        let wired = inputs.first { [AVAudioSession.Port.headsetMic, .usbAudio, .lineIn].contains($0.portType) }
+        var highQuality: AVAudioSessionPortDescription?
+        if #available(iOS 26.0, *) {
+            highQuality = inputs.first {
+                $0.bluetoothMicrophoneExtension?.highQualityRecording.isSupported == true
+            }
+        }
+        let choice = WorkoutAudioPolicy.input(bluetoothOutput: bluetoothOutput,
+            wiredInput: wired != nil, highQualityBluetooth: highQuality != nil)
+        let preferred: AVAudioSessionPortDescription?
+        switch choice {
+        case .wired: preferred = wired
+        case .highQualityBluetooth: preferred = highQuality
+        case .builtIn: preferred = inputs.first { $0.portType == .builtInMic }
+        }
+        guard let preferred = preferred else {
+            throw NSError(domain: "AutoFit.Audio", code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "No microphone is available without lowering music quality"])
+        }
+        if session.preferredInput?.uid != preferred.uid { try session.setPreferredInput(preferred) }
+        if #available(iOS 18.2, *), session.isEchoCancelledInputAvailable, !session.isEchoCancelledInputEnabled {
+            try session.setPrefersEchoCancelledInput(true)
+        }
+    }
+
+    static func deactivate() throws {
+        guard active else { return }
+        try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        active = false
+    }
+
+    static func wasInterrupted() {
+        active = false
     }
 }
 

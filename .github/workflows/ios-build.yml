@@ -51,6 +51,11 @@ jobs:
           swiftc ios/App/App/ScheduledWorkoutAnnouncement.swift tests/ScheduledWorkoutAnnouncementTests.swift -o "$RUNNER_TEMP/announcement-tests"
           "$RUNNER_TEMP/announcement-tests"
 
+      - name: Test music-safe audio policy
+        run: |
+          swiftc ios/App/App/WorkoutAudioPolicy.swift tests/WorkoutAudioPolicyTests.swift -o "$RUNNER_TEMP/audio-policy-tests"
+          "$RUNNER_TEMP/audio-policy-tests"
+
       - name: Import signing certificate & provisioning profile
         env:
           IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}

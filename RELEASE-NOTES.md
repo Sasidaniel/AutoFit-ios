@@ -1,5 +1,33 @@
 # AutoFit release notes
 
+## Version 1.0 (25): Music-safe microphone routing and strength classification
+
+Implementation prepared; native build and internal TestFlight processing pending.
+
+- Recording uses the default mixed audio mode, not voice-chat/HFP or Voice
+  Processing I/O. Supported iOS 26 Bluetooth microphones can use high-quality
+  recording. Otherwise the built-in iPhone microphone preserves A2DP music;
+  wired/USB microphones and device-speaker playback remain supported. Default-mode
+  echo cancellation is requested only where iOS 18.2+ reports it available.
+  The actual microphone name appears in the listening badge and updates on route changes.
+- Speech-task renewal reuses the microphone engine/tap instead of rebuilding
+  the audio graph after every phrase. Request swapping is locked against the
+  audio callback. Healthy background playback is not rebuilt for redundant
+  configuration notifications; interruptions invalidate audio activation state.
+  Temporary announcement ducking and prearmed background deadlines are retained.
+- Repeated selection of the current exercise no longer serializes/backups
+  unchanged workout state. Subsecond rest ticks and unchanged listening badges
+  avoid repeated identical DOM writes. Real workout edits still save immediately;
+  no durability-reducing persistence debounce was added.
+- Apple Health receives traditional strength training, not functional strength.
+  Stable sync identifiers are retained and sync metadata advances to version 2
+  for workouts and energy samples. Existing Health entries are not automatically
+  rewritten; manually sending an existing AutoFit workout again uses the new version.
+- Cache: `autofit-v44`. Hardware/region support determines high-quality Bluetooth
+  availability. Phone-microphone fallback requires keeping the phone within speaking
+  range; recognition over loud music is not guaranteed. Actual audio quality,
+  route transitions and iPhone scrolling require physical-device acceptance.
+
 ## Version 1.0 (24): Prearmed rest announcements and spoken progress
 
 Available to internal TestFlight testers. Apple confirmed `VALID` and

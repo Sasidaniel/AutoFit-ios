@@ -71,7 +71,7 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         let endDate = startDate.addingTimeInterval(durationSec)
 
         let workoutConfig = HKWorkoutConfiguration()
-        workoutConfig.activityType = .functionalStrengthTraining
+        workoutConfig.activityType = .traditionalStrengthTraining
 
         if #available(iOS 17.0, *) {
             let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: workoutConfig, device: .local())
@@ -89,7 +89,7 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let metadata: [String: Any] = [
                 HKMetadataKeySyncIdentifier: "autofit.\(workoutID)",
-                HKMetadataKeySyncVersion: 1,
+                HKMetadataKeySyncVersion: 2,
                 HKMetadataKeyWorkoutBrandName: "AutoFit",
                 "AutoFitExerciseSummary": summary
             ]
@@ -109,7 +109,7 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         samples.append(HKQuantitySample(type: energyType, quantity: energyQuantity,
                             start: startDate, end: endDate, metadata: [
                                 HKMetadataKeySyncIdentifier: "autofit.\(workoutID).energy",
-                                HKMetadataKeySyncVersion: 1
+                                HKMetadataKeySyncVersion: 2
                             ]))
                     }
                     let addSamplesBlock: (Bool) -> Void = { _ in

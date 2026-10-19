@@ -68,6 +68,9 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
 
     @objc private func restorePlaybackAfterMicrophone() {
         guard Self.isKeepingAlive, !Self.isAnnouncing, !audioInterrupted else { return }
+        guard WorkoutAudioPolicy.needsPlaybackRecovery(engineRunning: audioEngine.isRunning,
+            playerPlaying: playerNode.isPlaying,
+            configurationMatches: WorkoutAudioSession.matches(recording: VoiceCommandPlugin.usesRecordingSession)) else { return }
         playerNode.stop()
         beepNode.stop()
         audioEngine.stop()
@@ -89,6 +92,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         DispatchQueue.main.async {
             self.audioInterrupted = type == .began
             if self.audioInterrupted {
+                WorkoutAudioSession.wasInterrupted()
                 self.playerNode.stop()
                 self.beepNode.stop()
                 self.audioEngine.stop()
@@ -152,7 +156,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             self.audioEngine.stop()
             if !VoiceCommandPlugin.usesRecordingSession && !Self.isAnnouncing {
                 do {
-                    try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    try WorkoutAudioSession.deactivate()
                 } catch {
                     call.reject("Cannot release background audio: \(error.localizedDescription)")
                     return
@@ -252,7 +256,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         beepNode.stop()
         audioEngine.stop()
         do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            try WorkoutAudioSession.deactivate()
         } catch {
             notifyListeners("announcementError", data: ["reason": error.localizedDescription])
         }
