@@ -8,9 +8,22 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
+function loadPhaseOneModule(file, exports) {
+  const context = nodeVM.createContext();
+  nodeVM.runInContext(read(file).replace(/^export /gm, ''), context);
+  return nodeVM.runInContext(`({ ${exports.join(', ')} })`, context);
+}
+const library = loadPhaseOneModule('www/js/exercise-library.js', [
+  'LIBRARY_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration',
+]);
+const insights = loadPhaseOneModule('www/js/workout-insights.js', [
+  'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
+]);
+const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 function localizationContext(extras = {}) {
   const context = nodeVM.createContext(extras);
-  nodeVM.runInContext(read('www/js/translations-en.js').replace(/^export /gm, ''), context);
+  nodeVM.runInContext(read('www/js/exercise-library.js').replace(/^export /gm, ''), context);
+  nodeVM.runInContext(read('www/js/translations-en.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/seed.js').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/i18n.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return context;
@@ -19,7 +32,9 @@ const vm = {
   ...nodeVM,
   createContext(values = {}) {
     const i18n = localizationContext();
-    return nodeVM.createContext({ i18n, wireLanguageControls: () => {}, ...values });
+    return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceReportInProgress: false, restDoneMessage: '',
+      lastAutoCountCompletion: null, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
+      rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, ...values });
   },
 };
 
@@ -28,6 +43,241 @@ function section(start, end) {
   const to = app.indexOf(end, from);
   assert.ok(from >= 0 && to > from, `Missing app section: ${start}`);
   return app.slice(from, to);
+}
+
+test('phase-one catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
+  assert.equal(library.LIBRARY_EXERCISES.length, 26);
+  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 26);
+  const translation = localizationContext();
+  translation.setLanguage('en');
+  for (const exercise of library.LIBRARY_EXERCISES) {
+    assert.equal(exercise.active, false);
+    assert.ok(library.exerciseGuide(exercise), exercise.name);
+    assert.doesNotMatch(translation.exerciseName(exercise.name), /[\u0590-\u05ff]/);
+  }
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', translation);
+  for (const exercise of seeds) assert.ok(library.exerciseGuide(exercise), exercise.name);
+  for (const info of Object.values(library.EXERCISE_GUIDES)) {
+    assert.equal(info.steps.length, 3);
+    for (const value of [info.name.he, info.cue.he, ...info.steps.map((step) => step.he),
+      ...info.muscles, ...info.equipment, info.level]) {
+      assert.doesNotMatch(translation.text(value), /[\u0590-\u05ff]/, value);
+    }
+    for (const hold of [false, true]) {
+      const svg = library.exerciseIllustration(info, hold);
+      assert.match(svg, /^<svg/);
+      assert.doesNotMatch(svg, /undefined|NaN|<image|https?:/);
+    }
+  }
+  for (const file of ['exercise-library.js', 'workout-insights.js']) {
+    assert.ok(read('www/service-worker.js').includes(`'./js/${file}'`));
+  }
+});
+
+test('library expansion preserves originals and skips existing IDs and authored names', () => {
+  const originals = [
+    { id: 'custom', name: 'שכיבות סמיכה', active: false, defaultSets: 7, notes: 'My version' },
+    { id: 'library:goblet-squat', name: 'My renamed squat', active: true, restSeconds: 175 },
+  ];
+  const before = JSON.stringify(originals);
+  const expanded = library.expandedLibrary(originals);
+  assert.equal(expanded[0], originals[0]);
+  assert.equal(expanded[1], originals[1]);
+  assert.equal(expanded.length, 26);
+  assert.equal(JSON.stringify(originals), before);
+  assert.equal(JSON.stringify(library.expandedLibrary(expanded)), JSON.stringify(expanded));
+  assert.ok(expanded.slice(originals.length).every((exercise) => exercise.active === false));
+});
+
+test('library migration does not select additions, replace IDs or resurrect deleted options', () => {
+  const context = migrationContext();
+  context.init();
+  const selected = context.exercises.filter((exercise) => exercise.active !== false).map((exercise) => exercise.id);
+  assert.equal(selected.length, 25);
+  const added = context.exercises.filter((exercise) => exercise.id.startsWith('library:'));
+  assert.equal(added.length, 26);
+  const removedId = added[0].id;
+  added[1].name = 'My edited library exercise';
+  added[1].notes = 'Leave this alone';
+  const renamedId = added[1].id;
+  context.db.saveExercises(context.exercises.filter((exercise) => exercise.id !== removedId));
+  context.init();
+  assert.equal(context.settings.libraryExpansionV1Applied, true);
+  assert.ok(!context.exercises.some((exercise) => exercise.id === removedId));
+  assert.equal(context.exercises.find((exercise) => exercise.id === renamedId).notes, 'Leave this alone');
+  assert.equal(JSON.stringify(context.exercises.filter((exercise) => exercise.active !== false).map((exercise) => exercise.id)), JSON.stringify(selected));
+});
+
+test('failed library persistence does not mark its migration complete', () => {
+  const context = migrationContext();
+  context.init();
+  context.settings.libraryExpansionV1Applied = false;
+  context.db.saveExercises = () => { throw Error('quota'); };
+  assert.throws(() => context.init(), /quota/);
+  assert.equal(context.settings.libraryExpansionV1Applied, false);
+});
+
+test('library filters match both languages, combine constraints and preserve custom names', () => {
+  const context = localizationContext();
+  context.setLanguage('en');
+  const squat = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:goblet-squat');
+  assert.ok(library.matchesLibraryFilters(squat, { search: 'dumbbell squat', equipment: 'משקולות יד', place: 'home', type: 'reps' }, context.text));
+  assert.ok(library.matchesLibraryFilters(squat, { search: 'סקוואט משקולות' }, context.text));
+  assert.equal(library.matchesLibraryFilters(squat, { type: 'hold' }, context.text), false);
+  assert.equal(library.matchesLibraryFilters(squat, { equipment: 'מכונה' }, context.text), false);
+  assert.ok(library.matchesLibraryFilters(squat, { level: 'מתחילים' }));
+  assert.equal(library.matchesLibraryFilters(squat, { level: 'בינוניים' }), false);
+  const bodyweight = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:bodyweight-squat');
+  assert.ok(library.matchesLibraryFilters(bodyweight, { equipment: 'ללא ציוד' }));
+  assert.equal(library.matchesLibraryFilters(squat, { equipment: 'ללא ציוד' }), false);
+  assert.equal(library.matchesLibraryFilters({ name: 'החזקה סטטית במתח' }, { equipment: 'ללא ציוד' }), false);
+  assert.equal(library.matchesLibraryFilters({ name: 'גרביטון' }, { place: 'home' }), false);
+  const walking = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:walking');
+  const marching = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:marching');
+  assert.ok(library.matchesLibraryFilters(walking, { type: 'cardio', place: 'outside' }));
+  assert.ok(library.matchesLibraryFilters(marching, { type: 'cardio', place: 'home' }));
+  assert.equal(library.matchesLibraryFilters(walking, { place: 'home' }), false);
+  const custom = { name: 'My own movement', category: 'Custom', active: false };
+  assert.ok(library.matchesLibraryFilters(custom, { search: 'own' }));
+  assert.equal(library.matchesLibraryFilters(custom, { equipment: 'משקל גוף' }), false);
+  assert.equal(context.exerciseName('תרגיל שלי'), 'תרגיל שלי');
+  context.setLanguage('he');
+  assert.ok(library.matchesLibraryFilters(squat, { search: 'dumbbell squat' }, context.searchText));
+  assert.ok(library.matchesLibraryFilters({ name: 'כפיפת מרפקים בישיבה' }, { search: 'seated curl' }, context.searchText));
+  assert.ok(library.matchesLibraryFilters({ name: 'משיכה לפנים בפולי עליון' }, { search: 'back machine' }, context.searchText));
+  assert.match(read('www/index.html'), /value="משקולות יד">משקולות יד<\/option>/);
+  assert.match(read('www/index.html'), /value="מתחילים">מתחילים<\/option>/);
+});
+
+function insightRecord(id, day, sets, exercise = { id: 'bench', name: 'Bench', notes: 'Same variation' }) {
+  return {
+    id, dateISO: `2026-10-${String(day).padStart(2, '0')}T07:00:00Z`, durationSec: 600,
+    entries: [insights.completedEntrySnapshot({
+      exerciseId: exercise.id, exerciseName: exercise.name,
+      sets: sets.map(([weightKg, reps, difficulty]) => ({ weightKg, reps, difficulty, completed: true })),
+    }, exercise)],
+  };
+}
+
+test('completed snapshots preserve valid optional feedback and explicit measurement, not unfinished sets', () => {
+  const entry = { exerciseId: 'hold', exerciseName: 'Hold', sets: [
+    { weightKg: 0, reps: 24, completed: true, difficulty: 'hard' },
+    { weightKg: 0, reps: 30, completed: true, difficulty: '__proto__' },
+    { weightKg: 0, reps: 40, completed: false, difficulty: 'easy' },
+  ] };
+  const snapshot = insights.completedEntrySnapshot(entry, { name: 'Hold', inputType: 'hold', notes: 'Keep still' });
+  assert.equal(snapshot.inputType, 'hold');
+  assert.equal(snapshot.sets.length, 2);
+  assert.equal(snapshot.sets[0].difficulty, 'hard');
+  assert.ok(!Object.hasOwn(snapshot.sets[1], 'difficulty'));
+  const unknown = insights.completedEntrySnapshot(entry);
+  assert.equal(unknown.inputType, null);
+  assert.equal(unknown.comparisonKey, null);
+  assert.doesNotMatch(section('function buildDraftSession()', 'function makeCardioEntry('), /difficulty/);
+});
+
+test('insights compare same-weight repetitions independent of set ordering', () => {
+  const previous = insightRecord('previous', 1, [[20, 10], [20, 12]]);
+  const current = insightRecord('current', 2, [[20, 13, 'right'], [20, 11, 'easy']]);
+  const result = insights.workoutSummary(current, [current, previous]);
+  assert.equal(result.insights[0].kind, 'more-reps');
+  assert.equal(result.insights[0].delta, 2);
+  assert.equal(result.difficulty.right, 1);
+  assert.equal(result.difficulty.easy, 1);
+});
+
+test('more volume, unmatched sets, invalid data and changed definitions do not become progress claims', () => {
+  const previous = insightRecord('previous', 1, [[20, 10]]);
+  for (const candidate of [
+    insightRecord('current', 2, [[20, 10], [20, 10]]),
+    insightRecord('current', 2, [[30, 9]]),
+    insightRecord('current', 2, [[20, -2]]),
+    insightRecord('current', 2, [[20, 12]], { id: 'bench', name: 'Bench', notes: 'Changed variation' }),
+    insightRecord('current', 2, [[20, 12]], { id: 'different-id', name: 'Bench', notes: 'Same variation' }),
+  ]) assert.equal(insights.workoutSummary(candidate, [previous]).insights.length, 0);
+  const latest = insightRecord('latest', 2, [[20, 10]], { id: 'bench', name: 'Bench', notes: 'Changed variation' });
+  const current = insightRecord('current', 3, [[20, 12]]);
+  assert.equal(insights.workoutSummary(current, [previous, latest]).insights.length, 0);
+});
+
+test('load comparison never mistakes more machine assistance for progress', () => {
+  const previous = insightRecord('previous', 1, [[20, 10]]);
+  const current = insightRecord('current', 2, [[22, 10]]);
+  assert.equal(insights.workoutSummary(current, [previous]).insights[0].kind, 'more-weight');
+  const assisted = { id: 'assist', name: 'גרביטון' };
+  const before = insightRecord('previous', 1, [[20, 10]], assisted);
+  const after = insightRecord('current', 2, [[30, 10]], assisted);
+  assert.equal(insights.workoutSummary(after, [before]).insights.length, 0);
+  const renamed = library.expandedLibrary([{ id: 'renamed-assist', name: 'גרביטון' }])[0];
+  renamed.name = 'My assisted pull-up';
+  assert.equal(renamed.loadKind, 'assistance');
+  assert.equal(insightRecord('renamed', 3, [[30, 10]], renamed).entries[0].loadKind, 'assistance');
+  const unspecified = insightRecord('broad', 3, [[20, 10]], { id: 'chest', name: 'לחיצת חזה', notes: 'Machine / dumbbells' });
+  assert.equal(unspecified.entries[0].comparisonKey, null);
+  const specific = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:dumbbell-bench');
+  assert.ok(insightRecord('specific', 3, [[20, 10]], specific).entries[0].comparisonKey);
+});
+
+test('four-workout repetition insight needs four matching measurements and ignores future records', () => {
+  const records = [1, 2, 3, 4].map((day) => insightRecord(String(day), day, [[20, 10]]));
+  assert.equal(insights.workoutSummary(records[2], records).insights.length, 0);
+  assert.equal(insights.workoutSummary(records[3], [...records].reverse()).insights[0].kind, 'repeated-four');
+  delete records[1].entries[0].inputType;
+  assert.equal(insights.workoutSummary(records[3], records).insights.length, 0);
+});
+
+test('summary separates holds and cardio, and leaves legacy measurements unknown', () => {
+  const previous = insightRecord('previous', 1, [[20, 10]]);
+  delete previous.entries[0].inputType;
+  const current = insightRecord('current', 2, [[20, 12]]);
+  current.entries.push(
+    { exerciseId: 'plank', inputType: 'hold', sets: [{ weightKg: 10, reps: 30, completed: true, difficulty: 'hard' }] },
+    { exerciseId: 'walk', type: 'cardio', completed: true, durationSec: 300 },
+  );
+  const before = JSON.stringify([previous, current]);
+  const summary = insights.workoutSummary(current, [previous, current]);
+  assert.equal(summary.insights.length, 0);
+  assert.equal(summary.sets, 2);
+  assert.equal(summary.exercises, 3);
+  assert.equal(summary.holdSeconds, 30);
+  assert.equal(summary.cardioSeconds, 300);
+  assert.equal(summary.difficulty.hard, 1);
+  const context = vm.createContext();
+  vm.runInContext(section('function computeVolume(', 'function renderDashboard('), context);
+  assert.equal(context.computeVolume(current), 240);
+  assert.equal(JSON.stringify([previous, current]), before);
+});
+
+for (const difficulty of ['right', '']) {
+  test(`editing history ${difficulty ? 'retains' : 'clears'} rating and preserves surviving set metadata`, () => {
+    const record = insightRecord('record', 1, [[20, 10, 'hard'], [25, 12, 'easy']]);
+    record.entries[0].sets[1].customField = 'Keep this';
+    let save, saved;
+    const block = { dataset: { ei: '0' } }, row = { dataset: { si: '1' } };
+    const context = vm.createContext({
+      JSON, workouts: [record], document: { createElement: () => ({ addEventListener() {}, remove() {} }), body: { appendChild() {} } },
+      formatDate: () => 'Date', escapeAttr: (value) => value, escapeHtml: (value) => value,
+      qs: (selector) => {
+        if (selector === '.edit-weight') return { value: '27' };
+        if (selector === '.edit-reps') return { value: '13' };
+        if (selector === '.edit-difficulty') return { value: difficulty };
+        return { addEventListener: (event, callback) => { if (selector === '.btnSaveEditW') save = callback; } };
+      },
+      qsa: (selector) => selector === '.edit-exercise-block[data-ei]' ? [block] : selector === '.edit-set-row' ? [row] : [],
+      db: { getWorkouts: () => [record], saveWorkouts: (value) => { saved = value; } },
+      renderHistoryTab() {}, renderDashboard() {}, showToast() {},
+    });
+    vm.runInContext(section('function openEditWorkoutModal(', '/* ---------------- share workout'), context);
+    context.openEditWorkoutModal(record);
+    save();
+    const entry = saved[0].entries[0];
+    assert.equal(entry.comparisonKey, record.entries[0].comparisonKey);
+    assert.equal(entry.inputType, 'reps');
+    assert.equal(entry.sets.length, 1);
+    assert.equal(entry.sets[0].customField, 'Keep this');
+    assert.equal(entry.sets[0].weightKg, 27);
+    assert.equal(entry.sets[0].difficulty, difficulty || undefined);
+  });
 }
 
 function bridgeContext(plugins = {}, native = true, extras = {}) {
@@ -973,10 +1223,25 @@ function voiceContext(entries = []) {
   const messages = [];
   const calls = [];
   const holdTimers = new Map();
+  let timerRevision = 0;
+  const restTimer = {
+    endAt: null, totalSeconds: 0, lastAnnouncedElapsed: 0, intervalId: null,
+    isRunning() { return this.intervalId !== null; },
+    start(seconds) {
+      this.endAt = Date.now() + seconds * 1000;
+      this.totalSeconds = seconds; this.lastAnnouncedElapsed = 0; this.intervalId = ++timerRevision;
+    },
+    stop() {
+      this.endAt = null; this.totalSeconds = 0; this.intervalId = null; calls.push('stopRest');
+    },
+    addSeconds(seconds) { this.endAt += seconds * 1000; this.totalSeconds += seconds; calls.push('extendRest'); },
+    restore(snapshot) { Object.assign(this, snapshot); this.intervalId = ++timerRevision; calls.push('restoreRest'); },
+  };
   function node() {
     const classes = new Set();
     return {
-      value: '', textContent: '',
+      value: '', textContent: '', dataset: {},
+      setAttribute(name, value) { if (name === 'data-exercise-name') this.dataset.exerciseName = value; },
       classList: {
         add: (name) => classes.add(name),
         remove: (name) => classes.delete(name),
@@ -991,8 +1256,9 @@ function voiceContext(entries = []) {
     if (!elements.has(id)) elements.set(id, node());
     return elements.get(id);
   };
-  const cards = entries.map((entry) => ({
+  const cards = entries.map((entry, entryIndex) => ({
     ...node(),
+    dataset: { entryIndex },
     entry,
     rows: (entry.sets || []).map((set, index) => ({
       ...node(), set, reps: node(),
@@ -1010,7 +1276,7 @@ function voiceContext(entries = []) {
       button: { click: () => {
         set.completed = !set.completed;
         holdTimers.delete(`${entry.exerciseId}:${index}`);
-        if (set.completed) calls.push('rest');
+        if (set.completed) { calls.push('rest'); restTimer.start(90); }
       } },
     })),
     button: { click: () => { entry.completed = !entry.completed; } },
@@ -1024,7 +1290,7 @@ function voiceContext(entries = []) {
   const session = { running: false, entries };
   const context = vm.createContext({
     activeSession: session,
-    exercises: entries.map((e) => ({ id: e.exerciseId, name: e.exerciseName, inputType: e.inputType || 'reps' })),
+    exercises: entries.map((e) => ({ id: e.exerciseId, name: e.exerciseName, inputType: e.inputType || 'reps', defaultReps: e.defaultReps })),
     document: { visibilityState: 'visible' },
     settings: { voiceCommandsEnabled: true },
     native: { isNative: () => true },
@@ -1041,16 +1307,20 @@ function voiceContext(entries = []) {
         return parent.button;
       }
     },
-    qsa: (_, parent) => parent.rows,
+    qsa: (selector, parent) => selector === '.exercise-card[data-entry-index]' ? cards : parent.rows,
     primeSpeech: () => {},
+    cancelWorkoutGreeting: () => calls.push('cancelGreeting'),
     ensureWorkoutStarted: () => { session.running = true; calls.push('start'); },
     finishWorkout: () => { session.running = false; calls.push('finish'); },
     doCancelWorkout: () => { session.running = false; calls.push('cancel'); },
     showToast: (message) => messages.push(message),
+    speak: (message) => calls.push(`speak:${message}`),
+    KG_TO_LBS: 2.20462,
+    round2: (value) => Math.round(value * 100) / 100,
     persistActiveSession: () => calls.push('persist'),
     syncWorkoutActivity: () => {},
     renderWorkoutTab: () => calls.push('render'),
-    restTimer: { stop: () => calls.push('stopRest') },
+    restTimer,
     holdTimers,
     db: { saveSettings: () => calls.push('saveSettings') },
     setTimeout: () => 0,
@@ -1059,6 +1329,270 @@ function voiceContext(entries = []) {
   vm.runInContext("voiceListeningActive = true; currentTab = 'workout';", context);
   return { context, calls, messages, session, el };
 }
+
+for (const [phrase, expected] of [
+  ['עשיתי 12 חזרות עם 40 קילו', { kind: 'report', reps: 12, weight: 40, unit: 'kg' }],
+  ['ביצעתי שתים עשרה חזרות במשקל ארבעים וחצי קילוגרם', { kind: 'report', reps: 12, weight: 40.5, unit: 'kg' }],
+  ['עשיתי עשרים ושניים חזרות עם 40 קילו וחצי והיה קשה מדי', { kind: 'report', reps: 22, weight: 40.5, unit: 'kg', difficulty: 'hard' }],
+  ['עשיתי 12 חזרות עם 40,25 ק"ג.', { kind: 'report', reps: 12, weight: 40.25, unit: 'kg' }],
+  ['עשיתי עשר חזרות עם מאה עשרים וחמישה קילו', { kind: 'report', reps: 10, weight: 125, unit: 'kg' }],
+  ['I did ten reps with two hundred and twenty pounds', { kind: 'report', reps: 10, weight: 220, unit: 'lbs' }],
+  ['I did 12 reps with 88lbs', { kind: 'report', reps: 12, weight: 88, unit: 'lbs' }],
+  ['I just did twelve reps at forty point five kilograms and it was just right.', { kind: 'report', reps: 12, weight: 40.5, unit: 'kg', difficulty: 'right' }],
+  ['I completed twenty-two reps using zero point zero five kg', { kind: 'report', reps: 22, weight: 0.05, unit: 'kg' }],
+  ['היה מתאים', { kind: 'difficulty', difficulty: 'right' }],
+  ['הסט האחרון היה קשה', { kind: 'difficulty', difficulty: 'hard' }],
+  ['The set was easy.  ', { kind: 'difficulty', difficulty: 'easy' }],
+  ['It felt too hard', { kind: 'difficulty', difficulty: 'hard' }],
+  ['תוסיף חצי דקה מנוחה', { kind: 'rest', seconds: 30 }],
+  ['הוסף 15 שניות למנוחה', { kind: 'rest', seconds: 15 }],
+  ['Add half a minute of rest', { kind: 'rest', seconds: 30 }],
+  ['Add one and a half minutes to the rest', { kind: 'rest', seconds: 90 }],
+  ['מאשר סיום', { kind: 'confirm-finish' }],
+  ['Confirm finish workout', { kind: 'confirm-finish' }],
+]) {
+  test(`natural voice parsing: ${phrase}`, () => {
+    assert.deepEqual(JSON.parse(JSON.stringify(voiceReports.parseWorkoutVoice(phrase))), expected);
+  });
+}
+
+for (const phrase of [
+  'לא עשיתי 12 חזרות עם 40 קילו', 'עשיתי 12 חזרות עם 40 קילו?',
+  'עשיתי 12 חזרות עם 40', 'עשיתי 12 חזרות עם -40 קילו',
+  'עשיתי 12.5 חזרות עם 40 קילו', 'עשיתי 0 חזרות עם 40 קילו',
+  'I did twelve or fifteen reps with forty kg', 'I did 12 reps with about 40 kg',
+  'I did 12 reps with 40 kg and finish workout', 'I did 12 reps with 40.123 kg',
+  'I did 9007199254740992 reps with 40 kg', 'I did 12 reps with forty point five point five kg',
+  'I did 12 reps with 9007199254740991 and a half kg',
+  'not easy', 'הסט לא היה קשה', 'Add -30 seconds of rest', 'Add 0 minutes of rest',
+  'כן', 'yes', 'please confirm finish for me', 'maybe I did twelve reps with forty kg',
+]) {
+  test(`unsafe or incomplete voice phrase cannot become an action: ${phrase}`, () => {
+    assert.ok([null, 'invalid'].includes(voiceReports.parseWorkoutVoice(phrase)?.kind ?? null));
+  });
+}
+
+test('compound report uses selected set, saves pounds as kg and undoes all fields without replacing the set', () => {
+  const entries = contextualEntries();
+  const entry = entries[1], set = entry.sets[0];
+  Object.assign(set, { weightKg: '10', reps: '8', note: 'keep' });
+  const before = { ...set };
+  const { context, session, calls, messages } = voiceContext(entries);
+  context.settings.voiceAnnouncements = true;
+  session.currentExerciseId = 'bench';
+  context.handleVoiceTranscript('I did twelve reps with 88 pounds and it was hard');
+  assert.equal(set.weightKg, 39.92);
+  assert.equal(set.reps, 12);
+  assert.equal(set.completed, true);
+  assert.equal(set.difficulty, 'hard');
+  assert.equal(entry.sets[1].completed, false);
+  assert.equal(session.lastCompletedSet.exerciseId, 'bench');
+  assert.match(messages.at(-1), /12.*88.*פאונד.*1.*קשה/);
+  assert.equal(calls.filter((call) => call.startsWith('speak:')).length, 1);
+  context.handleVoiceTranscript('בטל');
+  assert.equal(entry.sets[0], set);
+  assert.deepEqual(set, before);
+  assert.equal(session.lastCompletedSet, undefined);
+  assert.equal(context.restTimer.isRunning(), false);
+});
+
+test('natural report requests a choice rather than picking the first of several exercises', () => {
+  const entries = contextualEntries();
+  const before = JSON.stringify(entries);
+  const { context, messages } = voiceContext(entries);
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  assert.equal(JSON.stringify(entries), before);
+  assert.match(messages.at(-1), /לא ברור/);
+});
+
+test('natural report can use a sole repetition exercise and cannot move away from selected hold, cardio or completed exercise', () => {
+  for (const id of ['warmup', 'plank', 'bench']) {
+    const entries = contextualEntries();
+    if (id === 'bench') entries[1].sets.forEach((set) => { set.completed = true; });
+    const { context, session } = voiceContext(entries);
+    session.currentExerciseId = id;
+    const before = JSON.stringify(entries);
+    context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+    assert.equal(JSON.stringify(entries), before);
+  }
+  const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 0 קילו');
+  assert.equal(entry.sets[0].weightKg, 0);
+  assert.equal(entry.sets[0].completed, true);
+});
+
+test('natural report preserves counted-set targeting and immediate duplicates cannot complete the next set', () => {
+  const entries = contextualEntries();
+  const { context, session } = voiceContext(entries);
+  session.currentExerciseId = 'bench';
+  context.handleVoiceTranscript('התחל סט');
+  context.handleVoiceTranscript('שמונה');
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  assert.deepEqual(entries[1].sets.map((set) => set.completed), [true, false]);
+  context.handleVoiceTranscript('בטל');
+  assert.equal(entries[1].sets[0].reps, 8);
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  assert.equal(entries[1].sets[0].completed, true);
+});
+
+test('a manually unchecked report can be repeated without being rejected as a duplicate', () => {
+  const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  entry.sets[0].completed = false;
+  context.rememberCompletedSet(entry, entry.sets[0]);
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  assert.equal(entry.sets[0].completed, true);
+});
+
+test('report undo refuses to overwrite later manual data and does not affect a newer session', () => {
+  for (const mutate of [
+    (context, entry) => { entry.sets[0].weightKg = 42; },
+    (context, entry) => { entry.sets[0].difficulty = 'easy'; },
+    (context) => { context.activeSession = { entries: [] }; },
+  ]) {
+    const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+    const { context, messages } = voiceContext([entry]);
+    context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+    mutate(context, entry);
+    const before = JSON.stringify(entry);
+    context.handleVoiceTranscript('בטל');
+    assert.equal(JSON.stringify(entry), before);
+    assert.match(messages.at(-1), /השתנו|אין פעולה/);
+  }
+});
+
+test('a failed report save cannot announce success or register a successful duplicate', () => {
+  const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+  const { context, session, messages } = voiceContext([entry]);
+  session.currentExerciseId = 'one';
+  context.persistActiveSession = () => { throw Error('storage full'); };
+  assert.throws(() => context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו'), /storage full/);
+  assert.equal(vm.runInContext('lastVoiceReport', context), null);
+  assert.ok(!messages.some((message) => /נרשם:/.test(message)));
+});
+
+test('difficulty uses persisted actual completion order, not list order, and has independent undo', () => {
+  const entries = contextualEntries();
+  const { context, session } = voiceContext(entries);
+  entries[2].sets[0].completed = true;
+  context.rememberCompletedSet(entries[2], entries[2].sets[0]);
+  entries[1].sets[0].completed = true;
+  context.rememberCompletedSet(entries[1], entries[1].sets[0]);
+  context.activeSession = JSON.parse(JSON.stringify(session));
+  const restored = context.activeSession;
+  context.handleVoiceTranscript('הסט היה קשה');
+  assert.equal(restored.entries[1].sets[0].difficulty, 'hard');
+  assert.equal(restored.entries[2].sets[0].difficulty, undefined);
+  context.handleVoiceTranscript('בטל');
+  assert.equal(restored.entries[1].sets[0].difficulty, undefined);
+  assert.equal(restored.entries[1].sets[0].completed, true);
+  restored.entries[1].sets[0].completed = false;
+  context.rememberCompletedSet(restored.entries[1], restored.entries[1].sets[0]);
+  context.handleVoiceTranscript('היה קל');
+  assert.equal(restored.entries[2].sets[0].difficulty, undefined);
+});
+
+test('rest extension changes and restores the real deadline, preserving interval announcement state', () => {
+  const { context, messages } = voiceContext();
+  context.handleVoiceTranscript('תוסיף חצי דקה מנוחה');
+  assert.match(messages.at(-1), /אין כרגע/);
+  context.restTimer.start(90);
+  const deadline = context.restTimer.endAt;
+  context.handleVoiceTranscript('תוסיף חצי דקה מנוחה');
+  assert.equal(context.restTimer.endAt, deadline + 30000);
+  assert.equal(context.restTimer.totalSeconds, 120);
+  context.restTimer.lastAnnouncedElapsed = 30;
+  context.handleVoiceTranscript('בטל');
+  assert.equal(context.restTimer.endAt, deadline);
+  assert.equal(context.restTimer.totalSeconds, 90);
+  assert.equal(context.restTimer.lastAnnouncedElapsed, 30);
+});
+
+test('undo cannot overwrite a later manual rest change or stop an unrelated newer rest', () => {
+  const { context, messages } = voiceContext();
+  context.restTimer.start(90);
+  context.handleVoiceTranscript('Add half a minute of rest');
+  context.restTimer.addSeconds(15);
+  const afterManual = context.restTimer.endAt;
+  context.handleVoiceTranscript('בטל');
+  assert.equal(context.restTimer.endAt, afterManual);
+  assert.match(messages.at(-1), /השתנו/);
+  const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+  const report = voiceContext([entry]);
+  report.context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  report.context.restTimer.start(150);
+  const newerDeadline = report.context.restTimer.endAt;
+  report.context.handleVoiceTranscript('בטל');
+  assert.equal(entry.sets[0].completed, false);
+  assert.equal(report.context.restTimer.endAt, newerDeadline);
+});
+
+test('whole-report undo restores the interrupted rest context as well as its deadline', () => {
+  const entry = { exerciseId: 'one', exerciseName: 'One', sets: [{ completed: false }] };
+  const { context, el } = voiceContext([entry]);
+  el('restExerciseName').setAttribute('data-exercise-name', 'Earlier exercise');
+  el('restExerciseName').textContent = 'Earlier exercise';
+  context.restDoneMessage = 'Earlier completion message';
+  context.restTimer.start(150);
+  const deadline = context.restTimer.endAt;
+  context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+  el('restExerciseName').textContent = 'New report exercise';
+  context.restDoneMessage = 'New completion message';
+  context.handleVoiceTranscript('בטל');
+  assert.equal(context.restTimer.endAt, deadline);
+  assert.equal(el('restExerciseName').textContent, 'Earlier exercise');
+  assert.equal(context.restDoneMessage, 'Earlier completion message');
+});
+
+test('finish confirmation expires, is session-bound and is invalidated by another command or hidden tab', () => {
+  for (const invalidate of [
+    (context) => vm.runInContext('pendingVoiceFinish.expiresAt = Date.now() - 1', context),
+    (context) => { context.activeSession = { running: true, entries: [] }; },
+    (context) => context.handleVoiceTranscript('בטל'),
+    (context) => context.handleVoiceTranscript('yes'),
+    (context) => {
+      context.document.visibilityState = 'hidden'; context.handleVoiceTranscript('מאשר סיום');
+      context.document.visibilityState = 'visible';
+    },
+  ]) {
+    const { context, session, calls } = voiceContext();
+    session.running = true;
+    context.handleVoiceTranscript('סיים אימון');
+    invalidate(context);
+    context.handleVoiceTranscript('מאשר סיום');
+    assert.ok(!calls.includes('finish'));
+  }
+});
+
+test('stopping listening invalidates pending finish even when no transcript arrives while hidden', async () => {
+  const { context, session, calls } = voiceContext();
+  context.native.voiceStopListening = async () => {};
+  session.running = true;
+  context.handleVoiceTranscript('סיים אימון');
+  context.document.visibilityState = 'hidden';
+  await context.updateVoiceListeningState();
+  context.document.visibilityState = 'visible';
+  vm.runInContext('voiceListeningActive = true', context);
+  context.handleVoiceTranscript('מאשר סיום');
+  assert.ok(!calls.includes('finish'));
+});
+
+test('voice messages, contextual hints and new help text are bilingual and parser is precached', () => {
+  const translation = localizationContext();
+  translation.setLanguage('en');
+  for (const message of [
+    'נרשם: 12 חזרות עם 40 ק"ג בלחיצת חזה, סט 1',
+    'נרשם: 12 חזרות עם 40 ק"ג בלחיצת חזה, סט 1. דירוג: קשה',
+    'דירוג קשה נרשם ללחיצת חזה, סט 1', 'נוספו 30 שניות למנוחה',
+    'כדי לסיים ולשמור, אמור מאשר סיום. לביטול הבקשה אמור בטל',
+    'הדיווח לא ברור. אמור למשל: עשיתי 12 חזרות עם 40 קילו',
+  ]) assert.doesNotMatch(translation.text(message), /[\u0590-\u05ff]/, message);
+  assert.ok(voiceReports.voiceReportHints('en').every((hint) => !/[\u0590-\u05ff]/.test(hint)));
+  assert.ok(read('www/service-worker.js').includes("'./js/voice-reports.js'"));
+});
 
 for (const [phrase, expected] of [
   ['התחל אימון', 'startWorkout'], ['התחל את האימון!', 'startWorkout'],
@@ -1121,6 +1655,139 @@ function contextualEntries() {
     { exerciseId: 'cooldown', exerciseName: 'שחרור-הליכה', type: 'cardio', durationSec: 300, completed: false },
   ];
 }
+
+for (const [name, language] of [['לחיצת חזה', 'he'], ['חזה', 'he'], ['Chest press', 'en'], ['Chest', 'en']]) {
+  test(`exercise name arms its first unfinished repetition set without start: ${name}`, () => {
+    const entries = contextualEntries();
+    entries[1].sets[0] = { weightKg: 40, reps: '12', completed: false };
+    const { context, session, el, calls } = voiceContext(entries);
+    context.i18n.setLanguage(language);
+    context.handleVoiceTranscript(name);
+    assert.equal(session.currentExerciseId, 'bench');
+    assert.equal(vm.runInContext('voiceCountingState.setIndex', context), 0);
+    assert.equal(vm.runInContext('voiceCountingState.targetReps', context), 12);
+    assert.ok(calls.includes('cancelGreeting'));
+    context.handleVoiceTranscript('1,2,3,4');
+    assert.equal(entries[1].sets[0].reps, 4);
+    assert.equal(entries[1].sets[0].completed, false);
+    assert.equal(entries[1].sets[0].weightKg, 40);
+    assert.match(el('voiceStatusBadge').textContent, /4 \/ 12/);
+    context.handleVoiceTranscript(name);
+    assert.equal(vm.runInContext('voiceCountingState.count', context), 4);
+    assert.equal(vm.runInContext('voiceCountingState.targetReps', context), 12);
+    context.handleVoiceTranscript('12');
+    assert.equal(entries[1].sets[0].completed, true);
+    assert.equal(entries[1].sets[1].completed, false);
+    assert.equal(context.restTimer.isRunning(), true);
+    assert.equal(calls.filter((call) => call === 'rest').length, 1);
+    context.handleVoiceTranscript(language === 'he' ? 'סיימתי' : 'Done');
+    context.handleVoiceTranscript('12');
+    assert.equal(entries[1].sets[1].completed, false);
+  });
+}
+
+test('count completion keeps the original target when an exact number is skipped and remains undoable', () => {
+  const entries = contextualEntries();
+  entries[1].defaultReps = '12';
+  const { context } = voiceContext(entries);
+  context.handleVoiceTranscript('חזה');
+  context.handleVoiceTranscript('7');
+  assert.equal(entries[1].sets[0].voiceTargetReps, 12);
+  context.handleVoiceTranscript('13');
+  assert.equal(entries[1].sets[0].completed, true);
+  assert.equal(entries[1].sets[0].reps, 13);
+  context.handleVoiceTranscript('בטל');
+  assert.equal(entries[1].sets[0].completed, false);
+  assert.equal(context.restTimer.isRunning(), false);
+  context.handleVoiceTranscript('חזה');
+  assert.equal(vm.runInContext('voiceCountingState.targetReps', context), 12);
+});
+
+test('next spoken exercise name arms the next unfinished set and never changes completed sets', () => {
+  const entries = contextualEntries();
+  entries[1].sets[0] = { reps: 12, completed: true };
+  entries[1].sets[1] = { reps: '10', completed: false };
+  const { context } = voiceContext(entries);
+  context.handleVoiceTranscript('חזה');
+  assert.equal(vm.runInContext('voiceCountingState.setIndex', context), 1);
+  context.handleVoiceTranscript('10');
+  assert.equal(entries[1].sets[1].completed, true);
+  context.handleVoiceTranscript('חזה');
+  context.handleVoiceTranscript('1');
+  assert.equal(entries[1].sets[0].reps, 12);
+  assert.equal(entries[1].sets[1].reps, 10);
+});
+
+test('count target survives stopping and reloading an active set while manual edits can replace it', () => {
+  const entries = contextualEntries();
+  entries[1].sets[0].reps = '12';
+  const first = voiceContext(entries);
+  first.context.handleVoiceTranscript('חזה');
+  first.context.handleVoiceTranscript('4');
+  first.context.handleVoiceTranscript('עצור');
+  const restored = voiceContext(JSON.parse(JSON.stringify(entries)));
+  restored.context.handleVoiceTranscript('חזה');
+  assert.equal(vm.runInContext('voiceCountingState.targetReps', restored.context), 12);
+  const set = restored.session.entries[1].sets[0];
+  set.reps = '8';
+  restored.context.resetVoiceRepTarget(set);
+  assert.equal(vm.runInContext('voiceCountingState.targetReps', restored.context), 8);
+  restored.context.handleVoiceTranscript('8');
+  assert.equal(set.completed, true);
+});
+
+test('unknown or ranged goals require explicit finish and manual early finish remains supported', () => {
+  for (const target of ['', '8-12', '0', '-1', '12.5', '9007199254740992', '12']) {
+    const entries = contextualEntries();
+    entries[1].sets[0].reps = target;
+    const { context } = voiceContext(entries);
+    context.handleVoiceTranscript('חזה');
+    context.handleVoiceTranscript('5');
+    assert.equal(entries[1].sets[0].completed, false);
+    context.handleVoiceTranscript('סיימתי');
+    assert.equal(entries[1].sets[0].completed, true);
+    assert.equal(entries[1].sets[0].reps, 5);
+  }
+});
+
+test('selection-only phrases do not start counting and ambiguous names cannot select or start', () => {
+  for (const phrase of ['בחר לחיצת חזה', 'Select chest press', 'Choose chest press']) {
+    const { context, session } = voiceContext(contextualEntries());
+    context.i18n.setLanguage('en');
+    context.handleVoiceTranscript(phrase);
+    assert.equal(session.currentExerciseId, 'bench');
+    assert.equal(vm.runInContext('voiceCountingState', context), null);
+    assert.equal(session.running, false);
+  }
+  const { context, session, calls } = voiceContext(contextualEntries());
+  for (const phrase of ['לחיצת', 'לא לחיצת חזה', 'לא התחל לחיצת חזה']) context.handleVoiceTranscript(phrase);
+  assert.equal(session.currentExerciseId, undefined);
+  assert.equal(session.running, false);
+  assert.equal(calls.length, 0);
+});
+
+test('changing repetition exercise switches the listening set without completing either one', () => {
+  const { context, session } = voiceContext(contextualEntries());
+  context.handleVoiceTranscript('חזה');
+  context.handleVoiceTranscript('3');
+  context.handleVoiceTranscript('רגליים');
+  context.handleVoiceTranscript('4');
+  assert.equal(session.entries[1].sets[0].reps, 3);
+  assert.equal(session.entries[1].sets[0].completed, false);
+  assert.equal(session.entries[2].sets[0].reps, 4);
+  assert.equal(session.entries[2].sets[0].completed, false);
+  assert.equal(session.currentExerciseId, 'legs');
+});
+
+test('count badge and name-to-count Help translate with an explicit set and target', () => {
+  const translation = localizationContext();
+  translation.setLanguage('en');
+  for (const text of [
+    'לחיצת חזה — סט 1: 4 / 12 חזרות. הסט יסתיים ביעד',
+    'לחיצת חזה — סט 2: סופר 4. אמור ״סיימתי״ לסיום',
+    'הסט כבר הסתיים ביעד. לסט הבא אמור שוב את שם התרגיל או התחל סט',
+  ]) assert.doesNotMatch(translation.text(text), /[\u0590-\u05ff]/);
+});
 
 test('set completed targets strength and rest, not an untouched warmup', () => {
   const entries = contextualEntries();
@@ -1268,6 +1935,19 @@ test('pending opening speech cannot interrupt rest or speak after cancellation/s
   }
 });
 
+test('compound report suppresses duplicate rest-start speech and cancels delayed greeting without disabling announcements', () => {
+  const { context, advance, spoken } = greetingContext();
+  context.ensureWorkoutStarted();
+  context.voiceReportInProgress = true;
+  context.startRestTimer({ name: 'Bench' }, false, null);
+  context.voiceReportInProgress = false;
+  advance(1000);
+  assert.equal(spoken.length, 0);
+  assert.equal(context.settings.voiceAnnouncements, true);
+  context.startRestTimer({ name: 'Bench' }, false, null);
+  assert.equal(spoken.length, 1);
+});
+
 test('voice undo targets the newly completed set even after rendering and manual completion', () => {
   const entry = { exerciseId: 'bench', sets: [
     { completed: true }, { completed: false }, { completed: false },
@@ -1294,10 +1974,13 @@ test('late transcripts cannot control workouts outside the visible listening tab
   }
 });
 
-test('voice finish and cancel stay distinct and cancel does not require a dialog', () => {
+test('voice finish requires separate confirmation and cancel still does not require a dialog', () => {
   const { context, session, calls } = voiceContext();
   session.running = true;
   context.handleVoiceTranscript('סיים אימון');
+  assert.equal(session.running, true);
+  assert.ok(!calls.includes('finish'));
+  context.handleVoiceTranscript('מאשר סיום');
   session.running = true;
   context.handleVoiceTranscript('בטל אימון');
   assert.deepEqual(calls, ['finish', 'cancel']);
@@ -1567,7 +2250,7 @@ for (const finish of [false, true]) {
           { weightKg: 20, reps: 12, completed: true }, { weightKg: 25, reps: 6, completed: false },
         ] },
       ] },
-      workouts: [], settings: { voiceAnnouncements: false }, voiceCountingState: {}, lastVoiceAction: {},
+      exercises: [], workouts: [], settings: { voiceAnnouncements: false }, voiceCountingState: {}, lastVoiceAction: {},
       activityReadyEnabled: true,
       holdTimers: new Map([['bench:0', { intervalId: 42 }]]),
       restTimer: { stop: () => calls.push('restStop') },
@@ -1856,6 +2539,7 @@ test('removing a populated or running set requires confirmation and clears its t
   const last = entry.sets[1], cleared = [];
   const context = vm.createContext({
     confirm: () => confirmed, holdTimers: new Map([['hold:1', { intervalId: 42 }]]),
+    activeSession: { entries: [entry], lastCompletedSet: { exerciseId: 'hold', setIndex: 1 } },
     voiceCountingState: { entry, set: last }, lastVoiceAction: { entry, set: last },
     clearInterval: (id) => cleared.push(id), persistActiveSession() {}, renderWorkoutTab() {},
     updateVoiceBadgeForListeningState() {},
@@ -1870,6 +2554,7 @@ test('removing a populated or running set requires confirmation and clears its t
   assert.equal(context.holdTimers.size, 0);
   assert.equal(context.voiceCountingState, null);
   assert.equal(context.lastVoiceAction, null);
+  assert.equal(context.activeSession.lastCompletedSet, undefined);
   assert.deepEqual(cleared, [42]);
 });
 
@@ -2040,7 +2725,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -2049,7 +2734,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -2477,6 +3162,16 @@ function nativePlanContext() {
   return { ...clock, calls, messages };
 }
 
+test('catalog hold IDs retain their full identity in native announcement plans', () => {
+  const { context } = nativePlanContext();
+  context.exercises = [{ id: 'library:side-plank', holdSeconds: 42 }];
+  context.holdTimers.set('library:side-plank:0', { startedAt: 1000 });
+  const items = context.buildBackgroundAnnouncementItems();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].fireAtMillis, 43000);
+  assert.match(items[0].announcementID, /^hold:library:side-plank:0:/);
+});
+
 async function settlePlan(context) {
   await new Promise((resolve) => setImmediate(resolve));
   await context.announcementPlanChain;
@@ -2583,6 +3278,7 @@ test('native lifecycle stops microphone input and recovers background playback w
 function progressSpeechContext(entries) {
   const messages = [], nodes = new Map();
   const context = vm.createContext({
+    qsa: () => [],
     activeSession: { entries }, settings: { voiceAnnouncements: true, restSeconds: 90 },
     cancelWorkoutGreeting() {}, playBeep() {},
     restTimer: { start() {} }, speak: (message) => messages.push(message),

@@ -252,6 +252,28 @@
   <section id="tab-exercises" class="tab-panel">
     <h2 class="section-title">ספריית תרגילים</h2>
     <p class="about-desc">בחר קטגוריה, מצא תרגילים והוסף אותם לאימון שלך.</p>
+    <div id="exerciseLibraryFilters" class="library-filters">
+      <label class="library-search">
+        <span class="field-label">חיפוש בספרייה</span>
+        <input id="librarySearch" class="input" type="search" placeholder="חפש תרגיל, שריר או ציוד">
+      </label>
+      <label><span class="field-label">סוג פעילות</span><select id="libraryType" class="select">
+        <option value="">כל סוגי הפעילות</option><option value="reps">כוח</option>
+        <option value="hold">החזקות סטטיות</option><option value="cardio">אירובי</option>
+      </select></label>
+      <label><span class="field-label">ציוד</span><select id="libraryEquipment" class="select">
+        <option value="">כל הציוד</option><option value="משקל גוף">משקל גוף</option><option value="משקולות יד">משקולות יד</option>
+        <option value="מכונה">מכונה</option><option value="גומייה">גומייה</option><option value="ספסל">ספסל</option><option value="מזרן">מזרן</option>
+        <option value="מתח">מתח</option><option value="מקבילים">מקבילים</option><option value="קיר">קיר</option><option value="ללא ציוד">ללא ציוד</option>
+      </select></label>
+      <label><span class="field-label">מקום אימון</span><select id="libraryPlace" class="select">
+        <option value="">בכל מקום</option><option value="home">בית</option><option value="gym">חדר כושר</option><option value="outside">בחוץ</option>
+      </select></label>
+      <label><span class="field-label">רמת קושי</span><select id="libraryLevel" class="select">
+        <option value="">כל הרמות</option><option value="מתחילים">מתחילים</option><option value="בינוניים">בינוניים</option>
+      </select></label>
+      <button id="btnClearLibraryFilters" class="btn btn-secondary btn-small">נקה סינון</button>
+    </div>
     <div id="exerciseCategoryGrid" class="exercise-category-grid" aria-label="קטגוריות תרגילים"></div>
     <div id="exerciseLibraryPanel" class="hidden">
       <button id="btnBackExerciseCategories" class="btn btn-secondary btn-small exercise-library-back">→ לכל הקטגוריות</button>
@@ -362,16 +384,21 @@
       <div class="field-hint">כשהסימון ״מקשיב״ מופיע בטאב אימון, אומרים פקודה בקול רגיל וממתינים רגע בין פקודות. שם המיקרופון הפעיל מוצג ליד הסימון. באוזניות Bluetooth נתמכות ובמערכת תואמת נבחר מיקרופון איכותי; אחרת משתמשים במיקרופון האייפון כדי לשמור על איכות המוזיקה באוזניות — כדאי להשאיר את האייפון בטווח הדיבור. נתמכים גם אוזניות חוטיות ורמקול המכשיר. מוזיקה חזקה עלולה להקשות על הזיהוי. זו דרך נוספת, לא תחליף להזנה ידנית. אם המיקרופון כבוי, אפשר להפעילו בכפתור שבטאב אימון:</div>
       <ul class="voice-commands-list">
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
-        <li><strong>"חימום"</strong>, <strong>"שחרור"</strong>, <strong>"פלאנק"</strong> או שם תרגיל אחר — בוחר את התרגיל הנוכחי. אפשר שם מקוצר אם הוא מתאים לתרגיל אחד בלבד</li>
+        <li><strong>"לחיצת חזה"</strong> או קיצור חד־משמעי כמו <strong>"חזה"</strong> — בוחר ומדגיש את התרגיל ומתחיל להקשיב לספירה בסט הבא שטרם הושלם. אין צורך לומר בנפרד ״התחל סט״. אמירת השם שוב בזמן ספירה אינה מאפסת אותה</li>
+        <li><strong>"חימום"</strong>, <strong>"שחרור"</strong> או <strong>"פלאנק"</strong> — בוחר בלבד; אומרים ״התחל״ כדי להפעיל את הטיימר. לבחירה בלבד בתרגיל חזרות אפשר לומר <strong>"בחר לחיצת חזה"</strong></li>
         <li><strong>"התחל"</strong> — מפעיל את התרגיל שנבחר: טיימר חימום/שחרור, מדידת החזקה בפלאנק, או ספירת חזרות. אפשר גם במשפט אחד: <strong>"התחל חימום"</strong> או <strong>"פלאנק התחל"</strong></li>
         <li><strong>"עצור"</strong> / <strong>"השהה"</strong> — עוצר את התרגיל הנוכחי כמו הכפתור הידני. אפשר גם <strong>"עצור חימום"</strong> או <strong>"שחרור עצור"</strong>. בחימום/שחרור ״התחל״ ממשיך מהזמן שנצבר; בפלאנק העצירה שומרת את הזמן ומפעילה מנוחה. בספירת חזרות עוצר את הספירה בלי לסמן שהסט הושלם</li>
-        <li><strong>"התחל סט"</strong> — מתחיל את הסט הבא בתרגיל הנוכחי; בתרגיל חזרות סופרים בקול ("אחת", "שתיים", "שלוש"...) והמספר מתעדכן בזמן אמת</li>
+        <li><strong>"התחל סט"</strong> — מתחיל את הסט הבא בתרגיל הנוכחי; סופרים בקול והמספר מתעדכן בזמן אמת. כשמגיעים ליעד החזרות שהוגדר לסט, הסט מסתיים ומתחילה מנוחה אוטומטית. היעד מוצג לצד הספירה ואינו משתנה עם כל מספר. ללא יעד מספרי יחיד, אומרים ״סיימתי״</li>
         <li><strong>"סט הושלם"</strong> / <strong>"סיימתי"</strong> — שומר את הספירה או זמן ההחזקה, מסמן את הסט הנוכחי כבוצע ומפעיל מנוחה. בחימום/שחרור שנבחרו מסמן את התרגיל כבוצע, כמו הכפתור הידני</li>
+        <li><strong>"עשיתי 12 חזרות עם 40 קילו"</strong> — שומר משקל וחזרות ומשלים סט בפעולה אחת. אפשר גם משקל עשרוני או פאונד. אמור קודם שם תרגיל; אם אין תרגיל נוכחי ויש כמה אפשרויות, האפליקציה תבקש לבחור ולא תנחש. הדיווח אינו מיועד לאירובי או להחזקות</li>
+        <li><strong>"הסט היה קל"</strong>, <strong>"היה מתאים"</strong> או <strong>"הסט היה קשה"</strong> — מדרג את הסט האחרון שסומן כהושלם, גם אם סומן ידנית. אפשר גם להוסיף בסוף הדיווח: <strong>"והיה קשה"</strong></li>
+        <li><strong>"תוסיף חצי דקה מנוחה"</strong> — מוסיף 30 שניות למנוחה פעילה בלבד. אפשר גם <strong>"תוסיף 15 שניות מנוחה"</strong>. אישורים קצרים מושמעים כשהכרזות קוליות מופעלות; האפשרויות מוגדרות מראש, ללא AI בתשלום</li>
         <li><strong>"דלג על מנוחה"</strong> / <strong>"זמן מנוחה הסתיים"</strong> — מדלג על טיימר המנוחה הפעיל</li>
         <li><strong>"תרגיל הבא"</strong> — בוחר וגולל אל התרגיל הבא אחרי התרגיל הנוכחי, בלי לסמן את הקודם כבוצע</li>
-        <li><strong>"סיים אימון"</strong> / <strong>"סיום אימון"</strong> — מסיים ושומר את האימון להיסטוריה, בדיוק כמו לחיצה על "סיים אימון"</li>
+        <li>אחרי מנוחה, אמור שוב את שם התרגיל או ״התחל סט״ כדי להתחיל לספור את הסט הבא. הגעה ליעד אינה מתחילה סט נוסף מעצמה. אפשר לומר ״סיימתי״ גם לפני היעד, ו״בטל״ לתיקון השלמה שגויה</li>
+        <li><strong>"סיים אימון"</strong> — מבקש סיום ושמירה. רק אמירת <strong>"מאשר סיום"</strong> בתוך 15 שניות משלימה את השמירה; <strong>"בטל"</strong> מבטל את בקשת הסיום. מעבר מסך, הפסקת האזנה או פקודה אחרת מבטלים את הבקשה</li>
         <li><strong>"בטל אימון"</strong> / <strong>"ביטול אימון"</strong> — מבטל ומאפס את האימון הנוכחי ללא שמירה (פעולה לא הפיכה — בדיוק כמו הכפתור הידני)</li>
-        <li><strong>"בטל"</strong> — מבטל את פעולת הקול האחרונה (אם סומן סט בטעות)</li>
+        <li><strong>"בטל"</strong> — מבטל את הדיווח הקולי האחרון: משקל, חזרות וסימון הסט יחד, או דירוג/הארכת מנוחה. שינוי ידני מאוחר יותר באותם נתונים לא יידרס. אם ממתינים לאישור סיום, מבטל רק את בקשת הסיום</li>
       </ul>
     </div>
 

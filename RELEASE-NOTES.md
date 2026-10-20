@@ -1,5 +1,107 @@
 # AutoFit release notes
 
+## Version 1.0 (29): Library, insights and hands-free training
+
+The user explicitly approved an internal TestFlight build on 2026-10-20.
+Apple build number 29 was verified unused before dispatch. This is internal
+testing only, not an App Store release or external beta submission.
+Release status: preparing the signed build; Apple processing is not yet verified.
+Local validation: all 286 regression tests pass; ES module syntax and whitespace
+checks pass. Isolated browser acceptance covered the real controller/DOM,
+stable goals across reloads, automatic completion/rest, undo, manual goal changes,
+summary persistence and reopening, and bilingual Help. Real iPhone recognition,
+music/headset behavior and the new voice flows still need device acceptance.
+
+### Name-to-count and automatic set completion
+
+- Saying a repetition exercise's full name or a unique abbreviation now selects
+  and persistently highlights it and arms its next unfinished set for counting.
+  Repeating the name does not reset an ongoing count; switching names keeps the
+  previous set's recorded reps without completing it.
+- A positive whole-number rep target comes from that set's configured value,
+  or the exercise default if the set is blank. The goal is kept separately from
+  live reps in the active session, including across counting restarts/reloads.
+  Reaching or passing it completes just that set and starts the existing rest
+  flow. Skipped recognition of the exact target does not prevent completion.
+  Actual recognized reps are saved, not capped to the goal.
+- Manual rep edits update the goal. Blank/non-numeric/range targets without a
+  single numeric default do not invent a stopping point; "Done" remains available
+  before a goal or when there is no goal. "Undo" reopens a mistaken completion.
+- Delayed workout greeting is cancelled when rep counting starts so it cannot
+  interrupt the first spoken numbers. The status badge names the exercise,
+  set and target. No new speech or microphone/audio-session behavior is added.
+- A duplicate "Done" after target completion cannot accidentally check the next
+  set. After rest, say the name or "Start set" for the next set; there is no
+  automatic start of the next set. Explicit "Select chest press" only selects.
+  Holds/cardio still require "Start" so mentioning their names does not run timers.
+- Bilingual Help and offline cache updated (`autofit-v51`). Real iPhone
+  recognition/music/headset behavior still requires device acceptance.
+
+### Natural voice reports
+
+Uses the existing Hebrew/English speech recognizer and bounded local parsing,
+not a paid AI service or unrestricted conversational understanding.
+
+- “I did 12 reps with 40 kilograms” records the selected repetition set's
+  weight, reps and completion as one undoable action. Supports decimal kg/lb
+  and common spoken numbers; ambiguous targets request selection. Holds and
+  cardio are not guessed. Immediate duplicate reports do not complete extra sets.
+- Easy / Just right / Hard rates the most recently completed set, including
+  manual completions. Its context is saved with the active workout.
+- “Add half a minute of rest” extends an existing rest period only. Undo restores
+  its prior deadline without overwriting subsequent timer changes.
+- Report acknowledgements identify the exercise and set; ordinary rest-start
+  speech is suppressed for a compound report to avoid overlapping messages.
+  Spoken replies respect the existing announcement setting.
+- Undo restores the entire last report, or its rating/rest extension, only when
+  the current session and affected data still match. Unrelated later work is kept.
+- Voice finishing now requires the separate phrase “Confirm finish” within
+  15 seconds. Another command, leaving Workout, backgrounding or microphone
+  failure invalidates the request. Existing explicit cancel-workout behavior
+  and manual controls are unchanged.
+- Help and offline cache updated (`autofit-v50`). Real iPhone microphone,
+  music/headset interaction and recognition accuracy still require device
+  acceptance; browser/JavaScript checks do not establish those properties.
+- Local regression coverage includes parsing, target ambiguity, grouped undo,
+  stale edits, rest deadlines and finish confirmation. An isolated browser
+  fixture exercised the real controller/DOM, saving and reopening a summary,
+  persisted rating context after reload and both Help languages at narrow width.
+  The fixture did not enable or emulate a native microphone.
+
+### Exercise library and workout insights (phase 1)
+
+The existing program, exercise IDs, ordering, custom text, history and native
+voice/timer controls remain in place. No paid AI or external AI service is used.
+
+- Adds 26 curated library options for strength, static holds, walking, home
+  marching and easy jogging. They are added once, **inactive**, without selecting
+  them for the current program or restoring previously deleted seed exercises.
+  Deleting, renaming or editing these options remains respected on later launches.
+- Search works across Hebrew/English names, muscle groups and equipment.
+  Filters cover activity, illustrated equipment, location and experience level.
+  Guides include original offline schematic illustrations, instructions,
+  breathing/form cues and primary/supporting muscles. Broad existing exercises
+  explicitly identify the particular variation shown.
+- Three selected YouTube tutorials (push-up, squat and plank) link to
+  Calisthenicmovement, BowFlex and ScottHermanFitness respectively. Video titles
+  and publishers were checked against YouTube's public oEmbed endpoint;
+  videos are not copied or required for the offline workout. Other guides
+  explicitly state when no selected video is available.
+- Optional Easy / Just right / Hard feedback attaches to completed sets, can be
+  cleared, survives history editing and is not prefilled into the next workout.
+  Manually marking an unmeasured hold complete saves its displayed target as
+  self-reported time; timed holds keep their elapsed time.
+- A persistent, closeable workout summary replaces the five-second celebration
+  and can be reopened from History. It separates holds/cardio from repetitions,
+  summarizes feedback, and compares matching recorded exercise definitions,
+  set counts and measurements. Legacy records without measurement metadata
+  and broad multi-variant entries are not guessed. Higher assistance weight is
+  not reported as strength progress;
+  workload alone is never described as improvement.
+- Native automatic Health syncing and the web Shortcuts action are retained.
+  Full program building, free-form voice reports, adaptive recommendations,
+  supersets, goals and AI remain outside phase 1. Offline cache: `autofit-v49`.
+
 ## Version 1.0 (28): Workout-list layout and Settings button
 
 Available to internal TestFlight testers. Apple confirmed `VALID` and

@@ -1,5 +1,6 @@
 import { EN } from './translations-en.js';
 import { SEED_EXERCISES } from './seed.js';
+import { LIBRARY_EXERCISES } from './exercise-library.js';
 
 let language = 'he';
 let observer;
@@ -22,11 +23,12 @@ const patterns = Object.entries(EN).filter(([key]) => /\{\d+\}/.test(key))
 
 export function getLanguage() { return language; }
 export function locale() { return language === 'en' ? 'en-US' : 'he-IL'; }
+export function searchText(value) { return Object.hasOwn(EN, value) ? EN[value] : value; }
 export function exerciseName(value) {
-  return SEED_EXERCISES.some((exercise) => exercise.name === value) ? text(value) : value;
+  return [...SEED_EXERCISES, ...LIBRARY_EXERCISES].some((exercise) => exercise.name === value) ? text(value) : value;
 }
 export function exerciseNotes(value) {
-  return SEED_EXERCISES.some((exercise) => exercise.notes === value) ? text(value) : value;
+  return [...SEED_EXERCISES, ...LIBRARY_EXERCISES].some((exercise) => exercise.notes === value || exercise.pace === value) ? text(value) : value;
 }
 export function localizeInput(input, value, kind = 'text') {
   const format = kind === 'name' ? exerciseName : kind === 'notes' ? exerciseNotes : text;
