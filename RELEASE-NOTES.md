@@ -5,7 +5,17 @@
 The user explicitly approved an internal TestFlight build on 2026-10-20.
 Apple build number 29 was verified unused before dispatch. This is internal
 testing only, not an App Store release or external beta submission.
-Release status: preparing the signed build; Apple processing is not yet verified.
+Release status: verified available for internal TestFlight testing.
+Source commit: `aa6e7824c3822099dc868d60b4bfadf3d2dc2c05`.
+GitHub Actions run [39411284094](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39411284094)
+(workflow run #30, explicit Apple build number **29**) completed successfully,
+including the Node 22 regressions, all four Swift suites, signed archive/export
+and upload.
+Apple build ID: `4a063af1-5c6d-4b70-af79-f47803e542bb`.
+Verified `processingState=VALID`, `internalBuildState=IN_BETA_TESTING` and
+`usesNonExemptEncryption=false`; external state is `READY_FOR_BETA_SUBMISSION`
+(not submitted). Existing internal group "Me" retains access to all builds;
+no new tester groups, public links or external review were created.
 Local validation: all 286 regression tests pass; ES module syntax and whitespace
 checks pass. Isolated browser acceptance covered the real controller/DOM,
 stable goals across reloads, automatic completion/rest, undo, manual goal changes,
@@ -59,7 +69,8 @@ not a paid AI service or unrestricted conversational understanding.
   15 seconds. Another command, leaving Workout, backgrounding or microphone
   failure invalidates the request. Existing explicit cancel-workout behavior
   and manual controls are unchanged.
-- Help and offline cache updated (`autofit-v50`). Real iPhone microphone,
+- Help and offline cache updated (initially `autofit-v50`; this release uses
+  `autofit-v51`). Real iPhone microphone,
   music/headset interaction and recognition accuracy still require device
   acceptance; browser/JavaScript checks do not establish those properties.
 - Local regression coverage includes parsing, target ambiguity, grouped undo,
@@ -100,7 +111,8 @@ voice/timer controls remain in place. No paid AI or external AI service is used.
   workload alone is never described as improvement.
 - Native automatic Health syncing and the web Shortcuts action are retained.
   Full program building, free-form voice reports, adaptive recommendations,
-  supersets, goals and AI remain outside phase 1. Offline cache: `autofit-v49`.
+  supersets, goals and AI remain outside phase 1. Initial phase-1 cache was
+  `autofit-v49`; the release including the voice upgrades uses `autofit-v51`.
 
 ## Version 1.0 (28): Workout-list layout and Settings button
 
