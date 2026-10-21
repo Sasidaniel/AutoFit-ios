@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -13,6 +14,11 @@ private struct ActivityClock: View {
         Group {
             if state.phase == .ready {
                 Text("00:00")
+            } else if state.phase == .paused {
+                let seconds = Int(state.pausedElapsedSeconds ?? 0)
+                Text(seconds >= 3600
+                    ? String(format: "%d:%02d:%02d", seconds / 3600, seconds % 3600 / 60, seconds % 60)
+                    : String(format: "%02d:%02d", seconds / 60, seconds % 60))
             } else if !elapsed, let start = state.phaseStartedAt, let end = state.phaseEndsAt {
                 Text(timerInterval: start...end, countsDown: true)
             } else {
@@ -26,6 +32,7 @@ private struct ActivityClock: View {
 
 private struct WorkoutSummary: View {
     let state: WorkoutActivityState
+    let sessionID: String
 
     private var phaseTitle: String {
         switch state.phase {
@@ -34,6 +41,7 @@ private struct WorkoutSummary: View {
         case .rest: return state.isEnglish ? "Rest" : "מנוחה"
         case .hold: return state.isEnglish ? "Hold" : "החזקה"
         case .cardio: return state.isEnglish ? "Warmup / cooldown" : "חימום / שחרור"
+        case .paused: return state.isEnglish ? "Workout paused" : "האימון בהפסקה"
         }
     }
 
@@ -51,7 +59,7 @@ private struct WorkoutSummary: View {
                     Text(phaseTitle).font(.caption).foregroundStyle(.secondary)
                     ActivityClock(state: state).font(.system(size: 30, weight: .bold))
                 }
-                if state.phase != .workout && state.phase != .ready {
+                if state.phase != .workout && state.phase != .ready && state.phase != .paused {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption).foregroundStyle(.secondary)
@@ -61,6 +69,12 @@ private struct WorkoutSummary: View {
             }
             ProgressView(value: Double(state.completedSets), total: Double(max(1, state.totalSets)))
                 .tint(accent)
+            if let index = state.setIndex, state.phase != .ready {
+                Text("\(state.isEnglish ? "Set" : "סט") \(index + 1)").font(.caption)
+            }
+            if #available(iOS 17.0, *) {
+                WorkoutControls(state: state, sessionID: sessionID)
+            }
         }
         .padding(14)
         .foregroundStyle(.white)
@@ -68,14 +82,93 @@ private struct WorkoutSummary: View {
     }
 }
 
+@available(iOS 17.0, *)
+private struct WorkoutControls: View {
+    let state: WorkoutActivityState
+    let sessionID: String
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if state.phase != .ready {
+                HStack {
+                    if [.workout, .hold].contains(state.phase), let exerciseID = state.exerciseID, let setIndex = state.setIndex {
+                        Button(intent: WorkoutControlIntent(sessionID: sessionID, command: "completeSet",
+                            exerciseID: exerciseID, setIndex: setIndex, controlRevision: state.controlRevision ?? 0)) {
+                            if compact { Image(systemName: "checkmark") }
+                            else { Label(state.isEnglish ? "Finish set" : "סיום סט", systemImage: "checkmark") }
+                        }
+                        .accessibilityLabel(state.isEnglish ? "Finish current set" : "סיום הסט הנוכחי")
+                    }
+                    Button(intent: WorkoutControlIntent(sessionID: sessionID,
+                        command: state.phase == .paused ? "resume" : "pause", controlRevision: state.controlRevision ?? 0)) {
+                        let symbol = state.phase == .paused ? "play.fill" : "pause.fill"
+                        let title = state.phase == .paused
+                            ? (state.isEnglish ? "Resume" : "המשך אימון")
+                            : (state.isEnglish ? "Pause" : "הפסק אימון")
+                        if compact { Image(systemName: symbol).accessibilityLabel(title) }
+                        else { Label(title, systemImage: symbol) }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.actionPending == true)
+            }
+            if let message = state.actionMessage {
+                Text(message).font(.caption2).lineLimit(2)
+            }
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct AdaptiveWorkoutSummary: View {
+    @Environment(\.activityFamily) private var family
+    let context: ActivityViewContext<WorkoutActivityAttributes>
+
+    var body: some View {
+        if family == .small {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(context.state.exerciseName).font(.caption).lineLimit(1).privacySensitive()
+                HStack {
+                    ActivityClock(state: context.state).font(.headline)
+                    if let index = context.state.setIndex {
+                        Text("\(context.state.isEnglish ? "Set" : "סט") \(index + 1)").font(.caption2)
+                    }
+                }
+                WorkoutControls(state: context.state, sessionID: context.attributes.sessionID, compact: true)
+            }
+            .padding(8)
+            .foregroundStyle(.white)
+            .environment(\.layoutDirection, context.state.isEnglish ? .leftToRight : .rightToLeft)
+        } else {
+            WorkoutSummary(state: context.state, sessionID: context.attributes.sessionID)
+        }
+    }
+}
+
 @main
 struct AutoFitLiveActivity: Widget {
+    @WidgetConfigurationBuilder
     var body: some WidgetConfiguration {
+        if #available(iOS 18.0, *) {
+            configuration.supplementalActivityFamilies([.small, .medium])
+        } else {
+            configuration
+        }
+    }
+
+    private var configuration: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
-            WorkoutSummary(state: context.state)
-                .activityBackgroundTint(Color(red: 0.08, green: 0.09, blue: 0.11))
-                .activitySystemActionForegroundColor(.white)
-                .widgetURL(workoutURL)
+            Group {
+                if #available(iOS 18.0, *) {
+                    AdaptiveWorkoutSummary(context: context)
+                } else {
+                    WorkoutSummary(state: context.state, sessionID: context.attributes.sessionID)
+                }
+            }
+            .activityBackgroundTint(Color(red: 0.08, green: 0.09, blue: 0.11))
+            .activitySystemActionForegroundColor(.white)
+            .widgetURL(workoutURL)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -86,7 +179,7 @@ struct AutoFitLiveActivity: Widget {
                         .font(.headline).frame(width: 90)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    WorkoutSummary(state: context.state)
+                    WorkoutSummary(state: context.state, sessionID: context.attributes.sessionID)
                 }
             } compactLeading: {
                 Image(systemName: context.state.phase == .rest ? "timer" : "dumbbell.fill")

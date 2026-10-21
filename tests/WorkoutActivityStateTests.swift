@@ -28,6 +28,19 @@ struct WorkoutActivityStateTests {
         precondition(ready.phase == .ready && ready.phaseStartedAt == nil && ready.phaseEndsAt == nil)
         let decodedReady = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(ready))
         precondition(decodedReady == ready)
+        let paused = try WorkoutActivityState(startMillis: now - 60000, exerciseName: "Bench",
+            completedSets: 2, totalSets: 6, phase: "paused", phaseStartMillis: nil, phaseEndMillis: nil,
+            nowMillis: now, exerciseID: "native:bench", setIndex: 1, pausedElapsedSeconds: 120, controlRevision: 4)
+        precondition(paused.phase == .paused && paused.pausedElapsedSeconds == 120 && paused.setIndex == 1)
+        let decodedPaused = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(paused))
+        precondition(decodedPaused == paused)
+        let request = WorkoutActivityAction(id: "request", sessionID: "session", command: "completeSet",
+            exerciseID: "native:bench", setIndex: 1, createdAt: now, controlRevision: 4)
+        precondition(request.isFresh(now: now + 20000))
+        precondition(!request.isFresh(now: now + 20001))
+        precondition(!request.isFresh(now: now - 5001))
+        let decodedRequest = try JSONDecoder().decode(WorkoutActivityAction.self, from: JSONEncoder().encode(request))
+        precondition(decodedRequest.controlRevision == 4)
         for phase in ["rest", "hold", "cardio"] {
             let timed = try state(phase, start: now, end: now + 90000)
             precondition(timed.phaseEndsAt!.timeIntervalSince(timed.phaseStartedAt!) == 90)
@@ -51,6 +64,13 @@ struct WorkoutActivityStateTests {
             { try state(name: " ") },
             { try state(name: String(repeating: "x", count: 121)) },
             { try state(language: "fr") },
+            { try state("paused") },
+            { try WorkoutActivityState(startMillis: now, exerciseName: "Bench", completedSets: 0, totalSets: 2,
+                phase: "paused", phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, pausedElapsedSeconds: .infinity) },
+            { try WorkoutActivityState(startMillis: now, exerciseName: "Bench", completedSets: 0, totalSets: 2,
+                phase: "paused", phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, pausedElapsedSeconds: 1e300) },
+            { try WorkoutActivityState(startMillis: now, exerciseName: "Bench", completedSets: 0, totalSets: 2,
+                phase: "workout", phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, setIndex: 1) },
         ]
         for make in invalid {
             do {

@@ -9,12 +9,12 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
 function loadPhaseOneModule(file, exports) {
-  const context = nodeVM.createContext();
-  nodeVM.runInContext(read(file).replace(/^export /gm, ''), context);
+  const context = nodeVM.createContext(file.endsWith('workout-insights.js') ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES } : {});
+  nodeVM.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return nodeVM.runInContext(`({ ${exports.join(', ')} })`, context);
 }
 const library = loadPhaseOneModule('www/js/exercise-library.js', [
-  'LIBRARY_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration',
+  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration',
 ]);
 const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
@@ -32,7 +32,7 @@ const vm = {
   ...nodeVM,
   createContext(values = {}) {
     const i18n = localizationContext();
-    return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceReportInProgress: false, restDoneMessage: '',
+    return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, ...values });
   },
@@ -44,6 +44,69 @@ function section(start, end) {
   assert.ok(from >= 0 && to > from, `Missing app section: ${start}`);
   return app.slice(from, to);
 }
+
+async function runAppleReleaseCheck(responses) {
+  const workflow = read('.github/workflows/ios-build.yml').replace(/\r\n/g, '\n');
+  const script = workflow.split("node <<'NODE'\n")[1]?.split('\n          NODE')[0];
+  assert.ok(script, 'Missing Apple release verifier');
+  const { privateKey } = require('node:crypto').generateKeyPairSync('ec', { namedCurve: 'prime256v1',
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  const messages = [], requests = [], summaries = [];
+  const process = { env: { APPSTORE_API_KEY_ID: 'test-key', APPSTORE_API_ISSUER_ID: 'test-issuer',
+    APP_BUILD_NUMBER: '31', HOME: 'test-home', GITHUB_STEP_SUMMARY: 'test-summary', GITHUB_SHA: 'test-source' } };
+  const context = nodeVM.createContext({
+    Buffer, Date, AbortSignal, encodeURIComponent, process,
+    require: (name) => name === 'node:fs'
+      ? { readFileSync: () => privateKey, appendFileSync: (path, value) => summaries.push(value) }
+      : require(name),
+    console: { log: (...values) => messages.push(values.join(' ')), error: (value) => messages.push(value) },
+    setTimeout: (callback) => { callback(); return 0; },
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      const next = responses.shift();
+      assert.ok(next, 'Unexpected Apple API request');
+      return { ok: !next.status || next.status === 200, status: next.status || 200, json: async () => next.body };
+    },
+  });
+  await nodeVM.runInContext(script, context);
+  return { messages, requests, summaries, process };
+}
+const appleAppResponse = { body: { data: [{ id: 'autofit-app' }] } };
+function appleBuildResponse(processing, internal = 'IN_BETA_TESTING') {
+  return { body: { data: [{ id: 'apple-build', attributes: { version: '31', processingState: processing },
+    relationships: { buildBetaDetail: { data: { id: 'beta-detail' } } } }],
+    included: [{ type: 'buildBetaDetails', id: 'beta-detail', attributes: {
+      internalBuildState: internal, externalBuildState: 'READY_FOR_BETA_SUBMISSION' } }] } };
+}
+test('release verifier waits for actual Apple internal availability and never submits externally', async () => {
+  const result = await runAppleReleaseCheck([appleAppResponse, { body: { data: [] } },
+    appleBuildResponse('PROCESSING', 'PROCESSING'), appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'),
+    appleBuildResponse('VALID')]);
+  assert.equal(result.process.exitCode, undefined);
+  assert.equal(result.requests.length, 5);
+  assert.equal(result.summaries.length, 1);
+  assert.match(result.summaries[0], /VALID \/ IN_BETA_TESTING/);
+  for (const { url, options } of result.requests) {
+    assert.match(url, /^https:\/\/api\.appstoreconnect\.apple\.com\/v1\/(?:apps|builds)\?/);
+    assert.equal(options.method, undefined);
+    const jwt = options.headers.Authorization.slice(7).split('.');
+    assert.equal(Buffer.from(jwt[2], 'base64url').length, 64);
+    assert.equal(JSON.parse(Buffer.from(jwt[1], 'base64url')).aud, 'appstoreconnect-v1');
+  }
+});
+test('release verifier reports an actual Apple rejection instead of a successful upload', async () => {
+  const result = await runAppleReleaseCheck([appleAppResponse, appleBuildResponse('INVALID')]);
+  assert.equal(result.process.exitCode, 1);
+  assert.equal(result.summaries.length, 0);
+  assert.ok(result.messages.some((message) => message.includes('Apple rejected build 31')));
+});
+test('release verifier surfaces Apple API authentication failure without leaking credentials', async () => {
+  const result = await runAppleReleaseCheck([{ status: 401 }]);
+  assert.equal(result.process.exitCode, 1);
+  assert.equal(result.summaries.length, 0);
+  assert.ok(result.messages.includes('Apple verification failed: HTTP 401'));
+  assert.doesNotMatch(result.messages.join('\n'), /PRIVATE KEY|Bearer|test-issuer/);
+});
 
 test('phase-one catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
   assert.equal(library.LIBRARY_EXERCISES.length, 26);
@@ -72,6 +135,164 @@ test('phase-one catalog is inactive, uniquely identified, bilingual and illustra
   for (const file of ['exercise-library.js', 'workout-insights.js']) {
     assert.ok(read('www/service-worker.js').includes(`'./js/${file}'`));
   }
+});
+
+test('every built-in and planning exercise has an offline illustration and reviewed instructional video', () => {
+  const translation = localizationContext();
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', translation);
+  const exercises = [...seeds, ...library.LIBRARY_EXERCISES, ...library.PLANNING_EXERCISES];
+  assert.equal(exercises.length, 57);
+  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 43);
+  for (const exercise of exercises) {
+    const guide = library.exerciseGuide(exercise);
+    assert.ok(guide, exercise.name);
+    assert.ok(guide.videos.length > 0, exercise.name);
+    for (const video of guide.videos) {
+      const url = new URL(video.href);
+      assert.equal(url.protocol, 'https:');
+      assert.ok(['www.youtube.com', 'www.muscleandstrength.com', 'us.physitrack.com'].includes(url.hostname));
+      assert.ok(video.publisher && video.title);
+      assert.equal(video.reviewedOn, '2026-10-21');
+      assert.doesNotMatch(video.href, /search|results|undefined/);
+    }
+    const svg = library.exerciseIllustration(guide, exercise.inputType === 'hold');
+    assert.match(svg, /exercise-muscle/);
+    assert.doesNotMatch(svg, /<image|https?:|undefined|NaN/);
+    assert.equal((svg.match(/translate\(210 10\)/g) || []).length, exercise.inputType === 'hold' ? 0 : 1);
+  }
+});
+
+test('instructional media preserves equipment, wrist directions and stationary-hold distinctions', () => {
+  const guides = library.EXERCISE_GUIDES;
+  assert.match(guides.shoulder.videos[0].href, /machine-shoulder-press$/);
+  assert.match(guides.dumbbellPress.videos[0].href, /seated-dumbbell-press/);
+  assert.notEqual(guides.row.videos[0].href, guides.bandRow.videos[0].href);
+  assert.notEqual(guides.curl.videos[0].href, guides.hammer.videos[0].href);
+  assert.notEqual(guides.pulldown.videos[0].href, guides.assisted.videos[0].href);
+  assert.match(guides.curl.videos[0].title, /Seated/);
+  assert.match(guides.farmer.videos[0].title, /hold/);
+  assert.match(guides.sideCrunch.videos[0].href, /twisting-floor-crunch/);
+  assert.equal(guides.wrist.videos.length, 2);
+  assert.match(guides.wrist.videos[1].href, /reverse/);
+  assert.notEqual(guides.wrist.videos[0].href, guides.wrist.videos[1].href);
+  assert.notEqual(library.exerciseIllustration(guides.row), library.exerciseIllustration(guides.bandRow));
+  assert.notEqual(library.exerciseIllustration(guides.shoulder), library.exerciseIllustration(guides.dumbbellPress));
+});
+
+function mediaController(exercises = []) {
+  const overlays = [], dialogs = [], toasts = [];
+  const control = () => ({
+    listeners: {}, controls: new Map(), removed: false, innerHTML: '',
+    addEventListener(name, callback) { this.listeners[name] = callback; },
+    remove() { this.removed = true; },
+  });
+  const qs = (selector, parent) => {
+    if (!parent.controls.has(selector)) parent.controls.set(selector, control());
+    return parent.controls.get(selector);
+  };
+  const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const escapeAttr = (value) => escapeHtml(value).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  const context = vm.createContext({
+    exercises, document: { createElement: control, body: { appendChild: (node) => overlays.push(node) } },
+    qs, escapeHtml, escapeAttr, showToast: (text) => toasts.push(text),
+    i18n: { exerciseName: (name) => name, exerciseNotes: (notes) => notes, translateDOM: () => {}, localizeInput: () => {} },
+    formatHMS: (seconds) => String(seconds),
+    openTrainingDialog(title, content) {
+      const dialog = control(); dialog.innerHTML = content; dialog.title = title; dialogs.push(dialog); return dialog;
+    },
+  });
+  nodeVM.runInContext(section('function openPhotoModal(', '/* ================= SETTINGS TAB'), context);
+  nodeVM.runInContext(section('function openExerciseGuide(', 'const DEFAULT_WARMUP_NAME'), context);
+  nodeVM.runInContext(section('function renderCardioCard(', 'function tickCardioTimers('), context);
+  return { context, overlays, dialogs, toasts, qs };
+}
+
+test('actual photo and guide controllers cover every authored exercise without editing records', () => {
+  const translation = localizationContext();
+  const exercises = [...nodeVM.runInContext('SEED_EXERCISES', translation),
+    ...library.LIBRARY_EXERCISES, ...library.PLANNING_EXERCISES];
+  const fixture = mediaController(exercises);
+  const before = JSON.stringify(exercises);
+  for (const original of exercises) {
+    const exercise = { ...original, images: [] };
+    fixture.context.openPhotoModal(exercise);
+    const photo = fixture.overlays.at(-1);
+    assert.match(photo.innerHTML, /<svg/);
+    fixture.qs('.btnPhotoGuide', photo).listeners.click();
+    assert.equal(photo.removed, true);
+    const guide = fixture.dialogs.at(-1).innerHTML;
+    assert.match(guide, /class="btn btn-secondary guide-video"/);
+    assert.doesNotMatch(guide, /<iframe|<video|<img|undefined|NaN/);
+    for (const video of library.exerciseGuide(exercise).videos) assert.ok(guide.includes(video.href), exercise.name);
+  }
+  assert.equal(JSON.stringify(exercises), before);
+  assert.equal(fixture.toasts.length, 0);
+});
+
+test('photo viewing retains personal media, escapes attributes and replaces only known stock schematics', () => {
+  const personal = 'data:image/png;base64,PERSONAL';
+  const exercise = { id: 'personal:hammer', catalogId: 'hammer', name: 'My hammer', notes: 'Leave my text alone',
+    images: ['images/ex_hammer.png', personal, 'custom" onerror="example'], active: false };
+  const before = JSON.stringify(exercise);
+  const fixture = mediaController();
+  fixture.context.openPhotoModal(exercise);
+  const photo = fixture.overlays.at(-1);
+  assert.ok(photo.innerHTML.includes(personal));
+  assert.match(photo.innerHTML, /custom&quot; onerror=&quot;example/);
+  assert.match(photo.innerHTML, /<details[^>]+guide-saved-images/);
+  fixture.qs('.btnPhotoGuide', photo).listeners.click();
+  assert.ok(fixture.dialogs.at(-1).innerHTML.includes('Leave my text alone'));
+  assert.equal(JSON.stringify(exercise), before);
+  fixture.context.openPhotoModal({ catalogId: 'hammer', name: 'Hammer', images: ['images/ex_hammer.png'] });
+  assert.match(fixture.overlays.at(-1).innerHTML, /<svg/);
+  assert.ok(fixture.overlays.at(-1).innerHTML.includes('images/ex_hammer.png'));
+});
+
+test('unknown custom media stays honest and close controls work without a guide or persistence', () => {
+  const fixture = mediaController();
+  fixture.context.openPhotoModal({ name: 'Unknown custom exercise', images: [] });
+  assert.equal(fixture.overlays.length, 0);
+  assert.equal(fixture.toasts.length, 1);
+  fixture.context.openPhotoModal({ name: 'Unknown custom exercise', images: ['my-photo.png'] });
+  const photo = fixture.overlays.at(-1);
+  assert.ok(photo.innerHTML.includes('my-photo.png'));
+  assert.doesNotMatch(photo.innerHTML, /btnPhotoGuide|<svg/);
+  fixture.qs('.btnClosePhoto', photo).listeners.click();
+  assert.equal(photo.removed, true);
+  fixture.context.openExerciseGuide({ name: 'Unknown custom exercise', notes: 'My notes', images: [] });
+  assert.match(fixture.dialogs.at(-1).innerHTML, /אין עדיין הדרכה מובנית/);
+  assert.doesNotMatch(fixture.dialogs.at(-1).innerHTML, /guide-video|<svg/);
+});
+
+test('cardio workout cards open the same media without starting or changing a timer', () => {
+  const exercise = library.LIBRARY_EXERCISES.find((item) => item.inputType === 'cardio');
+  const fixture = mediaController([exercise]);
+  const entry = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio', durationSec: 300,
+    elapsedSec: 37, startedAt: null, pace: 'My pace' };
+  const before = JSON.stringify(entry);
+  const card = fixture.context.renderCardioCard(entry, 1);
+  assert.match(card.innerHTML, /btnShowPhoto/);
+  assert.match(card.innerHTML, /btnExerciseGuide/);
+  fixture.qs('.btnShowPhoto', card).listeners.click();
+  assert.match(fixture.overlays.at(-1).innerHTML, /<svg/);
+  fixture.qs('.btnExerciseGuide', card).listeners.click();
+  assert.match(fixture.dialogs.at(-1).innerHTML, /guide-video/);
+  assert.equal(JSON.stringify(entry), before);
+});
+
+test('bridge holds explain the movement video and all new media UI has English translations', () => {
+  const fixture = mediaController();
+  fixture.context.openExerciseGuide({ catalogId: 'bridge', name: 'Bridge hold', inputType: 'hold' });
+  assert.match(fixture.dialogs.at(-1).innerHTML, /אין צורך לחזור על התנועה/);
+  assert.doesNotMatch(fixture.dialogs.at(-1).innerHTML, /translate\(210 10\)/);
+  const translation = localizationContext();
+  translation.setLanguage('en');
+  const labels = ['איור הדרכה עם הדגשת שרירים', 'הדגשת השרירים להמחשה בלבד', 'סרטוני הדרכה', 'הדרכה וסרטונים',
+    'צפייה בסרטון באתר המקור',
+    'הסרטונים נפתחים באתר חיצוני ובדרך כלל באנגלית. נדרש אינטרנט; ההוראות והאיור זמינים גם בלי רשת.',
+    'הסרטון מציג פשיטת מרפקים עם משקולת בישיבה. בחר מנח יציב ונוח.',
+    'הסרטון מדגים עלייה וירידה לגשר. בתרגיל ההחזקה נשארים בעמדה העליונה ונושמים; אין צורך לחזור על התנועה.'];
+  for (const label of labels) assert.doesNotMatch(translation.text(label), /[\u0590-\u05ff]/, label);
 });
 
 test('library expansion preserves originals and skips existing IDs and authored names', () => {
@@ -2489,6 +2710,29 @@ test('browser never calls ActivityKit and native bridge failures cannot report s
   assert.match(result.reason, /not authorized/);
 });
 
+test('native widget bridge preserves actual requests, forwards acknowledgements and surfaces read/write failures', async () => {
+  const request = { id: 'widget-action', command: 'completeSet', exerciseID: 'native:chest', setIndex: 1 };
+  const calls = [];
+  const bridge = bridgeContext({ LiveActivityBridge: {
+    consumeWorkoutAction: async () => ({ request }),
+    acknowledgeWorkoutAction: async (outcome) => { calls.push(outcome); return { acknowledged: true }; },
+  } });
+  assert.deepEqual(JSON.parse(JSON.stringify(await bridge.consumeWorkoutActivityAction())), request);
+  const outcome = { id: request.id, success: true };
+  assert.equal((await bridge.acknowledgeWorkoutActivityAction(outcome)).ok, true);
+  assert.deepEqual(calls[0], outcome);
+  const failing = bridgeContext({ LiveActivityBridge: {
+    consumeWorkoutAction: async () => { throw Error('read failed'); },
+    acknowledgeWorkoutAction: async () => { throw Error('ack failed'); },
+  } });
+  assert.equal(await failing.consumeWorkoutActivityAction(), null);
+  const failed = await failing.acknowledgeWorkoutActivityAction(outcome);
+  assert.equal(failed.ok, false);
+  assert.match(failed.reason, /ack failed/);
+  const unavailable = bridgeContext({});
+  assert.equal((await unavailable.acknowledgeWorkoutActivityAction(outcome)).ok, false);
+});
+
 test('Live Activity extension is embedded, shares its exact data type, signs separately, and supports workout links', () => {
   const project = read('ios/App/App.xcodeproj/project.pbxproj');
   assert.match(project, /dstSubfolderSpec = 13/);
@@ -2503,7 +2747,10 @@ test('Live Activity extension is embedded, shares its exact data type, signs sep
   for (const presentation of ['compactLeading', 'compactTrailing', 'minimal', 'DynamicIslandExpandedRegion']) {
     assert.ok(widget.includes(presentation));
   }
-  assert.doesNotMatch(widget, /Button\(|AppIntent/);
+  assert.match(widget, /Button\(intent: WorkoutControlIntent/);
+  assert.match(widget, /#available\(iOS 17\.0/);
+  assert.match(widget, /supplementalActivityFamilies\(\[\.small, \.medium\]\)/);
+  assert.match(read('ios/App/App/WorkoutActivityAttributes.swift'), /struct WorkoutControlIntent: LiveActivityIntent/);
   assert.match(read('ios/App/App/LiveActivityBridgePlugin.swift'), /AutoFitDismissedActivitySession/);
   assert.match(read('ios/App/App/SceneDelegate.swift'), /connectionOptions.urlContexts.forEach/);
 });
@@ -2588,6 +2835,15 @@ test('removing a populated or running set requires confirmation and clears its t
   assert.equal(context.lastVoiceAction, null);
   assert.equal(context.activeSession.lastCompletedSet, undefined);
   assert.deepEqual(cleared, [42]);
+  for (const data of [{ holdElapsedSec: 12, resumeAfterPause: true }, { notes: 'keep my note' }]) {
+    const frozen = { exerciseId: 'native:hold', sets: [{}, { reps: '', weightKg: '', ...data }] };
+    confirmed = false;
+    context.removeLastWorkoutSet(frozen);
+    assert.equal(frozen.sets.length, 2, 'Frozen measurements and notes require the same deletion confirmation');
+    confirmed = true;
+    context.removeLastWorkoutSet(frozen);
+    assert.equal(frozen.sets.length, 1);
+  }
 });
 
 test('a hold target announces only once even after its display is rebound', () => {
@@ -2802,7 +3058,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -2811,7 +3067,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -3159,6 +3415,145 @@ test('failed Health saves stay pending and concurrent manual taps cannot dispatc
   assert.equal(context.healthSyncInFlight.size, 0);
   assert.match(messages[0], /Health store unavailable/);
   assert.ok(!messages.some((message) => message.includes('נשמר באפליקציית הבריאות')));
+});
+
+test('Health delivery states persist real success, failure, permission and unavailability, never local-save success', async () => {
+  for (const [overrides, status] of [
+    [{}, 'saved'],
+    [{ healthSaveWorkout: async () => ({ saved: false, reason: 'Store failed' }) }, 'failed'],
+    [{ healthRequestAuthorization: async () => ({ granted: false, reason: 'write denied' }) }, 'unauthorized'],
+    [{ healthRequestAuthorization: async () => ({ granted: false, reason: 'unavailable' }) }, 'unavailable'],
+  ]) {
+    const record = healthRecord();
+    const { context, saved } = healthContext([record], overrides);
+    assert.equal(context.healthDeliveryState(record).status, 'unknown');
+    await context.syncWorkoutToHealth([record]);
+    const persisted = JSON.parse(saved.at(-1))[0];
+    assert.equal(persisted.healthDelivery.status, status);
+    assert.equal(context.healthDeliveryState(persisted).status, status);
+    assert.equal(context.healthDeliveryState(persisted).canRetry, status !== 'saved');
+    assert.equal(!!persisted.healthSyncedAt, status === 'saved');
+    if (status !== 'saved') assert.ok(persisted.healthDelivery.reason);
+  }
+});
+
+test('native exceptions become persistent retryable Health failures, not confirmations', async () => {
+  const record = healthRecord();
+  const { context, saved } = healthContext([record], {
+    healthSaveWorkout: async () => { throw new Error('Connection interrupted'); },
+  });
+  context.console = { error() {} };
+  await context.syncWorkoutToHealth([record]);
+  const persisted = JSON.parse(saved.at(-1))[0];
+  assert.equal(persisted.healthDelivery.status, 'failed');
+  assert.match(persisted.healthDelivery.reason, /Connection interrupted/);
+  assert.equal(context.healthDeliveryState(persisted).canRetry, true);
+});
+
+test('Health retry skips confirmed and concurrently requested records, deduplicating identical IDs in a batch', async () => {
+  const record = healthRecord();
+  const { context, writes } = healthContext([record]);
+  await context.syncWorkoutToHealth([record, record]);
+  assert.equal(writes.length, 1);
+  await context.syncWorkoutToHealth([{ ...record, healthSyncedAt: undefined }]);
+  assert.equal(writes.length, 1, 'Canonical persisted confirmation beats a stale summary object');
+  assert.equal(context.healthDeliveryState(record).canRetry, false);
+});
+
+test('web Shortcuts request persists unverified delivery, does not claim success and is not sent twice', async () => {
+  const record = healthRecord();
+  const { context, saved } = healthContext([record], { isNative: () => false });
+  let sends = 0;
+  context.sendWorkoutToHealthShortcut = () => sends++;
+  assert.equal(context.healthDeliveryState(record).status, 'unknown', 'Legacy web records remain unknown');
+  record.healthDelivery = { status: 'unavailable', reason: 'browser' };
+  assert.match(context.healthDeliveryState(record).message, /לא ניתן לאמת/);
+  await context.syncWorkoutToHealth([record]);
+  const restored = JSON.parse(saved.at(-1))[0];
+  assert.equal(restored.healthDelivery.status, 'shortcut');
+  assert.equal(restored.healthSyncPending, false);
+  assert.equal(restored.healthSyncedAt, undefined);
+  assert.match(context.healthDeliveryState(restored).message, /אין כאן אישור/);
+  assert.equal(context.healthDeliveryState(restored).canRetry, false);
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(sends, 1);
+});
+
+test('open Health summary updates asynchronously in place and never reopens or focuses a closed summary', async () => {
+  let complete;
+  const record = healthRecord();
+  const { context, saved } = healthContext([record], {
+    healthSaveWorkout: () => new Promise((resolve) => { complete = resolve; }),
+  });
+  const message = { textContent: '' }, reason = { textContent: '' };
+  const retry = { disabled: false, hidden: false, classList: { toggle(_name, value) { retry.hidden = value; } } };
+  const send = { disabled: false };
+  let open = true;
+  const row = { dataset: { healthWorkout: record.id }, querySelector: (selector) =>
+    ({ '.health-delivery-message': message, '.health-delivery-reason': reason, '.btnRetryHealth': retry })[selector],
+  closest: () => ({ querySelector: () => send }) };
+  context.document = { querySelectorAll: () => open ? [row] : [] };
+  context.i18n = { translateDOM() {} };
+  context.renderHealthSummary(row, record);
+  assert.match(message.textContent, /אין לאימון הזה אישור/);
+  const syncing = context.syncWorkoutToHealth([record]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(message.textContent, /ממתין לתשובה/);
+  assert.equal(retry.hidden, true);
+  complete({ saved: true, id: 'real-health-id' });
+  await syncing;
+  assert.match(message.textContent, /התקבל אישור שמירה/);
+  assert.equal(retry.disabled, true);
+  assert.equal(JSON.parse(saved.at(-1))[0].healthDelivery.nativeId, 'real-health-id');
+  open = false;
+  message.textContent = 'Closed summary remains untouched';
+  context.refreshHealthSummaries(record.id);
+  assert.equal(message.textContent, 'Closed summary remains untouched');
+  const reopened = JSON.parse(saved.at(-1))[0];
+  context.renderHealthSummary(row, reopened);
+  assert.match(message.textContent, /התקבל אישור שמירה/);
+});
+
+test('Health batch records each outcome without mislabelling unconfirmed workouts as saved', async () => {
+  const records = [healthRecord(), { ...healthRecord(), id: 'second' }];
+  const { context, saved } = healthContext(records, {
+    healthSaveWorkout: async ({ workoutID }) => ({ saved: workoutID === 'second', reason: 'Store failed' }),
+  });
+  await context.syncWorkoutToHealth(records);
+  const restored = JSON.parse(saved.at(-1));
+  assert.equal(restored[0].healthDelivery.status, 'failed');
+  assert.equal(restored[1].healthDelivery.status, 'saved');
+  assert.equal(restored[0].healthSyncPending, true);
+  assert.equal(restored[1].healthSyncPending, false);
+});
+
+test('a confirmed Health write is not relabelled failed or dispatched again if confirmation persistence fails', async () => {
+  const record = healthRecord();
+  const { context, writes, messages } = healthContext([record]);
+  let saves = 0;
+  context.db.saveWorkouts = () => { if (++saves > 1) throw new Error('storage full'); };
+  context.console = { error() {} };
+  context.i18n = { text: (text) => text };
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(context.healthDeliveryState(record).status, 'saved');
+  assert.match(messages.at(-1), /לא נשמר במכשיר/);
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(writes.length, 1);
+});
+
+test('a Shortcuts launch failure stays unverified and does not prevent a later safe attempt', async () => {
+  const record = healthRecord();
+  const { context } = healthContext([record], { isNative: () => false });
+  context.console = { error() {} };
+  context.sendWorkoutToHealthShortcut = () => { throw new Error('Scheme unavailable'); };
+  await context.syncWorkoutToHealth([record]);
+  assert.equal(context.healthDeliveryState(record).status, 'unknown');
+  assert.equal(record.healthSyncedAt, undefined);
+  let sends = 0;
+  context.sendWorkoutToHealthShortcut = () => sends++;
+  await context.syncWorkoutToHealth([record, record]);
+  assert.equal(sends, 1);
+  assert.equal(record.healthDelivery.status, 'shortcut');
 });
 
 test('Health bridge carries workout identifiers and summary; native samples have stable deduplication metadata', async () => {

@@ -147,6 +147,56 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" \
             --apiIssuer "$APPSTORE_API_ISSUER_ID"
 
+      - name: Verify Apple processing and internal TestFlight availability
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const keyID = process.env.APPSTORE_API_KEY_ID;
+          const issuer = process.env.APPSTORE_API_ISSUER_ID;
+          const buildNumber = process.env.APP_BUILD_NUMBER;
+          const privateKey = fs.readFileSync(`${process.env.HOME}/.appstoreconnect/private_keys/AuthKey_${keyID}.p8`, 'utf8');
+          const base64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+          async function api(path) {
+            const now = Math.floor(Date.now() / 1000);
+            const unsigned = `${base64({ alg: 'ES256', kid: keyID, typ: 'JWT' })}.${base64({ iss: issuer, iat: now, exp: now + 1200, aud: 'appstoreconnect-v1' })}`;
+            const signature = crypto.sign('sha256', Buffer.from(unsigned), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+            const response = await fetch(`https://api.appstoreconnect.apple.com${path}`, {
+              headers: { Authorization: `Bearer ${unsigned}.${signature}` },
+              signal: AbortSignal.timeout(30000),
+            });
+            if (!response.ok) throw new Error(`Apple verification failed: HTTP ${response.status}`);
+            return response.json();
+          }
+          (async () => {
+            const apps = await api('/v1/apps?filter[bundleId]=com.sasidaniel.autofit&limit=2');
+            if (apps.data?.length !== 1) throw new Error('Cannot uniquely identify the AutoFit app');
+            const appID = apps.data[0].id;
+            for (let attempt = 0; attempt < 80; attempt++) {
+              const result = await api(`/v1/builds?filter[app]=${encodeURIComponent(appID)}&filter[version]=${encodeURIComponent(buildNumber)}&include=buildBetaDetail&sort=-uploadedDate&limit=5`);
+              const build = result.data?.find((item) => item.attributes.version === buildNumber);
+              const processing = build?.attributes.processingState;
+              const detailID = build?.relationships?.buildBetaDetail?.data?.id;
+              const beta = result.included?.find((item) => item.type === 'buildBetaDetails' && item.id === detailID);
+              const internal = beta?.attributes.internalBuildState;
+              console.log(`Apple build ${buildNumber}: ${processing || 'not yet visible'}; internal ${internal || 'not yet available'}`);
+              if (['FAILED', 'INVALID'].includes(processing)) throw new Error(`Apple rejected build ${buildNumber}: ${processing}`);
+              if (processing === 'VALID' && internal === 'IN_BETA_TESTING') {
+                console.log(`Verified internal TestFlight build ${buildNumber}; Apple ID ${build.id}`);
+                console.log(`External state: ${beta.attributes.externalBuildState}; no external submission performed`);
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                  `## Internal TestFlight release\nBuild **${buildNumber}**, Apple ID \`${build.id}\`: **VALID / IN_BETA_TESTING**.\nSource: \`${process.env.GITHUB_SHA}\`. No external beta or App Store submission.\n`);
+                return;
+              }
+              if (attempt < 79) await new Promise((resolve) => setTimeout(resolve, 15000));
+            }
+            throw new Error(`Build ${buildNumber} was uploaded but internal availability is unconfirmed. Do not re-upload the same build number.`);
+          })().catch((error) => { console.error(error.message); process.exitCode = 1; });
+          NODE
+
       - name: Upload build artifact (for debugging)
         if: always()
         uses: actions/upload-artifact@v4

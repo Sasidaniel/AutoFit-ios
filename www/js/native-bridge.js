@@ -284,6 +284,28 @@ export function onWorkoutActivityAvailable(callback) {
   if (activity?.addListener) activity.addListener('activityAvailable', callback);
 }
 
+export function onWorkoutActivityAction(callback) {
+  const activity = plugin('LiveActivityBridge');
+  if (activity?.addListener) activity.addListener('workoutAction', callback);
+}
+
+export async function consumeWorkoutActivityAction() {
+  const activity = plugin('LiveActivityBridge');
+  if (!activity) return null;
+  try { return (await activity.consumeWorkoutAction()).request || null; }
+  catch (error) {
+    console.error('Cannot read workout Live Activity action', error);
+    return null;
+  }
+}
+
+export async function acknowledgeWorkoutActivityAction(outcome) {
+  const activity = plugin('LiveActivityBridge');
+  if (!activity) return { ok: false, reason: unavailableReason('LiveActivityBridge') };
+  try { return { ok: (await activity.acknowledgeWorkoutAction(outcome)).acknowledged === true }; }
+  catch (error) { return { ok: false, reason: String(error) }; }
+}
+
 export async function consumeWorkoutActivityLink() {
   const activity = plugin('LiveActivityBridge');
   if (!activity) return false;

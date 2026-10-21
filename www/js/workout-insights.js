@@ -1,3 +1,5 @@
+import { EXERCISE_GUIDES } from './exercise-library.js';
+
 export const DIFFICULTY_LABELS = { easy: 'קל', right: 'מתאים', hard: 'קשה' };
 // These original program entries explicitly combine multiple equipment or movement variants.
 const UNSPECIFIED_VARIANTS = new Set([
@@ -14,6 +16,8 @@ export function completedEntrySnapshot(entry, exercise) {
     exerciseName: entry.exerciseName,
     inputType,
     category: exercise?.category || '',
+    ...(exercise?.catalogId ? { catalogId: exercise.catalogId } : {}),
+    ...(entry.targetReps ? { targetReps: Number(entry.targetReps) } : {}),
     comparisonKey: exercise && (exercise.catalogId || !UNSPECIFIED_VARIANTS.has(exercise.name))
       ? JSON.stringify([exercise.name, exercise.notes || '', inputType]) : null,
     loadKind: exercise?.loadKind === 'assistance' || exercise?.name === 'גרביטון' || exercise?.catalogId === 'assisted' ? 'assistance' : 'external',
@@ -21,6 +25,7 @@ export function completedEntrySnapshot(entry, exercise) {
       weightKg: Number(set.weightKg) || 0,
       reps: Number(set.reps) || 0,
       completed: true,
+      ...(typeof set.notes === 'string' && set.notes ? { notes: set.notes } : {}),
       ...(Object.hasOwn(DIFFICULTY_LABELS, set.difficulty) ? { difficulty: set.difficulty } : {}),
     })),
   };
@@ -37,10 +42,10 @@ function comparableSets(entry) {
   return sets.map((set) => ({ weight: Number(set.weightKg), reps: Number(set.reps) }));
 }
 
-function compareEntries(current, previous) {
+export function compareEntries(current, previous) {
   if (current.inputType !== 'reps' || previous.inputType !== 'reps'
     || !current.comparisonKey || current.comparisonKey !== previous.comparisonKey
-    || current.loadKind !== previous.loadKind) return null;
+    || current.loadKind !== previous.loadKind || current.catalogId !== previous.catalogId) return null;
   const currentSets = comparableSets(current);
   const previousSets = comparableSets(previous);
   if (!currentSets || !previousSets || currentSets.length !== previousSets.length) return null;
@@ -63,6 +68,46 @@ function compareEntries(current, previous) {
     return { kind: 'more-weight' };
   }
   return null;
+}
+
+export function progressRecommendation(exercise, history, now = new Date()) {
+  const current = completedEntrySnapshot({ exerciseId: exercise.id, exerciseName: exercise.name, sets: [] }, exercise);
+  const seen = new Set();
+  const records = history.filter((workout) => {
+    if (!workout.id || seen.has(workout.id) || !Number.isFinite(Date.parse(workout.dateISO))
+      || Date.parse(workout.dateISO) > now.getTime()) return false;
+    seen.add(workout.id);
+    return true;
+  })
+    .sort((a, b) => Date.parse(b.dateISO) - Date.parse(a.dateISO))
+    .map((workout) => ({ dateISO: workout.dateISO, entry: workout.entries.find((entry) => entry.exerciseId === exercise.id) }))
+    .filter((record) => record.entry);
+  const evidence = records.slice(0, 2);
+  const result = (kind, reason) => ({ kind, reason, evidence });
+  if (exercise.inputType === 'cardio') return result('insufficient', 'cardio');
+  if (exercise.inputType === 'hold') return result('insufficient', 'hold');
+  if (!Object.hasOwn(EXERCISE_GUIDES, exercise.catalogId || '') || !current.comparisonKey || evidence.length < 2) return result('insufficient', 'history');
+  const [latest, previous] = evidence.map((record) => record.entry);
+  if (current.comparisonKey !== latest.comparisonKey || current.loadKind !== latest.loadKind
+    || latest.catalogId !== exercise.catalogId || previous.catalogId !== exercise.catalogId
+    || !compareEntries(latest, previous)) return result('insufficient', 'variation');
+  const sets = [...measuredSets(latest), ...measuredSets(previous)];
+  if (sets.some((set) => set.difficulty === 'hard')) return result('hold', 'hard');
+  if (current.loadKind === 'assistance') return result('hold', 'assistance');
+  const target = Number(exercise.targetReps);
+  if (!Number.isInteger(target) || target <= 0 || latest.targetReps !== target || previous.targetReps !== target) {
+    return result('hold', 'target');
+  }
+  if (sets.some((set) => !['easy', 'right'].includes(set.difficulty))) return result('hold', 'rating');
+  if (sets.some((set) => Number(set.reps) < target)) return result('reps', 'reps');
+  if (!EXERCISE_GUIDES[exercise.catalogId].equipment.some((item) => ['משקולות יד', 'מכונה'].includes(item))) {
+    return result('hold', 'load');
+  }
+  const weights = sets.map((set) => Number(set.weightKg));
+  if (new Set(weights).size !== 1 || weights[0] <= 0 || compareEntries(latest, previous)?.kind !== 'same') {
+    return result('hold', 'mixed');
+  }
+  return { ...result('increase', 'top'), weightKg: weights[0], targetReps: target };
 }
 
 export function workoutSummary(record, history) {

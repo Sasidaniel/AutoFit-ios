@@ -1,5 +1,261 @@
 # AutoFit release notes
 
+## Version 1.0 (31): Personal training tools (release approved, native build pending)
+
+This phase is based on the completed build-30 release, including `9e035c7`.
+It was developed locally and reviewed in the browser before the user explicitly
+approved an internal TestFlight release on 2026-10-21, including publishing all
+source and documentation changes to GitHub. Native build and Apple distribution
+confirmation are still pending; approval is not evidence of a successful upload.
+Private release credentials and `PROJECT-NOTES.md` remain excluded from Git.
+The native audio policy from build 30 is unchanged. The approved widget request
+adds Live Activity controls and bridge/state changes, not native audio changes.
+The release workflow now verifies Apple's actual `VALID / IN_BETA_TESTING`
+status after upload using the existing CI-only App Store Connect credentials.
+It does not submit an external beta or an App Store release.
+
+### Review flows
+
+- **Workout / Exercises > Photo > Instructions and videos:** all 57 built-in
+  and planning definitions have media through 43 authored guides and 44 curated
+  video links. Existing personal and detailed saved images remain intact.
+  Exercises without photos use original shaded grayscale SVG figures with red
+  approximate muscle emphasis; the three old stock stick diagrams remain
+  available under Saved images instead of taking priority. Rep exercises show
+  start/end positions, holds one position, and cardio cards expose the same
+  controls. No PDF artwork, third-party thumbnails or videos are copied.
+  Guides identify the demonstrated variation and publisher, distinguish machine/
+  dumbbell/band work and stationary holds, include both wrist directions, and
+  explain how the moving bridge video relates to a static bridge hold.
+  Public YouTube, Muscle & Strength and Physitrack video pages were checked on
+  2026-10-21. They open externally on an explicit tap, generally in English,
+  and require internet; third-party availability cannot be guaranteed.
+  Illustrations and written instructions work offline with no remote media
+  preloads. Unknown custom exercises retain their own photos/notes and an honest
+  no-authored-guide message rather than invented technique or video matches.
+  Viewing media does not save, activate or change an exercise/session.
+- **Workout > estimated workout time:** a permanently present approximate average
+  appears above the exercises before and during a workout. Once work starts,
+  a separate remaining-time estimate excludes completed work and consumed setup,
+  includes only the unexpired current rest plus rests after future sets, and
+  subtracts accumulated/running cardio or hold time without going negative.
+  It is not the elapsed stopwatch or a promised finish time.
+- **One duration model:** actual selected set counts (including program-week
+  limits), per-exercise/default rest, numeric/ranged reps, holds, cardio and
+  authored per-side work feed the same estimator in Workout, budget review,
+  personal-plan review and Exercises. Exercises shows the permanent My Workout
+  estimate separately from an already-entered session. Both strength and cardio
+  edit dialogs preview the proposed duration without saving; plan set/rep/cardio
+  edits also update the estimate immediately. Display one rounded average of
+  the lower and upper estimates, using hours and minutes above an hour, in
+  Hebrew and English. This is not a measured average of previous workouts.
+  The revised assumptions are 2–3 seconds per rep (15–25 seconds minimum work
+  per rep set), 15–30 seconds setup/transition per strength/hold exercise,
+  10–30 seconds cardio setup, and **full configured rest after every strength/
+  hold set, including the final one**, matching `startRestTimer`.
+  Unknown rep targets assume 8–15 reps and remain approximate. Equipment queues
+  and extra breaks are not guaranteed by this estimate. Duration refreshes use
+  in-memory arithmetic, not storage reads or serialization of timing snapshots.
+  No stored history is fabricated or calibrated from the reported two-hour
+  anecdote. The untouched 25-exercise/67-set default now displays about
+  **2 hours and 34 minutes**, reduced from about 3 hours and 6 minutes by changing
+  only work/setup assumptions, not sets or rests. The first 20 default entries
+  estimate about **2 hours and 4 minutes**; they are not asserted to be the same
+  exercises as the user's reported 1-hour-53-minute workout.
+- **Workout > black Pause workout / Resume workout:** pause freezes elapsed
+  active time, the outstanding rest, cardio and holds, and suspends voice
+  counting/listening and background announcements. Resume restores that progress
+  without counting time spent paused or replaying rest thresholds. Paused drafts
+  survive reload, and finishing while paused records only active workout time.
+  Entered loads, notes, completed sets and original start date remain intact.
+  Resetting or manually completing a frozen timer clears its pending resume.
+  The advice entry points now read **Personal goals and recommendations**.
+- **Workout > 30 / 60 / 90 minutes / Full program:** all four quick buttons are
+  visible and the applied choice is highlighted. Every reviewed proposal starts
+  from the complete original session, even when switching from a shorter choice.
+  Keep at least one primary exercise per represented main muscle group; never
+  count secondary involvement as replacement primary coverage or invent absent
+  groups. Redundant assistance work, holds, forearms and hammer curls have lower
+  priority, but sole required coverage and entered/active work remain protected.
+  Custom entries without trusted mapping are retained conservatively.
+  Cardio-only plans retain the walking/running sequence, not just the shortest
+  running segment. Sets/rests are not shortened to force a fit.
+  If protected work and required coverage exceed the central budget estimate,
+  show the minimum estimate and an explicit warning; upper-bound overruns are
+  disclosed even if the central estimate fits. For the untouched default,
+  preserving seven main groups takes about **47 minutes** (internal bounds about
+  44–50 minutes): 30 is infeasible, while 60 can add work but remains approximate.
+  Selections need not differ if the original workout's constraints prevent it.
+  Full program restores original composition/order
+  plus newly entered values; pressing it without a budget is a no-op.
+- **End-of-workout and reopened History summary > Apple Health delivery:**
+  persistent `healthDelivery` metadata supplements the existing
+  `healthSyncPending`/`healthSyncedAt` fields. Only native `{saved:true}` produces
+  a confirmed Health save. Pending/in-flight, unavailable, unconfirmed write
+  permission, failure with the reported reason, and legacy unknown status are
+  distinct. Failed/pending native delivery can explicitly retry using the same
+  stable workout ID and existing native HealthKit deduplication metadata.
+  Concurrent/duplicate retry requests and already-confirmed saves are skipped.
+  Batch records retain their individual outcome. Open summaries update text
+  in place after async completion; closed summaries are not reopened or focused.
+  Reopened history uses the persisted outcome, and history edits retain newer
+  Health delivery metadata. A local confirmation-storage failure is reported
+  separately rather than relabelling an actual confirmed Health write as failed.
+  Browser Shortcuts launch is only an unverified handoff, never success; its
+  persisted state warns users to check Health before resending, and blocks
+  accidental repeat handoffs. Existing Health/iCloud/native audio code paths
+  remain in use; HealthKit plugins and entitlements are unchanged.
+- **Home or Exercises > Personal plan builder / Saved plans:** both tabs expose
+  the same builder and saved alternatives. The builder asks for goal, experience,
+  a single workout or 2–4 sessions, available time (including 90 minutes),
+  location and actual equipment.
+  Strength, muscle-building, general fitness and walking/jogging proposals have
+  different doses, rest and exercise selections. Four-day strength-based plans
+  alternate upper/lower sessions. Missing movement patterns are disclosed rather
+  than replaced with unverified equivalents. Exercise choices, sets, reps and
+  cardio minutes are editable; full-rest estimates update with edits.
+- **Builder > Muscle groups:** optionally select one or several primary groups.
+  Each selected group retains an authored, suitable primary exercise; secondary
+  involvement does not substitute for it. No selection preserves the general-plan
+  behavior; walking/running disables muscle targeting. Missing suitable coverage
+  produces an explicit error, never a partial proposal. Optional additional work
+  is bounded by the duration's upper estimate. Required coverage is not removed
+  or given shorter rests to force a fit: an over-budget proposal explains why.
+  Editing alternatives preserves each row's primary group, and saving/activation
+  validates coverage again. Saved cards display selected groups and time.
+  A same-name unmapped legacy exercise cannot hide a separately authored variant;
+  existing names and catalog identities are never silently migrated.
+- Save up to eight alternate plans without activation. Review and confirm a
+  specific session before changing **My workout**. Each session is activated
+  explicitly; this is not an automatic calendar. Existing active/entered
+  workouts remain intact and the new selection takes effect next workout.
+  **Saved plans > Restore pre-plan selection** restores the previous order,
+  selection and targets while retaining current personal names, notes and photos.
+  Reviewed plan set counts do not inherit the old program-week ramp.
+- **iPhone Live Activity controls (native source; device acceptance pending):**
+  iOS 17+ Lock Screen and expanded Dynamic Island layouts offer Finish current
+  set and Pause/Resume through `LiveActivityIntent`, not links pretending to
+  complete work. A paused activity remains visible with frozen active time.
+  iOS 18+ supplies a supplemental small layout for the mirrored Apple Watch
+  Smart Stack; this is not a standalone Watch app. No finish/cancel-workout
+  button bypasses the app's confirmation flow.
+  Requests carry session, exact exercise/set, timestamp and revision. Expired,
+  changed or already-processed requests cannot complete the next set. The shared
+  manual-set controller preserves entered reps, loads and notes, starts the
+  existing rest once, and restores the set/running hold if persistence fails.
+  The native queue acknowledges only after JS processing and queued activity
+  synchronization; repeated acknowledgements are idempotent. An unprocessed
+  request displays an explicit instruction to open AutoFit after a bounded wait,
+  not a false saved confirmation. A suspended or cold WebView may require this
+  recovery; this must be tested on an actual device.
+- **Explained recommendations:** every recommendation shows dated set evidence.
+  The existing comparison guards are reused: defined variation, matching
+  measurement, load direction and set counts. Two matched workouts at the
+  explicitly recorded upper rep target with Easy/Right ratings can justify
+  considering a small increase; absent ratings, hard ratings, changed variants,
+  mixed measurements, legacy/custom ambiguity and extra volume alone do not.
+  Assisted loads, holds and cardio are distinguished. No universal increment
+  is invented. Accept/dismiss saves the decision; an optional user-chosen load
+  requires acceptance, applies to future workouts only, and can be cleared.
+  Saving an explicit target never retroactively fills historical targets.
+- **Workout > time-budget review:** change the available time, review the proposed
+  priorities and checkboxes, then confirm for this workout only. Known compound
+  movements precede accessories. Estimates include setup, per-side work where
+  authored, and full configured rests; they are not promised finish times.
+  Current, recorded, typed and paused/in-progress work is protected, even when
+  this exceeds the budget. Deferred entries and original order survive reload.
+  Restore the full workout at any time without discarding newly recorded work.
+- **Exercise card > Equipment busy:** select and review an authored alternative
+  with matching movement/primary area and different equipment. A shared muscle
+  alone is insufficient. Unknown/mixed variants can honestly have no alternative.
+  Swaps apply only to the current workout, never transfer weight, retain
+  completed source sets separately, and archive unfinished source values.
+  Restore merges source edits and keeps any entered replacement data as a
+  separate exercise. Restore a time selection before swapping, and restore
+  swaps before making a new time selection. Stop an active hold/voice count
+  before structural edits; neither is silently stopped by these tools.
+- The workout focus panel shows the current exercise, set and the same target
+  used by the existing counting controller, plus real rest/listening state.
+  Browser mode explicitly says manual logging, not native listening. Native
+  failure has an explicit microphone retry action; pending activation is not
+  displayed as established listening.
+- **This week's muscle work** counts actual completed sets from recorded catalog
+  identities since local Monday. Primary/secondary involvement is distinct;
+  unmapped legacy/custom sets are disclosed. This is not recovery, growth or
+  a reason to diagnose training readiness. **Personal monthly goal** optionally
+  tracks completed workouts for the current local calendar month, without points,
+  rankings, catch-up requirements or daily guilt.
+- Per-set weights/ratings remain supported. Optional collapsed set notes now
+  survive completion, history editing, summary and text/image/PDF sharing.
+  Custom text is escaped for HTML but is not translated or rewritten.
+
+### Persistence and offline behavior
+
+`training-tools.js` contains the bounded rule engine; `training-ui.js` connects
+it to the existing controller and dialog/localization conventions. The original
+26 inactive library additions remain unchanged. Six explicitly named machine
+variants reuse existing authored guides and stable `planning:` IDs; they are
+offered as choices, not auto-selected or automatically migrated into a program.
+No exercises are invented. New routines retain catalog identity and actual
+measurement types, with honest equipment/experience limitations.
+
+Settings store optional `training` plans, activation/selection backup, decisions
+and monthly goal. Exercises can store explicitly accepted `targetReps` and
+`targetWeightKg`. Sessions store lightweight exercise snapshots, explicit rep
+targets, optional plan identity, pinned selection and reversible time/swap
+archives; completed entries retain catalog/target metadata and set notes.
+No target or catalog identity is backfilled into old history to fabricate
+comparability. Saved plans store references/parameters, not repeated user photos.
+Program activation/restoration writes exercises, settings and the session as a
+rollback-protected local transaction and reports storage failures before
+changing in-memory state. These remain the existing iCloud keys; cloud backup
+failure reporting is preserved. Browser storage is separate from the native app.
+The offline shell includes both new modules and the exercise-media update
+(`autofit-v58`; an internal cache revision, not an app release).
+
+### Validation and remaining work
+
+Local Node regressions cover the existing native/controller behavior plus the
+new pure rules and real-controller actions, including write-failure rollback,
+plan restoration, conservative evidence, no transferred replacement loads,
+target persistence, catalog boundaries, dose estimates and note sharing.
+All 394 regressions pass locally (the original 290 plus 104 added tests);
+all 12 JavaScript modules pass byte-preserving ES-module syntax checks, and
+`git diff --check` passes. No iOS compile or new Swift execution was performed.
+Isolated browser acceptance exercises real app controls, including:
+time selection across reload and restore; new-load acceptance without altering
+the active session; swap/restore retaining typed notes and weights; save and
+confirm plan activation/restore; finish and reopen a noted workout; weekly and
+monthly counts; English/Hebrew reversal; 320/388-pixel layouts without horizontal
+overflow; and storage-quota failure followed by successful retry. Synthetic
+history is restricted to a separate test origin, not the clean review preview.
+Media coverage includes every authored definition, actual photo/guide/cardio
+controllers, preserved personal images/notes, escaped image attributes, honest
+custom-exercise fallbacks, bridge holds, safe external links and HE/EN labels.
+Isolated browser acceptance opened media for all 51 stored exercises, verified
+both controls on all 25 default workout cards, and checked 320-pixel HE/EN
+dialogs without overflow or video/thumbnail preloads. All five review-preview
+storage keys remained byte-identical through the cache update and media review.
+
+Not included: explicit warm-up versus working-set classification, supersets,
+automatically progressing interval-running schedules, or permanent equipment-swap
+editing. Existing per-set loads, ratings and optional notes remain available.
+Walking/jogging plans give a gentle starting dose and conservative repeat/add-time
+guidance, not medical advice or a claim of individualized physiological prediction.
+
+Native compilation, real microphone recognition/recovery, music quality and
+pause/duck/resume, physical-device accessibility, HealthKit and iCloud round trips
+and the new AppIntent/Watch controls still require a Mac build and iPhone/Watch
+acceptance pass. Foundation state tests were extended but cannot run here because
+Swift is unavailable. Windows/browser checks do not establish
+those results, and browser mode contains no native microphone simulator.
+
+For local review, serve **this worktree's `www` only**, bound to `127.0.0.1` on
+a checked free port (for example `python -m http.server 8941 --bind 127.0.0.1
+--directory www`). `/?previewSkip=1` uses the existing browser-only onboarding
+shortcut with a clearly test-named profile; it creates no synthetic workout
+history. Do not reset, seed or migrate another preview origin's user data.
+
 ## Version 1.0 (30): Voice and music lifecycle recovery
 
 An internal TestFlight release was approved on 2026-10-21 and is verified

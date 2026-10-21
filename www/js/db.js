@@ -69,6 +69,27 @@ export function saveExercises(list) {
   write(KEYS.exercises, list);
 }
 
+export function saveProgramState(exercises, settings, session) {
+  const changes = [[KEYS.exercises, exercises], [KEYS.settings, settings], [KEYS.activeSession, session]];
+  const previous = changes.map(([key]) => [key, localStorage.getItem(key)]);
+  try {
+    for (const [key, value] of changes) localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    for (const [key, value] of previous) {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (rollbackError) {
+        console.error('Program rollback failed', key, rollbackError);
+      }
+    }
+    console.error('Program could not be saved', error);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('autofit-storage-error', { detail: { key: KEYS.exercises } }));
+    throw error;
+  }
+  if (syncHook) for (const [key, value] of changes) syncHook(key, value);
+}
+
 export function getWorkouts() {
   return read(KEYS.workouts, []);
 }

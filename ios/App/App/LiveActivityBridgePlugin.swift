@@ -8,7 +8,9 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "LiveActivityBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "sync", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "consumeWorkoutLink", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "consumeWorkoutLink", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "consumeWorkoutAction", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgeWorkoutAction", returnType: CAPPluginReturnPromise)
     ]
 
     static var pendingWorkoutLink = false
@@ -22,6 +24,9 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         NotificationCenter.default.addObserver(
             self, selector: #selector(applicationBecameActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(workoutActionRequested),
+            name: WorkoutActivityAction.notification, object: nil)
     }
 
     deinit {
@@ -46,6 +51,71 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func pendingAction() throws -> [String: Any]? {
+        guard let data = UserDefaults.standard.data(forKey: WorkoutActivityAction.storageKey) else { return nil }
+        _ = try JSONDecoder().decode(WorkoutActivityAction.self, from: data)
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    @objc private func workoutActionRequested() {
+        do {
+            if let request = try pendingAction() {
+                notifyListeners("workoutAction", data: request, retainUntilConsumed: true)
+            }
+        } catch {
+            NSLog("AutoFit: cannot read workout control: %@", error.localizedDescription)
+        }
+    }
+
+    @objc func consumeWorkoutAction(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            do {
+                if let request = try self.pendingAction() { call.resolve(["request": request]) }
+                else { call.resolve(["request": NSNull()]) }
+            }
+            catch { call.reject("Cannot read workout control: \(error.localizedDescription)") }
+        }
+    }
+
+    @objc func acknowledgeWorkoutAction(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let previous = self.pendingOperation
+            self.pendingOperation = Task { @MainActor in
+                await previous?.value
+                do {
+                    guard let id = call.getString("id"), let success = call.getBool("success") else {
+                        call.reject("Missing workout control acknowledgement")
+                        return
+                    }
+                    let pending = try self.pendingAction()
+                    var acknowledged = UserDefaults.standard.stringArray(forKey: WorkoutActivityAction.acknowledgedKey) ?? []
+                    if pending?["id"] as? String != id && acknowledged.contains(id) {
+                        call.resolve(["acknowledged": true])
+                        return
+                    }
+                    guard let request = pending, request["id"] as? String == id,
+                          let sessionID = request["sessionID"] as? String else {
+                        call.reject("Workout control is no longer pending")
+                        return
+                    }
+                    for activity in Activity<WorkoutActivityAttributes>.activities where activity.attributes.sessionID == sessionID {
+                        var state = activity.content.state
+                        state.actionPending = false
+                        state.actionMessage = success ? nil : String((call.getString("reason")
+                            ?? (state.isEnglish ? "Open AutoFit to check this request." : "פתח את AutoFit לבדיקת הבקשה.")).prefix(180))
+                        await activity.update(ActivityContent(state: state, staleDate: state.phaseEndsAt))
+                    }
+                    acknowledged.append(id)
+                    UserDefaults.standard.set(Array(acknowledged.suffix(32)), forKey: WorkoutActivityAction.acknowledgedKey)
+                    UserDefaults.standard.removeObject(forKey: WorkoutActivityAction.storageKey)
+                    call.resolve(["acknowledged": true])
+                } catch {
+                    call.reject("Cannot acknowledge workout control: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     @objc func sync(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             let previous = self.pendingOperation
@@ -56,7 +126,8 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
                 let preview = call.getBool("preview") ?? false
-                if !running && !preview {
+                let paused = call.getBool("paused") ?? false
+                if !running && !preview && !paused {
                     self.activityObserver?.cancel()
                     for activity in Activity<WorkoutActivityAttributes>.activities {
                         await activity.end(nil, dismissalPolicy: .immediate)
@@ -72,8 +143,9 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("Missing workout Live Activity data")
                     return
                 }
-                guard (preview && !running && phase == "ready") ||
-                        (!preview && running && phase != "ready") else {
+                guard (preview && !running && !paused && phase == "ready") ||
+                        (!preview && running && !paused && phase != "ready" && phase != "paused") ||
+                        (!preview && !running && paused && phase == "paused") else {
                     call.reject("Invalid Live Activity readiness state")
                     return
                 }
@@ -86,12 +158,15 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         startMillis: start, exerciseName: name, completedSets: completed, totalSets: total,
                         phase: phase, phaseStartMillis: call.getDouble("phaseStartMillis"),
                         phaseEndMillis: call.getDouble("phaseEndMillis"),
-                        language: call.getString("language") ?? "he")
+                        language: call.getString("language") ?? "he",
+                        exerciseID: call.getString("exerciseID"), setIndex: call.getInt("setIndex"),
+                        pausedElapsedSeconds: call.getDouble("pausedElapsedSeconds"),
+                        controlRevision: call.getInt("controlRevision"))
                     let content = ActivityContent(state: state, staleDate: state.phaseEndsAt)
                     let activities = Activity<WorkoutActivityAttributes>.activities
                     let existing = activities.first(where: {
                         $0.attributes.sessionID == sessionID && ($0.activityState == .active || $0.activityState == .stale)
-                    }) ?? activities.first(where: { $0.activityState == .active || $0.activityState == .stale })
+                    })
                     if let existing = existing {
                         for duplicate in activities where duplicate.id != existing.id {
                             await duplicate.end(nil, dismissalPolicy: .immediate)
@@ -99,6 +174,9 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         await existing.update(content)
                         self.observe(existing, sessionID: sessionID)
                     } else {
+                        for oldActivity in activities {
+                            await oldActivity.end(nil, dismissalPolicy: .immediate)
+                        }
                         guard UIApplication.shared.applicationState == .active else {
                             call.resolve(["active": false, "pending": true])
                             return

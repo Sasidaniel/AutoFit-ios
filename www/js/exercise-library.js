@@ -228,6 +228,58 @@ export const EXERCISE_GUIDES = {
   ], pair('נשום באופן טבעי. אל תכריח מהירות או אורך צעד; עצור אם מופיע כאב חד.', 'Breathe naturally. Do not force speed or stride length; stop if sharp pain occurs.'), { places: ['outside', 'gym'] }),
 };
 
+// Public video pages checked against publisher metadata on 2026-10-21.
+// Links only: no third-party video, thumbnail or PDF artwork is copied into the app.
+const videoLink = (href, publisher, title) => ({ href, publisher, title, reviewedOn: '2026-10-21' });
+const youtube = (id, publisher, title) => videoLink(`https://www.youtube.com/watch?v=${id}`, publisher, title);
+const muscleAndStrength = (slug, title) => videoLink(`https://www.muscleandstrength.com/exercises/${slug}`, 'Muscle & Strength', title);
+const SELECTED_VIDEOS = {
+  goblet: [muscleAndStrength('dumbbell-goblet-squat', 'Dumbbell Goblet Squat')],
+  lunge: [youtube('0SHCQLa-gms', 'Peak Functional', 'How to Do a Bodyweight Reverse Lunge')],
+  hinge: [youtube('aa57T45iFSE', 'National Academy of Sports Medicine (NASM)', 'How to do a Dumbbell Romanian Deadlift')],
+  bridge: [muscleAndStrength('bodyweight-glute-bridge', 'Bodyweight Glute Bridge')],
+  calf: [youtube('CtpPV2FBkG4', 'Lean Physique Lab', 'Standing Calf Raises Bodyweight Tutorial')],
+  chest: [muscleAndStrength('dumbbell-bench-press.html', 'Dumbbell Bench Press')],
+  floor: [muscleAndStrength('dumbbell-floor-press.html', 'Dumbbell Floor Press')],
+  fly: [muscleAndStrength('dumbbell-flys.html', 'Dumbbell Flys')],
+  pulldown: [muscleAndStrength('lat-pull-down.html', 'Lat Pull Down')],
+  assisted: [youtube('tOUK2p51r2k', 'Kaylee Jollota', 'How to use the Assisted Pull Up Machine')],
+  row: [muscleAndStrength('seated-row.html', 'Seated Cable Row')],
+  oneRow: [muscleAndStrength('one-arm-dumbbell-row.html', 'One Arm Dumbbell Row')],
+  bandRow: [youtube('mnP10HI18uI', 'Live Lean TV Daily Exercises', 'Seated Resistance Band Row')],
+  back: [videoLink('https://us.physitrack.com/home-exercise-video/prone-back-extension---v3', 'Physitrack', 'Prone back extension - v3')],
+  triceps: [muscleAndStrength('tricep-extension.html', 'Straight Bar Tricep Extension')],
+  overhead: [muscleAndStrength('two-arm-dumbbell-extension.html', 'Seated Dumbbell Tricep Extension')],
+  curl: [muscleAndStrength('seated-dumbbell-curl.html', 'Seated Dumbbell Curl')],
+  hammer: [muscleAndStrength('standing-hammer-curl.html', 'Standing Hammer Curl')],
+  wrist: [muscleAndStrength('one-arm-seated-dumbbell-wrist-curl.html', 'One-Arm Seated Dumbbell Wrist Curl'),
+    muscleAndStrength('one-arm-seated-reverse-dumbbell-wrist-curl.html', 'One-Arm Seated Reverse Grip Dumbbell Wrist Curl')],
+  lateral: [muscleAndStrength('dumbbell-lateral-raise.html', 'Dumbbell Lateral Raise')],
+  front: [muscleAndStrength('dumbbell-front-raise.html', 'Standing Dumbbell Front Raise')],
+  reverse: [muscleAndStrength('bent-over-dumbbell-reverse-fly.html', 'Bent Over Dumbbell Reverse Fly')],
+  shoulder: [muscleAndStrength('machine-shoulder-press', 'Machine Shoulder Press')],
+  dumbbellPress: [muscleAndStrength('seated-dumbbell-press.html', 'Seated Dumbbell Press')],
+  shrug: [muscleAndStrength('dumbbell-shrugs.html', 'Dumbbell Shrug')],
+  legPress: [muscleAndStrength('45-degree-leg-press.html', 'Leg Press')],
+  legExtension: [muscleAndStrength('leg-extension.html', 'Leg Extension')],
+  legCurl: [muscleAndStrength('seated-leg-curl', 'Seated Leg Curl')],
+  crunch: [muscleAndStrength('ab-crunch', 'Ab Crunch')],
+  sideCrunch: [muscleAndStrength('twisting-floor-crunch.html', 'Twisting Crunch')],
+  sidePlank: [muscleAndStrength('side-hover.html', 'Side Plank')],
+  wallSit: [youtube('sT0jUNnb9dk', 'Great River Health', 'Wall Sit Tutorial')],
+  deadbug: [muscleAndStrength('dead-bug', 'Dead Bug')],
+  birdDog: [youtube('FUK7LeouD58', 'Nat Wilson Fitness', 'Bird Dog Exercise Tutorial for Core Strength')],
+  hang: [youtube('aBcw45IX-hE', 'JayTaylor', 'Dead Hang | Exercise Demo')],
+  dipHold: [youtube('eLI7t-5wHno', 'Strength Project', 'Parallel Bar Support Hold Position')],
+  farmer: [youtube('EPibhBCitoU', 'SBTB.online', 'Dumbbell farmer hold')],
+  walk: [youtube('ZFqwPExMbIQ', 'Rehab and Revive', 'Physical Therapist Shows Proper Walking Posture')],
+  march: [youtube('_Ox0N-Ab3Sc', "Doctor O'Donovan", 'Marching on the Spot')],
+  jog: [youtube('LnNse_AwPyE', 'Sunny Health & Fitness', 'Proper Running Form for Beginners')],
+};
+for (const [id, info] of Object.entries(EXERCISE_GUIDES)) {
+  info.videos = SELECTED_VIDEOS[id] || (info.video ? [youtube(info.video.id, info.video.publisher, info.video.title)] : []);
+}
+
 const addition = (id, name, en, category, guideId, inputType = 'reps') => ({
   id: `library:${id}`, catalogId: guideId, name, category, inputType, active: false,
   defaultSets: 3, defaultReps: inputType === 'hold' ? '' : '10', restSeconds: 90,
@@ -266,6 +318,19 @@ export const LIBRARY_EXERCISES = [
   { ...addition('jogging', 'ריצה קלה', 'Easy jogging', 'קרדיו', 'jog', 'cardio'),
     defaultSets: 0, defaultReps: '', restSeconds: 0, durationMinutes: 5, pace: 'קצב נוח', location: 'outside' },
 ];
+
+// Explicit variants of already-authored guides. They are offered for review, never auto-selected.
+export const PLANNING_EXERCISES = [
+  ['machine-row', 'row', 'גב אמצעי'],
+  ['lat-pulldown', 'pulldown', 'גב עליון'],
+  ['machine-shoulder-press', 'shoulder', 'כתפיים'],
+  ['machine-leg-press', 'legPress', 'רגליים - 4 ראשי'],
+  ['machine-leg-curl', 'legCurl', 'רגליים - המסטרינג'],
+  ['cable-triceps', 'triceps', 'יד אחורית'],
+].map(([id, guideId, category]) => ({
+  ...addition(id, EXERCISE_GUIDES[guideId].name.he, EXERCISE_GUIDES[guideId].name.en, category, guideId),
+  id: `planning:${id}`,
+}));
 
 const SEED_GUIDE_IDS = {
   'לחיצת חזה': 'chest', 'משיכה לפנים בפולי עליון': 'pulldown', 'גרביטון': 'assisted',
@@ -322,7 +387,7 @@ export const LIBRARY_TRANSLATIONS = {
 const STANDING = [[45,18],[45,34],[46,55],[46,76],[45,78],[45,108],[45,138]];
 const SEATED = [[40,23],[40,39],[55,57],[70,57],[40,82],[70,83],[70,138]];
 const LYING = [[23,100],[39,103],[49,119],[55,138],[85,105],[110,88],[130,138]];
-const PLANK = [[32,65],[45,78],[45,110],[65,138],[90,102],[120,120],[145,138]];
+const PLANK = [[27,82],[45,90],[43,135],[69,135],[91,108],[120,122],[145,138]];
 const poses = {
   squat: [STANDING, [[60,48],[57,64],[76,68],[95,67],[38,92],[83,106],[60,138]]],
   goblet: [[[45,18],[45,34],[61,54],[48,42],[45,78],[45,108],[45,138]], [[60,48],[57,64],[73,83],[61,71],[38,92],[83,106],[60,138]]],
@@ -330,7 +395,8 @@ const poses = {
   hinge: [STANDING, [[104,68],[89,74],[88,99],[88,125],[44,84],[57,108],[45,138]]],
   bridge: [LYING, [[23,100],[39,103],[49,119],[55,138],[82,78],[110,88],[130,138]]],
   calf: [STANDING, [[45,8],[45,24],[46,45],[46,66],[45,68],[45,98],[45,128]]],
-  pushup: [PLANK, [[32,111],[46,115],[66,126],[65,138],[90,124],[120,132],[145,138]]],
+  pushup: [[[27,74],[45,84],[46,111],[47,138],[90,105],[118,121],[145,138]],
+    [[27,108],[45,113],[28,126],[47,138],[90,124],[119,132],[145,138]]],
   chest: [[[23,92],[39,95],[57,75],[57,51],[85,95],[110,110],[110,138]], [[23,92],[39,95],[39,65],[39,31],[85,95],[110,110],[110,138]]],
   floor: [[[23,100],[39,103],[62,137],[69,104],[85,105],[110,88],[130,138]], [[23,100],[39,103],[39,72],[39,40],[85,105],[110,88],[130,138]]],
   // Fly and reverse fly are front-view to make the lateral arm arc visible.
@@ -356,7 +422,7 @@ const poses = {
   crunch: [LYING, [[30,75],[45,85],[60,100],[70,110],[85,105],[110,88],[130,138]]],
   sideCrunch: [LYING, [[34,76],[47,87],[65,91],[87,87],[85,105],[110,88],[130,138]]],
   plank: [PLANK, PLANK],
-  sidePlank: [[[32,65],[45,78],[45,110],[45,138],[90,102],[120,120],[145,138]], [[32,65],[45,78],[45,110],[45,138],[90,102],[120,120],[145,138]]],
+  sidePlank: [[[28,79],[45,88],[43,135],[68,135],[91,108],[120,123],[145,138]], [[28,79],[45,88],[43,135],[68,135],[91,108],[120,123],[145,138]]],
   wallSit: [[[40,45],[40,61],[62,80],[80,80],[40,100],[80,100],[80,138]], [[40,45],[40,61],[62,80],[80,80],[40,100],[80,100],[80,138]]],
   deadbug: [[[23,100],[39,103],[39,75],[39,48],[85,105],[90,72],[125,72]], [[23,100],[39,103],[18,91],[3,81],[85,105],[113,116],[143,130]]],
   birdDog: [[[29,63],[43,76],[43,107],[43,138],[95,80],[95,111],[130,138]], [[29,63],[43,76],[22,76],[1,76],[95,80],[121,80],[148,80]]],
@@ -373,44 +439,93 @@ export function exerciseIllustration(info, isHold = false) {
   const [start, end] = positions;
   const draw = (joints) => {
     const [head, shoulder, elbow, hand, hip, knee, foot] = joints;
-    const points = (...values) => values.map((value) => value.join(',')).join(' ');
     const front = ['fly', 'lateral', 'reverse'].includes(info.pose);
     const mirror = ([x, y]) => [160 - x, y];
-    const weights = ['goblet', 'hinge', 'chest', 'floor', 'fly', 'oneRow', 'overhead', 'curl', 'wrist', 'lateral', 'front', 'reverse', 'press', 'shrug', 'farmer'];
+    const primary = info.muscles[0];
+    const weights = info.equipment.includes('משקולות יד');
+    const muscle = 'url(#exercise-muscle)', outline = '#343d47', skin = 'url(#exercise-skin)';
+    const limb = (from, to, width, endWidth, highlighted = false) => {
+      const dx = to[0] - from[0], dy = to[1] - from[1], length = Math.hypot(dx, dy) || 1;
+      const nx = -dy / length, ny = dx / length;
+      const point = (position, across) => `${from[0] + dx * position + nx * across},${from[1] + dy * position + ny * across}`;
+      return `<path d="M${point(0, -width)} Q${point(.42, -width * 1.25)} ${point(1, -endWidth)}
+        Q${point(1.08, 0)} ${point(1, endWidth)} Q${point(.42, width * 1.25)} ${point(0, width)} Z"
+        fill="${highlighted ? muscle : skin}" stroke="${outline}" stroke-width=".8"/>
+        <path d="M${point(.17, -width * .3)} Q${point(.5, -width * .65)} ${point(.84, -endWidth * .3)}"
+        fill="none" stroke="${highlighted ? '#a42d36' : '#a9b0b6'}" stroke-width=".7"/>`;
+    };
+    const arm = (s, e, h) => limb(s, e, 5.4, 3.8, ['יד קדמית', 'יד אחורית'].includes(primary))
+      + limb(e, h, 4, 2.5, primary === 'אמות')
+      + `<ellipse cx="${h[0]}" cy="${h[1]}" rx="3" ry="3.5" fill="${skin}" stroke="${outline}" stroke-width=".8"/>`;
+    const leg = (h, k, f) => limb(h, k, 7.5, 4, ['רגליים', 'ישבן'].includes(primary))
+      + limb(k, f, 5.2, 2.5, primary === 'שוקיים')
+      + `<path d="M${f[0]-3} ${f[1]-2}q8-1 12 3q0 3-13 2Z" fill="${skin}" stroke="${outline}" stroke-width=".8"/>`;
     let equipment = '';
     if (info.pose === 'fly') equipment += '<rect x="61" y="14" width="38" height="117" rx="5"/>';
     if (info.pose === 'wrist') equipment += '<path d="M40 77h58M50 77v61M88 77v61"/>';
-    if (['chest', 'oneRow'].includes(info.pose)) equipment += '<path d="M25 103H100M35 103v35M92 103v35"/>';
+    if (['chest', 'oneRow'].includes(info.pose)) equipment += '<path d="M25 103H124M35 103v35M115 103v35"/>';
     if (['pulldown', 'press', 'legExtension', 'legCurl', 'legPress'].includes(info.pose)) equipment += '<path d="M25 40v48h54M31 88v50M72 88v50"/>';
+    if (['pulldown', 'triceps'].includes(info.pose)) equipment += `<path d="M140 137V4H70L${hand[0]} ${hand[1]}"/><rect x="127" y="83" width="19" height="52" rx="2"/>`;
+    if (info.pose === 'legPress') equipment += '<path d="M21 62l35 43 77-59M95 29l44 32M46 123h88"/>';
+    if (['legExtension', 'legCurl'].includes(info.pose)) equipment += `<path d="M${knee[0]} ${knee[1]}L${foot[0]} ${foot[1]}"/><circle cx="${foot[0]}" cy="${foot[1]}" r="7"/>`;
     if (info.pose === 'wallSit') equipment += '<path d="M27 14v124"/>';
     if (['hang', 'assisted'].includes(info.pose)) equipment += '<path d="M34 5h92M38 5v133"/>';
     if (info.pose === 'assisted') equipment += `<path d="M60 ${knee[1] + 6}h48M115 12v126"/><rect x="118" y="100" width="26" height="36"/>`;
     if (info.pose === 'dipHold') equipment += '<path d="M55 82h42M58 82v56M94 82v56"/>';
-    if (info.pose === 'row') equipment += '<path d="M140 75v63"/>';
-    const weight = ([x, y]) => `<path d="M${x - 7} ${y}h14M${x - 7} ${y - 5}v10M${x + 7} ${y - 5}v10" stroke="#d2ae62" stroke-width="3"/>`;
+    if (info.pose === 'row') equipment += info.equipment.includes('גומייה')
+      ? `<path d="M${hand[0]} ${hand[1]}Q105 94 133 138Q110 98 ${hand[0]+3} ${hand[1]+3}" stroke="#546f79"/>`
+      : `<path d="M140 75v63M140 85L${hand[0]} ${hand[1]}M24 91h38M33 91v47"/>`;
+    const weight = ([x, y]) => {
+      const angle = info === EXERCISE_GUIDES.hammer ? 90 : 0;
+      return `<g transform="translate(${x} ${y}) rotate(${angle})" fill="#414a55" stroke="#202832" stroke-width=".8">
+        <rect x="-10" y="-2" width="20" height="4" rx="1"/>
+        <rect x="-10" y="-7" width="5" height="14" rx="1.5"/><rect x="5" y="-7" width="5" height="14" rx="1.5"/></g>`;
+    };
     const wristFingers = info.pose === 'wrist' ? (joints === end ? [108, 53] : [115, 70]) : null;
-    const secondLeg = info.pose === 'lunge'
-      ? '<polyline points="68,91 36,120 20,138" opacity=".65"/>'
-      : info.pose === 'birdDog'
-        ? '<polyline points="95,80 95,111 130,138" opacity=".55"/>'
-        : front ? `<polyline points="${points(hip, mirror(knee), mirror(foot))}" opacity=".7"/>`
-          : `<polyline points="${points(hip, [knee[0] + 8, knee[1]], [foot[0] + 10, foot[1]])}" opacity=".45"/>`;
-    const farArm = info.pose === 'birdDog'
-      ? '<polyline points="43,76 43,107 43,138" opacity=".5"/>'
-      : front ? `<polyline points="${points(shoulder, mirror(elbow), mirror(hand))}" opacity=".75"/>`
-        : `<polyline points="${points(shoulder, [elbow[0] + 7, elbow[1]], [hand[0] + 10, hand[1]])}" opacity=".5"/>`;
-    return `<g fill="none" stroke="#758293" stroke-width="3">${equipment}</g>
-      <g fill="none" stroke="#dce2e9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-        ${secondLeg}${farArm}<polyline points="${points(shoulder, hip, knee, foot)}"/>
-        <polyline points="${points(shoulder, elbow, hand)}"/><path d="M${head}L${shoulder}"/>
-        ${wristFingers ? `<polyline points="${points(hand, wristFingers)}"/>` : ''}
-        <path d="M${shoulder}L${hip}" stroke-width="9"/>
-      </g><circle cx="${head[0]}" cy="${head[1]}" r="8" fill="#d2ae62"/>
-      ${weights.includes(info.pose) ? weight(wristFingers || hand) + (front ? weight(mirror(hand)) : '') : ''}
-      <path d="M9 146h143" stroke="#4a5565" stroke-width="2"/>`;
+    const opposite = joints === end ? start : end;
+    const stepping = ['walk', 'march', 'jog'].includes(info.pose);
+    const secondLeg = info.pose === 'lunge' && joints === end ? leg(hip, [36,120], [20,138])
+      : info.pose === 'oneRow' ? leg(hip, [77,100], [110,100])
+      : info.pose === 'deadbug' ? leg(hip, [90,72], [125,72])
+      : stepping ? leg(hip, opposite[5], opposite[6])
+      : info.pose === 'birdDog' ? leg(hip, [95,111], [130,138])
+        : front ? leg(hip, mirror(knee), mirror(foot))
+          : leg([hip[0]+6,hip[1]], [knee[0]+8,knee[1]], [foot[0]+10,foot[1]]);
+    const farArm = info.pose === 'birdDog' ? arm(shoulder, [43,107], [43,138])
+      : info.pose === 'oneRow' ? arm(shoulder, [103,79], [112,101])
+      : info.pose === 'deadbug' ? arm(shoulder, [39,75], [39,48])
+      : stepping ? arm(shoulder, opposite[2], opposite[3])
+      : info.pose === 'sidePlank' ? arm(shoulder, [50,44], [55,9])
+        : front ? arm(shoulder, mirror(elbow), mirror(hand))
+          : arm(shoulder, [elbow[0]+7,elbow[1]], [hand[0]+10,hand[1]]);
+    const torsoLength = Math.hypot(hip[0]-shoulder[0], hip[1]-shoulder[1]);
+    const rotation = Math.atan2(hip[1]-shoulder[1], hip[0]-shoulder[0]) * 180 / Math.PI - 90;
+    const width = front ? 17 : 11;
+    const torso = `<g transform="translate(${shoulder}) rotate(${rotation})">
+      <path d="M${-width} 0Q0-6 ${width} 0L8 ${torsoLength-10}Q11 ${torsoLength+4} 0 ${torsoLength+5}
+        Q-11 ${torsoLength+4}-8 ${torsoLength-10}Z" fill="${skin}" stroke="${outline}" stroke-width="1"/>
+      <path d="M${-width+2} 3Q0-1 ${width-2} 3L7 18Q0 24-7 18Z"
+        fill="${['חזה','גב','טרפז'].includes(primary) ? muscle : '#c5ccd1'}" stroke="#a1a9af" stroke-width=".6"/>
+      ${[0,1,2].map((n) => `<path d="M-6 ${21+n*6}q6-2 12 0v4q-6 3-12 0Z" fill="${primary === 'בטן' ? muscle : '#cbd1d5'}" stroke="#a1a9af" stroke-width=".5"/>`).join('')}
+      <path d="M-7 ${torsoLength-13}Q0 ${torsoLength-8} 7 ${torsoLength-13}L8 ${torsoLength+1}Q0 ${torsoLength+8}-8 ${torsoLength+1}Z"
+        fill="${['ישבן','גב תחתון'].includes(primary) ? muscle : '#535d68'}"/>
+      <path d="M0 2v${Math.max(0,torsoLength-15)}" stroke="#a1a9af" stroke-width=".6"/></g>`;
+    return `<g fill="none" stroke="#8d969d" stroke-width="2.7" stroke-linejoin="round">${equipment}</g>
+      <g opacity=".63">${secondLeg}${farArm}</g>
+      ${leg(hip, knee, foot)}${torso}
+      <path d="M${head}L${shoulder}" stroke="${outline}" stroke-width="7"/>
+      <ellipse cx="${head[0]}" cy="${head[1]}" rx="7.4" ry="9" fill="${skin}" stroke="${outline}" stroke-width="1"/>
+      <path d="M${head[0]+5} ${head[1]-1}l4 3-3 1M${head[0]+2} ${head[1]-3}h2" fill="none" stroke="#6a747e" stroke-width=".8"/>
+      ${arm(shoulder, elbow, hand)}
+      <ellipse cx="${shoulder[0]}" cy="${shoulder[1]+2}" rx="6.5" ry="7.5" fill="${primary === 'כתפיים' ? muscle : skin}" stroke="${outline}" stroke-width=".7"/>
+      ${wristFingers ? limb(hand, wristFingers, 3, 2, true) : ''}
+      ${weights ? weight(wristFingers || hand) + (front ? weight(mirror(hand)) : '') : ''}
+      <path d="M9 148h149" stroke="#c6cdd2" stroke-width="1"/>`;
   };
   return `<svg class="exercise-technique-svg" viewBox="0 0 ${isHold ? '180' : '380'} 172" aria-hidden="true" focusable="false">
+    <defs><linearGradient id="exercise-skin"><stop stop-color="#fafafa"/><stop offset=".48" stop-color="#d9dfe3"/><stop offset="1" stop-color="#9da9b3"/></linearGradient>
+      <linearGradient id="exercise-muscle"><stop stop-color="#ee9090"/><stop offset=".5" stop-color="#d65050"/><stop offset="1" stop-color="#a42d36"/></linearGradient></defs>
     <g transform="translate(10 10)">${draw(isHold ? end : start)}</g>
-    ${isHold ? '' : `<path d="M181 79h18m-6-6 6 6-6 6" fill="none" stroke="#d2ae62" stroke-width="2"/><g transform="translate(210 10)">${draw(end)}</g>`}
+    ${isHold ? '' : `<path d="M181 79h18m-6-6 6 6-6 6" fill="none" stroke="#a42d36" stroke-width="2"/><g transform="translate(210 10)">${draw(end)}</g>`}
   </svg>`;
 }

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/native-regressions.test.cjs"
+    "test": "node --test tests/native-regressions.test.cjs tests/training-tools.test.cjs"
   },
   "keywords": [],
   "author": "",

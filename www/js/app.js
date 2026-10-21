@@ -7,6 +7,8 @@ import * as i18n from './i18n.js';
 import * as library from './exercise-library.js';
 import * as insights from './workout-insights.js';
 import * as voiceReports from './voice-reports.js';
+import { createTrainingUI, durationEstimateText } from './training-ui.js';
+import * as trainingTools from './training-tools.js';
 
 const KG_TO_LBS = 2.20462;
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -42,6 +44,7 @@ let settings = db.getSettings();
 let profile = db.getProfile();
 let activeSession = db.getActiveSession(); // { id, startedAt, accumulatedSec, running, entries: [...] }
 let workouts = db.getWorkouts();
+let trainingUI = null;
 // transient (not persisted) running hold-timers for hold-type exercises (e.g. plank), keyed by "exerciseId:setIdx"
 const holdTimers = new Map();
 let appInitialized = false;
@@ -51,6 +54,8 @@ let activitySnapshotKey = '';
 let activitySyncChain = Promise.resolve();
 let activitySyncRevision = 0;
 let activityError = '';
+const activityActionsInFlight = new Set();
+const activityActionResults = new Map();
 const activityPreviewStartedAt = Date.now();
 let activityReadyEnabled = true;
 const healthSyncInFlight = new Set();
@@ -406,18 +411,18 @@ function init() {
     // migrate existing active sessions that don't yet have the warm-up/cool-down walk entries
     let sessionMigrated = false;
     const lastByExercise = getLastCompletedValuesByExercise();
-    if (!activeSession.entries.some((e) => e.exerciseId === 'warmup')
+    if (!activeSession.programPinned && !activeSession.entries.some((e) => e.exerciseId === 'warmup')
       && exercises.some((e) => e.id === 'warmup' && e.active !== false)) {
       activeSession.entries.unshift(makeCardioEntry('warmup'));
       sessionMigrated = true;
     }
-    if (!activeSession.entries.some((e) => e.exerciseId === 'cooldown')
+    if (!activeSession.programPinned && !activeSession.entries.some((e) => e.exerciseId === 'cooldown')
       && exercises.some((e) => e.id === 'cooldown' && e.active !== false)) {
       activeSession.entries.push(makeCardioEntry('cooldown'));
       sessionMigrated = true;
     }
     // add newly introduced *active* exercises to the in-progress session too (before the cool-down walk)
-    exercises.filter((ex) => ex.active !== false).forEach((ex) => {
+    exercises.filter((ex) => ex.active !== false && !activeSession.programPinned).forEach((ex) => {
       if (!activeSession.entries.some((e) => e.exerciseId === ex.id)) {
         const cooldownIdx = activeSession.entries.findIndex((e) => e.exerciseId === 'cooldown');
         const last = lastByExercise[ex.id];
@@ -465,6 +470,7 @@ function init() {
   renderSettingsTab();
   renderProfileTab();
   renderHomeTab();
+  if (typeof createTrainingUI === 'function' && !trainingUI) trainingUI = createTrainingUI(trainingAPI());
 
   // keep the phone screen on the whole time the site is open, not just during a workout.
   // Also re-assert on a repeating interval (not just on init/click/visibilitychange) as
@@ -473,7 +479,7 @@ function init() {
   setInterval(requestWakeLock, 15000);
 
   if (activeSession.running) {
-    stopwatch.start(new Date(activeSession.startedAt).getTime());
+    stopwatch.start(activeSession.clockStartedAt || new Date(activeSession.startedAt).getTime());
     if (native.isNative()) native.bgStartKeepAlive().then((started) => {
       if (!started) showToast('לא ניתן לשחזר הודעות קוליות ברקע. נתוני האימון נשמרו.');
     });
@@ -510,6 +516,7 @@ function init() {
         switchTab('workout');
       }
     });
+    native.consumeWorkoutActivityAction?.().then((request) => { if (request) handleWorkoutActivityAction(request); });
   }
 }
 
@@ -559,47 +566,63 @@ function startLiveClock() {
 
 /* ================= WORKOUT TAB ================= */
 function buildDraftSession() {
+  return buildProgramDraft(exercises);
+}
+
+function buildProgramDraft(program, programSettings = settings) {
   const lastByExercise = getLastCompletedValuesByExercise();
-  const warmupEx = exercises.find((ex) => ex.id === 'warmup' && ex.active !== false);
-  const cooldownEx = exercises.find((ex) => ex.id === 'cooldown' && ex.active !== false);
+  const warmupEx = program.find((ex) => ex.id === 'warmup' && ex.active !== false);
+  const cooldownEx = program.find((ex) => ex.id === 'cooldown' && ex.active !== false);
   return {
     id: db.uid(),
     startedAt: null,
     accumulatedSec: 0,
     running: false,
+    programPinned: true,
+    ...(programSettings.training?.activePlan ? { planId: programSettings.training.activePlan.id } : {}),
     entries: [
-      ...(warmupEx ? [makeCardioEntry('warmup')] : []),
-      ...exercises.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ex.inputType === 'cardio' ? makeCardioEntry(ex.id) : ({
+      ...(warmupEx ? [makeCardioEntry('warmup', program)] : []),
+      ...program.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ex.inputType === 'cardio' ? makeCardioEntry(ex.id, program) : ({
         exerciseId: ex.id,
         exerciseName: ex.name,
-        sets: Array.from({ length: setsForWeek(ex) }, (_, i) => {
+        exerciseSnapshot: { id: ex.id, name: ex.name, notes: ex.notes || '', catalogId: ex.catalogId,
+          category: ex.category, inputType: ex.inputType, loadKind: ex.loadKind,
+          defaultReps: ex.defaultReps, restSeconds: ex.restSeconds, holdSeconds: ex.holdSeconds },
+        ...(ex.targetReps ? { targetReps: Number(ex.targetReps) } : {}),
+        sets: Array.from({ length: setsForWeek(ex, programSettings) }, (_, i) => {
           const last = lastByExercise[ex.id];
           return {
-            weightKg: last ? last.weightKg : '',
+            weightKg: ex.targetWeightKg ?? (last ? last.weightKg : ''),
             reps: last ? last.reps : '',
             completed: false,
+            ...(ex.targetReps ? { voiceTargetReps: Number(ex.targetReps) } : {}),
           };
         }),
       })),
-      ...(cooldownEx ? [makeCardioEntry('cooldown')] : []),
+      ...(cooldownEx ? [makeCardioEntry('cooldown', program)] : []),
     ],
   };
 }
 
-function makeCardioEntry(kind) {
-  const ex = exercises.find((e) => e.id === kind) || {};
+function makeCardioEntry(kind, program = exercises) {
+  const ex = program.find((e) => e.id === kind) || {};
   const name = ex.name || (kind === 'warmup' ? DEFAULT_WARMUP_NAME : DEFAULT_COOLDOWN_NAME);
   const minutes = ex.durationMinutes || 5;
   return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || 'treadmill', pace: ex.pace || DEFAULT_CARDIO_PACE };
 }
 
-function setsForWeek(ex) {
-  const week = Math.max(1, Number(settings.programWeek) || 3);
+function setsForWeek(ex, config = settings) {
+  if (config.training?.activePlan) return Math.max(1, ex.defaultSets || 1);
+  const week = Math.max(1, Number(config.programWeek) || 3);
   return week >= 3 ? Math.max(1, ex.defaultSets || 1) : Math.max(1, Math.min(week, ex.defaultSets || 1));
 }
 
 function applyProgramWeekToActiveSession() {
   if (!activeSession) return;
+  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length) {
+    showToast('הבחירה נשמרה לתוכנית. האימון המותאם הנוכחי נשאר ללא שינוי.');
+    return;
+  }
   activeSession.entries.forEach((entry) => {
     if (entry.type === 'cardio') return;
     const ex = exercises.find((e) => e.id === entry.exerciseId);
@@ -646,8 +669,10 @@ function wireWorkoutControls() {
   }
   el('btnStartWorkout').addEventListener('click', () => {
     primeSpeech();
-    ensureWorkoutStarted();
+    if (activeSession.paused) resumeWorkout();
+    else ensureWorkoutStarted();
   });
+  el('btnPauseWorkout').addEventListener('click', pauseWorkout);
 
   el('btnFinishWorkout').addEventListener('click', () => {
     if (!confirm(i18n.text('לסיים ולשמור את האימון?'))) return;
@@ -666,6 +691,7 @@ function wireWorkoutControls() {
 // Starts the overall workout stopwatch the moment ANY activity begins (warm-up,
 // a set, etc.) so history always reflects the true total workout duration.
 function ensureWorkoutStarted() {
+  if (activeSession.paused) return;
   if (activeSession.running) return;
   activeSession.running = true;
   activeSession.startedAt = activeSession.startedAt || new Date().toISOString();
@@ -674,6 +700,7 @@ function ensureWorkoutStarted() {
   requestWakeLock();
   el('btnStartWorkout').classList.add('hidden');
   el('btnFinishWorkout').classList.remove('hidden');
+  el('btnPauseWorkout').disabled = false;
   const sessionID = activeSession.id;
   cancelWorkoutGreeting();
   if (settings.voiceAnnouncements) {
@@ -692,6 +719,107 @@ function ensureWorkoutStarted() {
 function cancelWorkoutGreeting() {
   if (workoutGreetingTimer !== null) clearTimeout(workoutGreetingTimer);
   workoutGreetingTimer = null;
+}
+
+function pauseWorkout() {
+  if (!activeSession.running) return;
+  const now = Date.now();
+  const pausedRest = restTimer.isRunning() ? { remainingSec: Math.max(0, (restTimer.endAt - now) / 1000),
+    totalSeconds: restTimer.totalSeconds, lastAnnouncedElapsed: restTimer.lastAnnouncedElapsed,
+    exerciseName: el('restExerciseName').dataset?.exerciseName || '', doneMessage: restDoneMessage } : null;
+  if (voiceCountingState) activeSession.pausedVoiceCount = { exerciseId: voiceCountingState.entry.exerciseId,
+    setIndex: voiceCountingState.setIndex, count: voiceCountingState.count, targetReps: voiceCountingState.targetReps };
+  for (const entry of activeSession.entries) {
+    if (entry.type === 'cardio' && entry.startedAt && !entry.completed) {
+      entry.elapsedSec = Math.min(entry.durationSec, (entry.elapsedSec || 0) + Math.max(0, (now - entry.startedAt) / 1000));
+      entry.startedAt = null;
+      entry.resumeAfterPause = true;
+    }
+    for (const set of entry.sets || []) {
+      if (set.holdStartedAt && !set.completed) {
+        set.holdElapsedSec = Math.max(0, (now - set.holdStartedAt) / 1000);
+        delete set.holdStartedAt;
+        set.resumeAfterPause = true;
+      }
+    }
+  }
+  activeSession.accumulatedSec = stopwatch.stop();
+  activeSession.running = false;
+  activeSession.paused = true;
+  activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
+  activityReadyEnabled = false;
+  voiceCountingState = null;
+  stopWorkoutTimers();
+  activeSession.pausedRest = pausedRest;
+  updateVoiceListeningState();
+  syncNativeAnnouncementPlan();
+  if (native.isNative()) native.bgStopKeepAlive();
+  renderWorkoutTab();
+  if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
+  persistActiveSession();
+  showToast('האימון בהפסקה. הנתונים נשמרו; לחץ על המשך אימון כדי להמשיך.');
+}
+
+function resumeWorkout() {
+  if (!activeSession.paused) return;
+  const now = Date.now();
+  activeSession.paused = false;
+  activeSession.running = true;
+  activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
+  activeSession.clockStartedAt = now - (activeSession.accumulatedSec || 0) * 1000;
+  for (const entry of activeSession.entries) {
+    if (entry.resumeAfterPause) {
+      if (!entry.completed) entry.startedAt = now;
+      delete entry.resumeAfterPause;
+    }
+    for (const set of entry.sets || []) {
+      if (!set.resumeAfterPause) continue;
+      if (!set.completed) set.holdStartedAt = now - (set.holdElapsedSec || 0) * 1000;
+      delete set.holdElapsedSec;
+      delete set.resumeAfterPause;
+    }
+  }
+  const savedCount = activeSession.pausedVoiceCount;
+  if (savedCount) {
+    const entryIndex = activeSession.entries.findIndex((entry) => entry.exerciseId === savedCount.exerciseId);
+    const entry = activeSession.entries[entryIndex];
+    const set = entry?.sets?.[savedCount.setIndex];
+    if (set && !set.completed && Number(set.reps) === savedCount.count) {
+      voiceCountingState = { entry, set, entryIndex, setIndex: savedCount.setIndex,
+        count: savedCount.count, targetReps: savedCount.targetReps };
+    }
+    delete activeSession.pausedVoiceCount;
+  }
+  stopwatch.start(activeSession.clockStartedAt);
+  const rest = activeSession.pausedRest;
+  delete activeSession.pausedRest;
+  renderWorkoutTab();
+  if (rest?.remainingSec > 0) {
+    restDoneMessage = rest.doneMessage;
+    el('restExerciseName').setAttribute('data-exercise-name', rest.exerciseName);
+    el('restExerciseName').textContent = i18n.exerciseName(rest.exerciseName);
+    el('restOverlay').classList.remove('hidden');
+    restTimer.restore({ endAt: now + rest.remainingSec * 1000, totalSeconds: rest.totalSeconds,
+      lastAnnouncedElapsed: rest.lastAnnouncedElapsed });
+  }
+  persistActiveSession();
+  updateVoiceListeningState();
+  syncNativeAnnouncementPlan();
+  syncWorkoutActivity();
+  if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
+  requestWakeLock();
+  if (native.isNative()) native.bgStartKeepAlive().then((started) => {
+    if (!started) showToast('לא ניתן לחדש הודעות ברקע. טיימר האימון ממשיך לפעול.');
+  });
+}
+
+function updateWorkoutPauseControls() {
+  el('btnPauseWorkout').disabled = !activeSession.running;
+  el('btnStartWorkout').textContent = activeSession.paused ? 'המשך אימון' : 'התחל אימון';
+  i18n.translateDOM(el('btnStartWorkout'));
+  el('btnStartWorkout').classList.toggle('hidden', !!activeSession.running);
+  el('btnFinishWorkout').classList.toggle('hidden', !activeSession.running && !activeSession.paused);
+  if (activeSession.paused) el('workoutTimerDisplay').textContent = formatHMS(activeSession.accumulatedSec || 0);
 }
 
 // Cancels the current workout without saving anything to history, resetting
@@ -739,9 +867,10 @@ function showCelebration(record) {
 function openTrainingDialog(title, content, exerciseName = '') {
   const previousFocus = document.activeElement;
   const dialog = document.createElement('dialog');
+  const titleId = `trainingDialogTitle-${db.uid()}`;
   dialog.className = 'training-dialog';
-  dialog.setAttribute('aria-labelledby', 'trainingDialogTitle');
-  dialog.innerHTML = `<div class="training-dialog-head"><h3 id="trainingDialogTitle" ${exerciseName ? `data-no-translate data-exercise-name="${escapeAttr(exerciseName)}"` : ''}>${escapeHtml(title)}</h3>
+  dialog.setAttribute('aria-labelledby', titleId);
+  dialog.innerHTML = `<div class="training-dialog-head"><h3 id="${titleId}" ${exerciseName ? `data-no-translate data-exercise-name="${escapeAttr(exerciseName)}"` : ''}>${escapeHtml(title)}</h3>
     <button class="btn-icon btnCloseTrainingDialog" aria-label="סגור">✕</button></div>
     <div class="training-dialog-body"><p class="training-dialog-error hidden" role="alert"></p>${content}</div>`;
   document.body.appendChild(dialog);
@@ -780,6 +909,12 @@ function openWorkoutSummary(record, celebration = '') {
       <div class="stat-box"><div class="stat-value">${summary.exercises}</div><div class="stat-label">תרגילים שתועדו</div></div>
       <div class="stat-box"><div class="stat-value">${summary.sets}</div><div class="stat-label">סטים שבוצעו</div></div>
     </div>
+    <section class="summary-health" data-health-workout="${escapeAttr(record.id)}">
+      <h4>עדכון באפליקציית בריאות</h4>
+      <p class="health-delivery-message" role="status"></p>
+      <p class="health-delivery-reason field-hint" data-no-translate></p>
+      <button type="button" class="btn btn-secondary btn-small btnRetryHealth hidden">בדיקת הרשאה וניסיון סנכרון נוסף</button>
+    </section>
     ${summary.holdSeconds ? `<p><span>זמן החזקות שתועד</span>: ${formatHMS(summary.holdSeconds)}</p>` : ''}
     ${summary.cardioSeconds ? `<p><span>זמן אירובי שתועד</span>: ${formatHMS(summary.cardioSeconds)}</p>` : ''}
     <h4>תובנות מהאימון</h4>
@@ -789,6 +924,10 @@ function openWorkoutSummary(record, celebration = '') {
       : '<p class="about-desc">עדיין אין השוואה מתאימה. ההשוואות יופיעו כשיצטברו אימונים דומים עם סוג מדידה מתועד.</p>'}
     ${record.entries.some((entry) => entry.inputType === 'reps' && entry.comparisonKey === null)
       ? '<p class="about-desc">בתרגיל הכולל כמה וריאציות, בחר וריאציה מוגדרת מהספרייה כדי לקבל השוואה.</p>' : ''}
+    ${record.entries.some((entry) => entry.sets?.some((set) => set.notes)) ? `<h4>הערות לסטים</h4>
+      <ul>${record.entries.flatMap((entry) => (entry.sets || []).map((set, index) => set.notes
+        ? `<li><span data-no-translate>${escapeHtml(i18n.exerciseName(entry.exerciseName))}</span> · <span>סט</span> ${index + 1}:
+          <span data-no-translate>${escapeHtml(set.notes)}</span></li>` : '')).join('')}</ul>` : ''}
     <h4>תחושת הקושי שלך</h4>
     ${Object.values(summary.difficulty).some(Boolean) ? `<div class="summary-difficulty">${Object.entries(summary.difficulty)
       .filter(([, count]) => count).map(([value, count]) => `<span><span>${insights.DIFFICULTY_LABELS[value]}</span>: ${count}</span>`).join('')}</div>`
@@ -796,16 +935,19 @@ function openWorkoutSummary(record, celebration = '') {
     <p class="about-desc summary-comparison-note">ההשוואה מתייחסת לתרגיל ולהגדרות שתועדו. נפח עבודה אינו מדידה ישירה של כוח או גדילת שריר.</p>
     ${showHealthBtn ? '<button class="btn btn-secondary btn-small btnSendHealth">📲 שלח ל-Shortcuts (לבריאות)</button>' : ''}
   `);
+  const healthRow = qs('.summary-health', dialog);
+  healthRow.querySelector('.btnRetryHealth').addEventListener('click', () => syncWorkoutToHealth([record]));
+  renderHealthSummary(healthRow, workouts.find((workout) => workout.id === record.id) || record);
   if (showHealthBtn) qs('.btnSendHealth', dialog).addEventListener('click', () => {
-    dialog.close();
     syncWorkoutToHealth([record]);
   });
+  if (showHealthBtn && record.healthDelivery?.status === 'shortcut') qs('.btnSendHealth', dialog).disabled = true;
 }
 
 function finishWorkout() {
   activityReadyEnabled = false;
   stopWorkoutTimers();
-  const durationSec = stopwatch.stop();
+  const durationSec = activeSession.paused ? activeSession.accumulatedSec || 0 : stopwatch.stop();
   activeSession.running = false;
   activeSession.accumulatedSec = durationSec;
 
@@ -819,6 +961,8 @@ function finishWorkout() {
       finishedAt: new Date().toISOString(),
       durationSec: Math.round(durationSec),
       ...(native.isNative() ? { healthSyncPending: true } : {}),
+      healthDelivery: { status: native.isNative() ? 'pending' : 'unavailable',
+        reason: native.isNative() ? '' : 'browser', updatedAt: new Date().toISOString() },
       entries: activeSession.entries
         .map((e) => {
           if (e.type === 'cardio') {
@@ -826,7 +970,7 @@ function finishWorkout() {
               ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '' }
               : null;
           }
-          return insights.completedEntrySnapshot(e, exercises.find((exercise) => exercise.id === e.exerciseId));
+          return insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
         })
         .filter((e) => e && (e.type === 'cardio' || e.sets.length > 0)),
     };
@@ -861,6 +1005,109 @@ function persistActiveSession() {
   syncNativeAnnouncementPlan();
 }
 
+function trainingAPI() {
+  const remainingRest = () => activeSession.pausedRest?.remainingSec
+    || (restTimer.endAt ? Math.max(0, (restTimer.endAt - Date.now()) / 1000) : 0);
+  const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'restSeconds', 'durationMinutes']
+    .map((key) => [key, exercise[key] ?? null]));
+  const sessionHasData = () => activeSession.running || activeSession.paused || activeSession.timeBudget || activeSession.substitutions?.length
+    || activeSession.entries.some((entry) => trainingTools.entryHasActivity(entry)
+      || (entry.type !== 'cardio' && entry.sets.some((set) => set.weightKg !== '' || set.reps !== '')));
+  const applyProgram = (nextExercises, nextSettings) => {
+    const keepSession = sessionHasData();
+    const nextSession = keepSession ? { ...activeSession, programPinned: true } : buildProgramDraft(nextExercises, nextSettings);
+    db.saveProgramState(nextExercises, nextSettings, nextSession);
+    exercises = nextExercises;
+    settings = nextSettings;
+    activeSession = nextSession;
+    renderExercisesTab();
+    renderWorkoutTab();
+    renderHomeTab();
+    showToast(keepSession ? 'התוכנית נשמרה לאימון הבא. האימון הנוכחי לא הוחלף.' : 'התוכנית הופעלה. הבחירה הקודמת זמינה לשחזור.');
+  };
+  return {
+    uid: db.uid, dialog: openTrainingDialog, guide: openExerciseGuide,
+    durationState: () => ({ session: activeSession, exercises, settings,
+      program: trainingTools.durationSession(exercises, (exercise) => setsForWeek(exercise)),
+      restSeconds: remainingRest() }),
+    repTarget(set, exercise) { return voiceRepTarget(set, exercise); },
+    getState: () => ({ session: activeSession, exercises: trainingTools.planningCatalog(exercises), settings, history: db.getWorkouts(),
+      native: native.isNative(), voiceActive: voiceListeningActive && !voiceActivationPending, counting: voiceCountingState,
+      busy: !!voiceCountingState || holdTimers.size > 0,
+      restSeconds: remainingRest() }),
+    saveSession(next) {
+      const entries = [...next.entries, ...(next.timeBudget?.deferred || []), ...(next.substitutions || []).map((item) => item.original)];
+      for (const entry of entries) {
+        if (entry.type === 'cardio' || entry.exerciseSnapshot) continue;
+        const exercise = exercises.find((item) => item.id === entry.exerciseId);
+        if (exercise) {
+          if (trainingTools.entryHasActivity(entry)) entry.userEdited = true;
+          const { images, ...snapshot } = exercise;
+          entry.exerciseSnapshot = JSON.parse(JSON.stringify(snapshot));
+        }
+      }
+      db.saveActiveSession(next);
+      activeSession = next;
+      lastVoiceAction = null;
+      lastVoiceReport = null;
+      lastAutoCountCompletion = null;
+      renderWorkoutTab();
+      syncNativeAnnouncementPlan();
+      syncWorkoutActivity();
+    },
+    saveSettings(next) { db.saveSettings(next); settings = next; },
+    saveTarget(id, targetReps) {
+      const next = exercises.map((exercise) => exercise.id === id ? { ...exercise, targetReps } : exercise);
+      db.saveExercises(next);
+      exercises = next;
+      showToast('היעד נשמר לאימונים הבאים. נתונים שכבר תועדו לא השתנו.');
+    },
+    acceptAdvice(id, decision, targetWeightKg) {
+      const nextExercises = exercises.map((exercise) => exercise.id === id && targetWeightKg !== undefined
+        ? { ...exercise, targetWeightKg } : exercise);
+      const training = settings.training || {};
+      const nextSettings = { ...settings, training: { ...training, decisions: { ...training.decisions, [id]: decision } } };
+      db.saveProgramState(nextExercises, nextSettings, activeSession);
+      exercises = nextExercises;
+      settings = nextSettings;
+    },
+    clearLoadTarget(id) {
+      const next = exercises.map((exercise) => {
+        if (exercise.id !== id) return exercise;
+        const { targetWeightKg, ...original } = exercise;
+        return original;
+      });
+      const training = settings.training || {};
+      const decisions = { ...training.decisions };
+      delete decisions[id];
+      const nextSettings = { ...settings, training: { ...training, decisions } };
+      db.saveProgramState(next, nextSettings, activeSession);
+      exercises = next;
+      settings = nextSettings;
+    },
+    activatePlan(plan, day) {
+      const nextExercises = trainingTools.activatePlanExercises(trainingTools.planningCatalog(exercises), plan.sessions[day].exercises);
+      const training = settings.training || {};
+      const plans = [...(training.plans || []).filter((item) => item.id !== plan.id), plan];
+      if (plans.length > 8) throw new Error('Remove a saved plan before activating another');
+      applyProgram(nextExercises, { ...settings, training: { ...training, plans,
+        programBackup: training.programBackup || exercises.map(backupFields), activePlan: { id: plan.id, day } } });
+    },
+    restoreProgram() {
+      const backup = settings.training?.programBackup;
+      if (!backup) throw new Error('No program backup');
+      const nextExercises = exercises.map((exercise) => {
+        const saved = backup.find((item) => item.id === exercise.id);
+        return saved ? { ...exercise, ...saved } : exercise.id.startsWith('planning:') ? { ...exercise, active: false } : exercise;
+      }).sort((a, b) => {
+        const index = (id) => { const found = backup.findIndex((item) => item.id === id); return found < 0 ? backup.length : found; };
+        return index(a.id) - index(b.id);
+      });
+      applyProgram(nextExercises, { ...settings, training: { ...settings.training, activePlan: null, programBackup: null } });
+    },
+  };
+}
+
 function persistRestTimerState() {
   if (!activeSession) return;
   activeSession.rest = restTimer.isRunning() ? {
@@ -874,28 +1121,28 @@ function persistRestTimerState() {
 }
 
 function buildWorkoutActivityPayload() {
-  if (!activeSession || (!activeSession.running && !activityReadyEnabled)) return { running: false };
-  const preview = !activeSession.running;
+  if (!activeSession || (!activeSession.running && !activeSession.paused && !activityReadyEnabled)) return { running: false };
+  const preview = !activeSession.running && !activeSession.paused;
   const strength = activeSession.entries.filter((entry) => entry.type !== 'cardio');
-  let current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId);
+  let current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId && !isEntryDone(entry));
   const focusedID = current && !isEntryDone(current) ? current.exerciseId : null;
   const runningHold = [...holdTimers].find(([key]) =>
-    key.startsWith(`${focusedID}:`)) || (!focusedID ? [...holdTimers][0] : undefined);
+    key.slice(0, key.lastIndexOf(':')) === focusedID) || (!focusedID ? [...holdTimers][0] : undefined);
   const cardio = activeSession.entries.find((entry) =>
     entry.type === 'cardio' && entry.startedAt && !entry.completed && (!focusedID || entry.exerciseId === focusedID));
-  let phase = preview ? 'ready' : 'workout', phaseStartMillis = null, phaseEndMillis = null;
-  if (!preview && restTimer.isRunning()) {
+  let phase = activeSession.paused ? 'paused' : preview ? 'ready' : 'workout', phaseStartMillis = null, phaseEndMillis = null;
+  if (!preview && !activeSession.paused && restTimer.isRunning()) {
     phase = 'rest';
     phaseEndMillis = restTimer.endAt;
     phaseStartMillis = phaseEndMillis - restTimer.totalSeconds * 1000;
-  } else if (!preview && runningHold) {
+  } else if (!preview && !activeSession.paused && runningHold) {
     phase = 'hold';
     const [key, state] = runningHold;
-    current = activeSession.entries.find((entry) => key.startsWith(`${entry.exerciseId}:`));
+    current = activeSession.entries.find((entry) => entry.exerciseId === key.slice(0, key.lastIndexOf(':')));
     const exercise = exercises.find((entry) => entry.id === current?.exerciseId);
     phaseStartMillis = state.startedAt;
     phaseEndMillis = state.startedAt + (exercise?.holdSeconds || 15) * 1000;
-  } else if (!preview && cardio) {
+  } else if (!preview && !activeSession.paused && cardio) {
     phase = 'cardio';
     current = cardio;
     phaseStartMillis = cardio.startedAt;
@@ -903,15 +1150,22 @@ function buildWorkoutActivityPayload() {
     if (phaseEndMillis <= phaseStartMillis) phase = 'workout';
   }
   current = current || activeSession.entries.find((entry) => !isEntryDone(entry));
-  if (phase === 'workout') { phaseStartMillis = null; phaseEndMillis = null; }
+  if (phase === 'workout' || phase === 'paused') { phaseStartMillis = null; phaseEndMillis = null; }
+  let setIndex = current?.type !== 'cardio' ? current?.sets.findIndex((set) => !set.completed) : -1;
+  if (voiceCountingState && voiceCountingState.entry === current && !voiceCountingState.set.completed) setIndex = current.sets.indexOf(voiceCountingState.set);
+  if (phase === 'hold' && runningHold && current) setIndex = Number(runningHold[0].slice(current.exerciseId.length + 1));
   return {
-    running: !preview, preview, sessionID: preview ? `ready:${activeSession.id}` : activeSession.id,
-    startMillis: preview ? activityPreviewStartedAt : new Date(activeSession.startedAt).getTime(),
+    running: !!activeSession.running, paused: !!activeSession.paused, preview, sessionID: preview ? `ready:${activeSession.id}` : activeSession.id,
+    startMillis: preview ? activityPreviewStartedAt : activeSession.clockStartedAt || new Date(activeSession.startedAt).getTime(),
     exerciseName: (current?.exerciseName ? i18n.exerciseName(current.exerciseName) : i18n.text('מוכן להתחיל אימון')).slice(0, 120),
     language: i18n.getLanguage(),
     totalSets: strength.reduce((sum, entry) => sum + entry.sets.length, 0),
     completedSets: strength.reduce((sum, entry) => sum + entry.sets.filter((set) => set.completed).length, 0),
     phase, phaseStartMillis, phaseEndMillis,
+    exerciseID: current?.exerciseId,
+    ...(setIndex >= 0 ? { setIndex } : {}),
+    controlRevision: activeSession.activityControlRevision || 0,
+    ...(activeSession.paused ? { pausedElapsedSeconds: activeSession.accumulatedSec || 0 } : {}),
   };
 }
 
@@ -970,7 +1224,64 @@ function stopWorkoutTimers() {
   lastAutoCountCompletion = null;
 }
 
+async function handleWorkoutActivityAction(request) {
+  if (!appInitialized) return;
+  if (!request || typeof request.id !== 'string' || !request.id || request.id.length > 128) {
+    console.error('Invalid workout Live Activity action', request);
+    showToast('לא ניתן לבצע את הפעולה מהווידג׳ט. פתח את האימון ובדוק את מצבו.');
+    return;
+  }
+  if (activityActionsInFlight.has(request.id)) return;
+  activityActionsInFlight.add(request.id);
+  let outcome = activityActionResults.get(request.id);
+  try {
+    if (!outcome) {
+      try {
+        const age = Date.now() - request.createdAt;
+        if (!Number.isFinite(request.createdAt) || age < -5000 || age > 20000 || request.sessionID !== activeSession.id
+          || request.controlRevision !== (activeSession.activityControlRevision || 0)) {
+          throw new Error(i18n.text('הפעולה אינה עדכנית. פתח את AutoFit ונסה שוב.'));
+        }
+        if (request.command === 'pause' && activeSession.running) pauseWorkout();
+        else if (request.command === 'resume' && activeSession.paused) resumeWorkout();
+        else if (request.command === 'completeSet') {
+          const snapshot = buildWorkoutActivityPayload();
+          if (!activeSession.running || !['workout', 'hold'].includes(snapshot.phase)
+            || snapshot.exerciseID !== request.exerciseID || snapshot.setIndex !== request.setIndex) {
+            throw new Error(i18n.text('הסט בווידג׳ט כבר אינו הסט הנוכחי. לא סומן סט אחר.'));
+          }
+          const entry = activeSession.entries.find((entry) => entry.exerciseId === request.exerciseID);
+          const set = entry?.sets?.[request.setIndex];
+          const exercise = entry?.exerciseSnapshot || exercises.find((exercise) => exercise.id === entry?.exerciseId);
+          if (!set || set.completed || !exercise) throw new Error(i18n.text('הסט בווידג׳ט כבר אינו הסט הנוכחי. לא סומן סט אחר.'));
+          setWorkoutSetCompletion(entry, set, exercise, request.setIndex, true);
+          renderWorkoutTab();
+        } else throw new Error(i18n.text('הפעולה אינה עדכנית. פתח את AutoFit ונסה שוב.'));
+        outcome = { success: true, reason: '' };
+      } catch (error) {
+        console.error('Workout Live Activity action failed', error);
+        outcome = { success: false, reason: error.message };
+        showToast('לא ניתן לבצע את הפעולה מהווידג׳ט. פתח את האימון ובדוק את מצבו.');
+      }
+      activityActionResults.set(request.id, outcome);
+      if (activityActionResults.size > 128) activityActionResults.delete(activityActionResults.keys().next().value);
+    }
+    syncWorkoutActivity();
+    await Promise.resolve();
+    await activitySyncChain;
+    const result = await native.acknowledgeWorkoutActivityAction({ id: request.id, ...outcome });
+    if (!result.ok) {
+      console.error('Workout control acknowledgement failed', result.reason);
+      showToast('עדכון הווידג׳ט נכשל. בדוק באפליקציה אם הפעולה נשמרה לפני ניסיון נוסף.');
+    }
+  } finally {
+    activityActionsInFlight.delete(request.id);
+  }
+}
+
 function renderWorkoutTab() {
+  updateWorkoutPauseControls();
+  if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
   const list = el('exerciseList');
   list.innerHTML = '';
   const lastByExercise = getLastCompletedValuesByExercise();
@@ -985,7 +1296,8 @@ function renderWorkoutTab() {
       list.appendChild(cardioCard);
       return;
     }
-    const ex = exercises.find((e) => e.id === entry.exerciseId);
+    const ex = entry.exerciseSnapshot ? { ...exercises.find((e) => e.id === entry.exerciseId), ...entry.exerciseSnapshot }
+      : exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) return;
     exerciseNumber += 1;
 
@@ -1006,12 +1318,12 @@ function renderWorkoutTab() {
       </div>
       <div class="exercise-head-right">
         ${library.exerciseGuide(ex) ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
-        ${ex.images && ex.images.length ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
+        ${ex.images?.length || library.exerciseGuide(ex) ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
       </div>
     `;
     const guideButton = qs('.btnExerciseGuide', head);
     if (guideButton) guideButton.addEventListener('click', () => openExerciseGuide(ex));
-    if (ex.images && ex.images.length) {
+    if (ex.images?.length || library.exerciseGuide(ex)) {
       qs('.btnShowPhoto', head).addEventListener('click', () => openPhotoModal(ex));
     }
     card.appendChild(head);
@@ -1043,11 +1355,13 @@ function renderWorkoutTab() {
       const checkBtn = qs('.set-check', tr);
 
       weightInput.addEventListener('input', () => {
+        entry.userEdited = true;
         set.weightKg = weightInput.value;
         lbsInput.value = weightInput.value ? round1(Number(weightInput.value) * KG_TO_LBS) : '';
         persistActiveSession();
       });
       lbsInput.addEventListener('input', () => {
+        entry.userEdited = true;
         const kgVal = lbsInput.value ? round2(Number(lbsInput.value) / KG_TO_LBS) : '';
         set.weightKg = kgVal;
         weightInput.value = kgVal;
@@ -1067,6 +1381,7 @@ function renderWorkoutTab() {
       } else {
         const repsInput = qs('.reps', tr);
         repsInput.addEventListener('input', () => {
+          entry.userEdited = true;
           set.reps = repsInput.value;
           resetVoiceRepTarget(set);
           persistActiveSession();
@@ -1074,35 +1389,11 @@ function renderWorkoutTab() {
       }
 
       checkBtn.addEventListener('click', () => {
-        set.completed = !set.completed;
-        if (!set.completed) delete set.difficulty;
-        if (ex.inputType === 'hold') {
-          const key = `${entry.exerciseId}:${idx}`;
-          const timer = holdTimers.get(key);
-          if (timer) {
-            set.reps = Math.round((Date.now() - timer.startedAt) / 1000);
-            clearInterval(timer.intervalId);
-            holdTimers.delete(key);
-          }
-          if (set.completed && (set.reps === '' || set.reps == null)) set.reps = ex.holdSeconds || 15;
-          delete set.holdStartedAt;
-          delete set.holdAnnounced;
-        }
-        if (voiceCountingState?.entry === entry && voiceCountingState.set === set) {
-          voiceCountingState = null;
-          updateVoiceBadgeForListeningState();
-        }
+        setWorkoutSetCompletion(entry, set, ex, idx, !set.completed);
         checkBtn.classList.toggle('checked', set.completed);
         tr.classList.toggle('completed', set.completed);
-        rememberCompletedSet(entry, set);
-        persistActiveSession();
         updateProgress();
         card.classList.toggle('done', entry.sets.every((s) => s.completed));
-        if (set.completed) {
-          ensureWorkoutStarted();
-          const exerciseDone = entry.sets.every((s) => s.completed);
-          startRestTimer(ex, exerciseDone, nextEntryName(entry));
-        }
         if (ex.inputType === 'hold') renderWorkoutTab();
       });
 
@@ -1113,6 +1404,17 @@ function renderWorkoutTab() {
     tableWrap.className = 'set-table-wrap';
     tableWrap.appendChild(table);
     card.appendChild(tableWrap);
+    const notes = document.createElement('details');
+    notes.className = 'set-notes';
+    notes.innerHTML = `<summary>הערות לסטים (רשות)</summary>${entry.sets.map((set, index) =>
+      `<label class="training-field"><span><span>סט</span> ${index + 1}</span><input class="input" data-note-set="${index}" data-no-translate
+        type="text" maxlength="500" value="${escapeAttr(set.notes || '')}"></label>`).join('')}`;
+    qsa('[data-note-set]', notes).forEach((input) => input.addEventListener('input', () => {
+      entry.sets[Number(input.dataset.noteSet)].notes = input.value;
+      entry.userEdited = true;
+      persistActiveSession();
+    }));
+    card.appendChild(notes);
 
     const actions = document.createElement('div');
     actions.className = 'set-row-actions';
@@ -1125,6 +1427,7 @@ function renderWorkoutTab() {
     `;
     qs('.btnAddSet', actions).addEventListener('click', () => {
       entry.sets.push({ weightKg: entry.sets.at(-1)?.weightKg || '', reps: entry.sets.at(-1)?.reps || '', completed: false });
+      activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
       persistActiveSession();
       renderWorkoutTab();
     });
@@ -1155,7 +1458,7 @@ function removeLastWorkoutSet(entry) {
   const set = entry.sets.at(-1);
   const key = `${entry.exerciseId}:${entry.sets.length - 1}`;
   const timer = holdTimers.get(key);
-  if ((set.completed || set.weightKg || set.reps || timer)
+  if ((set.completed || set.weightKg || set.reps || set.notes || timer || set.resumeAfterPause || set.holdElapsedSec > 0)
     && !confirm(i18n.text('בסט האחרון יש נתונים או מדידה פעילה. למחוק את הסט הזה?'))) return;
   if (timer) { clearInterval(timer.intervalId); holdTimers.delete(key); }
   if (voiceCountingState?.set === set) {
@@ -1164,10 +1467,56 @@ function removeLastWorkoutSet(entry) {
   }
   if (lastVoiceAction?.set === set) lastVoiceAction = null;
   entry.sets.pop();
+  activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   if (activeSession.lastCompletedSet?.exerciseId === entry.exerciseId
     && activeSession.lastCompletedSet.setIndex >= entry.sets.length) delete activeSession.lastCompletedSet;
   persistActiveSession();
   renderWorkoutTab();
+}
+
+function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
+  const previousSet = { ...set };
+  const previousMarker = activeSession.lastCompletedSet;
+  const previousRevision = activeSession.activityControlRevision;
+  const timerKey = `${entry.exerciseId}:${index}`;
+  const timer = exercise.inputType === 'hold' ? holdTimers.get(timerKey) : null;
+  set.completed = completed;
+  if (!completed) delete set.difficulty;
+  if (exercise.inputType === 'hold') {
+    if (timer) {
+      set.reps = Math.round((Date.now() - timer.startedAt) / 1000);
+    }
+    if (completed && set.resumeAfterPause) set.reps = Math.round(set.holdElapsedSec || 0);
+    if (completed && (set.reps === '' || set.reps == null)) set.reps = exercise.holdSeconds || 15;
+    delete set.holdStartedAt;
+    delete set.holdAnnounced;
+    delete set.holdElapsedSec;
+    delete set.resumeAfterPause;
+  }
+  rememberCompletedSet(entry, set);
+  try {
+    persistActiveSession();
+  } catch (error) {
+    for (const key of Object.keys(set)) delete set[key];
+    Object.assign(set, previousSet);
+    if (previousMarker === undefined) delete activeSession.lastCompletedSet;
+    else activeSession.lastCompletedSet = previousMarker;
+    if (previousRevision === undefined) delete activeSession.activityControlRevision;
+    else activeSession.activityControlRevision = previousRevision;
+    throw error;
+  }
+  if (timer) {
+    clearInterval(timer.intervalId);
+    holdTimers.delete(timerKey);
+  }
+  if (voiceCountingState?.entry === entry && voiceCountingState.set === set) {
+    voiceCountingState = null;
+    updateVoiceBadgeForListeningState();
+  }
+  if (completed) {
+    ensureWorkoutStarted();
+    startRestTimer(exercise, entry.sets.every((set) => set.completed), nextEntryName(entry));
+  }
 }
 
 function getWorkoutSetProgress() {
@@ -1184,6 +1533,7 @@ function cardioCompletionMessage(entry) {
 }
 
 function updateProgress() {
+  if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
   const { total, done, percent: pct } = getWorkoutSetProgress();
   el('setsProgressText').textContent = `${done} / ${total} סטים הושלמו (${pct}%)`;
@@ -1231,6 +1581,8 @@ function refreshDifficultyFeedback() {
 function renderCardioCard(entry, number) {
   const card = document.createElement('div');
   const ex = exercises.find((e) => e.id === entry.exerciseId) || {};
+  const mediaExercise = entry.exerciseSnapshot || ex;
+  const hasGuide = !!library.exerciseGuide(mediaExercise);
   card.className = 'exercise-card' + (entry.completed ? ' done' : '');
   const minutes = Math.round(entry.durationSec / 60);
   const fullDurationSec = (ex.durationMinutes || 5) * 60;
@@ -1241,6 +1593,10 @@ function renderCardioCard(entry, number) {
         <div>
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
           <div class="exercise-meta">${entry.exerciseId === 'warmup' || entry.exerciseId === 'cooldown' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
+          <div class="exercise-head-right">
+            ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
+            ${hasGuide || mediaExercise.images?.length ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
+          </div>
         </div>
       </div>
     </div>
@@ -1262,16 +1618,21 @@ function renderCardioCard(entry, number) {
       </div>
     </div>
   `;
+  if (hasGuide) qs('.btnExerciseGuide', card).addEventListener('click', () => openExerciseGuide(mediaExercise));
+  if (hasGuide || mediaExercise.images?.length) qs('.btnShowPhoto', card).addEventListener('click', () => openPhotoModal(mediaExercise));
   qs('.cardioLocation', card).addEventListener('change', (e) => {
+    entry.userEdited = true;
     entry.location = e.target.value;
     persistActiveSession();
   });
   i18n.localizeInput(qs('.cardioPace', card), entry.pace || '');
   qs('.cardioPace', card).addEventListener('input', (e) => {
+    entry.userEdited = true;
     entry.pace = i18n.inputValue(e.target);
     persistActiveSession();
   });
   qs('.btnCardioStart', card).addEventListener('click', () => {
+    if (activeSession.paused) { showToast('לחץ על המשך אימון לפני הפעלת טיימר.'); return; }
     if (entry.startedAt && !entry.completed) {
       const elapsed = (Date.now() - entry.startedAt) / 1000;
       entry.elapsedSec = Math.min(entry.durationSec, (entry.elapsedSec || 0) + elapsed);
@@ -1288,6 +1649,7 @@ function renderCardioCard(entry, number) {
     renderWorkoutTab();
   });
   qs('.btnCardioReset', card).addEventListener('click', () => {
+    delete entry.resumeAfterPause;
     entry.durationSec = fullDurationSec;
     entry.elapsedSec = 0;
     entry.startedAt = null;
@@ -1296,13 +1658,14 @@ function renderCardioCard(entry, number) {
     renderWorkoutTab();
   });
   qs('.btnCardioDone', card).addEventListener('click', () => {
+    delete entry.resumeAfterPause;
     entry.completed = !entry.completed;
     if (entry.completed) ensureWorkoutStarted();
     entry.elapsedSec = entry.completed ? entry.durationSec : 0;
     entry.startedAt = null;
     persistActiveSession();
     renderWorkoutTab();
-    if (entry.completed && settings.voiceAnnouncements) {
+    if (entry.completed && settings.voiceAnnouncements && !activeSession.paused) {
       cancelWorkoutGreeting();
       speak(cardioCompletionMessage(entry));
     }
@@ -1368,6 +1731,8 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
       set.reps = '';
       delete set.holdStartedAt;
       delete set.holdAnnounced;
+      delete set.holdElapsedSec;
+      delete set.resumeAfterPause;
       persistActiveSession();
       renderWorkoutTab();
     });
@@ -1379,7 +1744,7 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
   }
   const existing = holdTimers.get(key);
   const running = !!existing;
-  td.innerHTML = `<div class="hold-timer-cell"><span class="hold-timer-display">${running ? formatHMS((Date.now() - existing.startedAt) / 1000) : '0:00'}</span><button class="btn-hold-toggle${running ? ' running' : ''}">${running ? '⏹ עצור' : '▶ התחל'}</button></div>`;
+  td.innerHTML = `<div class="hold-timer-cell"><span class="hold-timer-display">${running ? formatHMS((Date.now() - existing.startedAt) / 1000) : formatHMS(set.holdElapsedSec || 0)}</span><button class="btn-hold-toggle${running ? ' running' : ''}">${running ? '⏹ עצור' : '▶ התחל'}</button></div>`;
   const display = qs('.hold-timer-display', td);
   const btn = qs('.btn-hold-toggle', td);
   if (existing) {
@@ -1387,6 +1752,7 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
     existing.intervalId = startHoldTicking(display, existing, target, set, key);
   }
   btn.addEventListener('click', () => {
+    if (activeSession.paused) { showToast('לחץ על המשך אימון לפני הפעלת טיימר.'); return; }
     const state = holdTimers.get(key);
     if (state) {
       clearInterval(state.intervalId);
@@ -1408,6 +1774,7 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
       state.intervalId = startHoldTicking(display, state, target, set, key);
       holdTimers.set(key, state);
       set.holdStartedAt = startedAt;
+      activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
       set.holdAnnounced = false;
       persistActiveSession();
       syncWorkoutActivity();
@@ -1517,13 +1884,14 @@ function voiceRepTarget(set, exercise) {
 function resetVoiceRepTarget(set) {
   delete set.voiceTargetReps;
   if (voiceCountingState?.set !== set) return;
-  const exercise = exercises.find((item) => item.id === voiceCountingState.entry.exerciseId);
+  const exercise = voiceCountingState.entry.exerciseSnapshot || exercises.find((item) => item.id === voiceCountingState.entry.exerciseId);
   voiceCountingState.targetReps = voiceRepTarget(set, exercise);
   if (voiceCountingState.targetReps) set.voiceTargetReps = voiceCountingState.targetReps;
   updateVoiceCountingBadge();
 }
 
 function rememberCompletedSet(entry, set) {
+  activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   const setIndex = entry.sets.indexOf(set);
   if (set.completed && setIndex >= 0) {
     activeSession.lastCompletedSet = { exerciseId: entry.exerciseId, setIndex };
@@ -1651,7 +2019,7 @@ function applyWorkoutVoice(intent) {
     set = entry?.sets?.find((item) => !item.completed);
   }
   if (!entry) { voiceReply('לא ברור לאיזה תרגיל לדווח. אמור קודם את שם התרגיל'); return; }
-  const exercise = exercises.find((item) => item.id === entry.exerciseId);
+  const exercise = entry.exerciseSnapshot || exercises.find((item) => item.id === entry.exerciseId);
   if (entry.type === 'cardio' || exercise?.inputType === 'hold') {
     voiceReply('דיווח חזרות ומשקל מתאים לתרגיל חזרות, לא לאירובי או להחזקה');
     return;
@@ -1698,7 +2066,7 @@ function firstNotDoneEntryIndex() {
 }
 
 function voiceExerciseNames(entry) {
-  const exercise = exercises.find((item) => item.id === entry.exerciseId);
+  const exercise = entry.exerciseSnapshot || exercises.find((item) => item.id === entry.exerciseId);
   const names = [entry.exerciseName, exercise?.name];
   names.push(...names.filter(Boolean).map((name) => i18n.text(name)));
   if (entry.exerciseId === 'warmup') names.push('חימום');
@@ -1787,8 +2155,9 @@ function updateVoiceCountingBadge() {
 
 function updateVoiceBadgeForListeningState() {
   if (!native.isNative()) return;
-  el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive);
-  if (voiceCountingState) { updateVoiceCountingBadge(); return; }
+  el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive || !!activeSession?.paused);
+  el('btnEnableWorkoutVoice').textContent = i18n.text(voiceListeningError ? 'נסה שוב להפעיל מיקרופון' : '🎙️ הפעל מיקרופון ופקודות קוליות');
+  if (voiceCountingState && voiceListeningActive) { updateVoiceCountingBadge(); return; }
   const current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId);
   const microphone = voiceInputName ? ` (${voiceInputName})` : '';
   setVoiceBadge(voiceListeningActive ? current
@@ -1799,7 +2168,7 @@ function updateVoiceBadgeForListeningState() {
 }
 
 function handleVoiceTranscript(transcript) {
-  if (!transcript || !voiceListeningActive || currentTab !== 'workout' || document.visibilityState !== 'visible') {
+  if (!transcript || activeSession.paused || !voiceListeningActive || currentTab !== 'workout' || document.visibilityState !== 'visible') {
     pendingVoiceFinish = null;
     return;
   }
@@ -1849,7 +2218,7 @@ function handleVoiceTranscript(transcript) {
         return;
       }
       selectVoiceExercise(index);
-      const exercise = exercises.find((item) => item.id === entry.exerciseId);
+      const exercise = entry.exerciseSnapshot || exercises.find((item) => item.id === entry.exerciseId);
       const autoCount = !match.selectOnly && entry.type !== 'cardio' && exercise?.inputType !== 'hold';
       if (!match.start && !match.stop && !autoCount) return;
       requestedEntryIndex = index;
@@ -1941,7 +2310,7 @@ function handleVoiceTranscript(transcript) {
     selectVoiceExercise(idx, false);
     restTimer.stop();
     el('restOverlay').classList.add('hidden');
-    const exercise = exercises.find((ex) => ex.id === entry.exerciseId);
+    const exercise = entry.exerciseSnapshot || exercises.find((ex) => ex.id === entry.exerciseId);
     if (exercise && exercise.inputType === 'hold') {
       const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
       const row = card && qsa('.set-row', card)[setIdx];
@@ -2031,9 +2400,10 @@ function handleVoiceTranscript(transcript) {
 /* ---------------- Voice commands: listening lifecycle ---------------- */
 // Listens for the whole time the Workout tab is open and the app is in the
 // foreground (not just once a workout is running — "start workout" itself is
-// a voice command), so this is gated purely on tab + visibility + setting +
-// permission, independent of activeSession.running.
+// a voice command), except during an explicit workout pause. Otherwise it is
+// gated on tab + visibility + setting + permission, independent of running.
 let voiceListeningActive = false;
+let voiceActivationPending = false;
 let voiceListeningRevision = 0;
 let voiceListeningError = '';
 let voiceInputName = '';
@@ -2054,16 +2424,19 @@ async function requestVoiceActivation() {
 async function updateVoiceListeningState() {
   if (!native.isNative()) return;
   const should = currentTab === 'workout'
+    && !activeSession.paused
     && document.visibilityState === 'visible'
     && settings.voiceCommandsEnabled === true;
   if (!should) pendingVoiceFinish = null;
   if (should === voiceListeningActive) return;
   const revision = ++voiceListeningRevision;
   voiceListeningActive = should;
+  voiceActivationPending = should;
   if (should) {
     const phrases = [...new Set([...voiceReports.voiceReportHints(i18n.getLanguage()), ...activeSession.entries.flatMap(voiceExerciseNames)])];
     const result = await native.voiceStartListening(phrases, i18n.locale());
     if (revision !== voiceListeningRevision) return;
+    voiceActivationPending = false;
     voiceListeningActive = result.listening;
     if (!result.listening) pendingVoiceFinish = null;
     voiceListeningError = result.listening ? '' : result.reason;
@@ -2079,6 +2452,7 @@ async function updateVoiceListeningState() {
 
 
 function startRestTimer(ex, exerciseDone, nextExerciseName) {
+  if (activeSession.paused) return;
   cancelWorkoutGreeting();
   const seconds = ex.restSeconds || settings.restSeconds || 90;
   el('restExerciseName').setAttribute('data-exercise-name', ex.name);
@@ -2150,7 +2524,7 @@ function renderHistoryTab() {
           <div class="history-exercise-line">
             <b data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</b>
             <div class="history-sets-line">
-              ${e.sets.map((s, i) => `<div>סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps} ${e.inputType === 'hold' ? 'שניות' : 'חזרות'}${Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty) ? ` · <span>${insights.DIFFICULTY_LABELS[s.difficulty]}</span>` : ''}</div>`).join('')}
+              ${e.sets.map((s, i) => `<div>סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps} ${e.inputType === 'hold' ? 'שניות' : 'חזרות'}${Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty) ? ` · <span>${insights.DIFFICULTY_LABELS[s.difficulty]}</span>` : ''}${s.notes ? `<p data-no-translate>${escapeHtml(s.notes)}</p>` : ''}</div>`).join('')}
             </div>
           </div>
         `).join('')}
@@ -2211,6 +2585,7 @@ function openEditWorkoutModal(workout) {
                   <option value="">ללא דירוג</option>
                   ${Object.entries(insights.DIFFICULTY_LABELS).map(([value, label]) => `<option value="${value}" ${s.difficulty === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
+                <input class="input edit-set-notes" type="text" maxlength="500" aria-label="${escapeAttr(i18n.text('הערות לסט'))}" data-no-translate value="${escapeAttr(s.notes || '')}">
                 <button class="btn-icon btnDeleteEditSet">🗑️</button>
               </div>
             `).join('')}
@@ -2243,12 +2618,14 @@ function openEditWorkoutModal(workout) {
           weightKg: Number(qs('.edit-weight', row).value) || 0,
           reps: Number(qs('.edit-reps', row).value) || 0,
           completed: true,
+          notes: qs('.edit-set-notes', row).value,
           ...(Object.hasOwn(insights.DIFFICULTY_LABELS, value) ? { difficulty: value } : {}),
         };
       });
     });
     clone.entries = clone.entries.filter((e) => e.type === 'cardio' || e.sets.length > 0);
-    workouts = db.getWorkouts().map((w) => (w.id === clone.id ? clone : w));
+    workouts = db.getWorkouts().map((w) => (w.id === clone.id ? { ...clone,
+      healthDelivery: w.healthDelivery, healthSyncPending: w.healthSyncPending, healthSyncedAt: w.healthSyncedAt } : w));
     db.saveWorkouts(workouts);
     close();
     renderHistoryTab();
@@ -2284,7 +2661,11 @@ function buildWorkoutShareLines(workoutsArr) {
           if (entry.completed) lines.push(`⏱ ${i18n.exerciseName(entry.exerciseName)}: ${Math.round(entry.durationSec / 60)} min${formatCardioExtra(entry)}`);
         } else if (entry.sets.length) {
           lines.push(`🏋️ ${i18n.exerciseName(entry.exerciseName)}`);
-          entry.sets.forEach((set, index) => lines.push(`   Set ${index + 1}: ${set.weightKg} kg × ${set.reps}`));
+          entry.sets.forEach((set, index) => {
+            lines.push(`   Set ${index + 1}: ${set.weightKg} kg × ${set.reps}${entry.inputType === 'hold' ? ' seconds' : ''}`);
+            if (Object.hasOwn(insights.DIFFICULTY_LABELS, set.difficulty)) lines.push(`   ${i18n.text(insights.DIFFICULTY_LABELS[set.difficulty])}`);
+            if (set.notes) lines.push(`   ${set.notes}`);
+          });
         }
       });
       lines.push('');
@@ -2312,7 +2693,11 @@ function buildWorkoutShareLines(workoutsArr) {
       }
       if (!e.sets.length) return;
       lines.push(`🏋️ ${e.exerciseName}`);
-      e.sets.forEach((s, i) => lines.push(`   סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps}`));
+      e.sets.forEach((s, i) => {
+        lines.push(`   סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps}${e.inputType === 'hold' ? ' שניות' : ''}`);
+        if (Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty)) lines.push(`   ${insights.DIFFICULTY_LABELS[s.difficulty]}`);
+        if (s.notes) lines.push(`   ${s.notes}`);
+      });
     });
     lines.push('');
   });
@@ -2365,7 +2750,15 @@ function* buildWorkoutShareCanvases(workoutsArr) {
       if (!e.sets.length) return;
       add('exTitle', 36, { text: i18n.exerciseName(e.exerciseName) });
       add('tableHeader', 28, {});
-      e.sets.forEach((s, i) => add('tableRow', 26, { i, weightKg: s.weightKg, reps: s.reps }));
+      e.sets.forEach((s, i) => {
+        add('tableRow', 26, { i, weightKg: s.weightKg, reps: s.reps });
+        const annotation = [e.inputType === 'hold' ? i18n.text('שניות') : '',
+          Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty) ? i18n.text(insights.DIFFICULTY_LABELS[s.difficulty]) : '', s.notes || ''].filter(Boolean).join(' · ');
+        const characters = Array.from(annotation);
+        for (let offset = 0; offset < characters.length; offset += 64) {
+          add('annotation', 22, { text: characters.slice(offset, offset + 64).join('') });
+        }
+      });
       add('spacer', 8, {});
     });
   });
@@ -2480,6 +2873,11 @@ function* buildWorkoutShareCanvases(workoutsArr) {
         ctx.fillText(String(b.weightKg), column(0.5), y + b.h / 2 + 5);
         ctx.fillText(String(b.reps), column(0.85), y + b.h / 2 + 5);
         ctx.textAlign = alignment;
+      } else if (b.type === 'annotation') {
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '13px Arial';
+        ctx.textAlign = alignment;
+        ctx.fillText(b.text, textEdge, y + 16, innerWidth);
       } else if (b.type === 'footer') {
         ctx.fillStyle = COLORS.muted;
         ctx.font = '13px Arial';
@@ -2602,56 +3000,129 @@ function sendWorkoutToHealthShortcut(workoutsArr) {
   const text = `${totalMinutes}|${dateStr}`;
   const url = `shortcuts://run-shortcut?name=${encodeURIComponent(HEALTH_SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(text)}`;
   window.location.href = url;
-  showToast(`נשלח ל-Shortcuts (${totalMinutes} דקות, ${dateStr}) — ודא שהקיצור "${HEALTH_SHORTCUT_NAME}" מוגדר ⌚`);
+  showToast(`${i18n.text('נשלחה בקשת פתיחת Shortcuts. אי אפשר לאמת כאן שמירה בבריאות.')} (${totalMinutes} ${i18n.text('דקות')}, ${dateStr})`);
 }
 
 // In the native app, write straight to HealthKit — no Shortcuts bridge needed.
 // Falls back to the Shortcuts flow automatically when running as a plain web/PWA.
 async function syncWorkoutToHealth(workoutsArr) {
+  const requested = [...new Map(workoutsArr.map((workout) =>
+    [workout.id, workouts.find((record) => record.id === workout.id) || workout])).values()];
   if (!native.isNative()) {
-    sendWorkoutToHealthShortcut(workoutsArr);
+    const unsent = requested.filter((workout) => !workout.healthSyncedAt && workout.healthDelivery?.status !== 'shortcut');
+    if (!unsent.length) {
+      showToast('כבר נשמר אישור מסירה או נשלחה בקשת Shortcuts. בדוק בבריאות לפני שליחה נוספת כדי למנוע כפילות.');
+      return;
+    }
+    try {
+      sendWorkoutToHealthShortcut(unsent);
+      persistHealthDelivery(unsent, 'shortcut', 'browser');
+    } catch (error) {
+      console.error('Health Shortcuts handoff failed', error);
+      showToast('לא ניתן להשלים את הבקשה ל-Shortcuts — ' + error.message);
+    } finally {
+      for (const record of unsent) refreshHealthSummaries(record.id);
+    }
     return;
   }
-  const pending = workoutsArr.filter((workout) => !healthSyncInFlight.has(workout.id));
+  const pending = requested.filter((workout) => !healthSyncInFlight.has(workout.id) && !workout.healthSyncedAt);
   if (!pending.length) return;
   for (const workout of pending) {
-    workout.healthSyncPending = true;
-    const current = workouts.find((record) => record.id === workout.id);
-    if (current) current.healthSyncPending = true;
     healthSyncInFlight.add(workout.id);
   }
   try {
-    db.saveWorkouts(workouts);
+    persistHealthDelivery(pending, 'pending');
     const auth = await native.healthRequestAuthorization();
     if (!auth.granted) {
+      persistHealthDelivery(pending, /unavailable|not-native|plugin missing|not available|requires iOS/i.test(auth.reason || '')
+        ? 'unavailable' : 'unauthorized', auth.reason || '');
       showToast('האימון ממתין לסנכרון לבריאות — ' + (auth.reason || 'אשר הרשאת כתיבה בהגדרות > בריאות'));
       return;
     }
+    let savedCount = 0;
     for (const w of pending) {
       const res = await native.healthSaveWorkout({
         workoutID: w.id, startMillis: new Date(w.dateISO).getTime(),
         durationSec: Math.round(w.durationSec), entries: w.entries,
       });
       if (!res.saved) {
+        persistHealthDelivery([w], 'failed', res.reason || '');
         showToast('הסנכרון לבריאות ממתין לניסיון נוסף — ' + (res.reason || 'השמירה לא אושרה'));
-        return;
+        continue;
       }
-      w.healthSyncPending = false;
-      w.healthSyncedAt = new Date().toISOString();
-      const current = workouts.find((record) => record.id === w.id);
-      if (current) {
-        current.healthSyncPending = false;
-        current.healthSyncedAt = w.healthSyncedAt;
-      }
-      db.saveWorkouts(workouts);
+      persistHealthDelivery([w], 'saved', '', res.id);
+      savedCount++;
     }
-    showToast(`נשמר באפליקציית הבריאות ✅ (${pending.length} ${pending.length > 1 ? 'אימונים' : 'אימון'})`);
+    if (savedCount) showToast(`נשמר באפליקציית הבריאות ✅ (${savedCount} ${savedCount > 1 ? 'אימונים' : 'אימון'})`);
   } catch (error) {
     console.error('Apple Health synchronization failed', error);
-    showToast('סנכרון לבריאות לא הושלם — ' + error.message);
+    const unconfirmed = pending.filter((workout) => !workout.healthSyncedAt);
+    if (unconfirmed.length) {
+      try { persistHealthDelivery(unconfirmed, 'failed', error.message || String(error)); }
+      catch (storageError) { console.error('Cannot persist Health delivery failure', storageError); }
+    }
+    showToast(unconfirmed.length ? 'סנכרון לבריאות לא הושלם — ' + error.message
+      : i18n.text('בריאות אישרה את השמירה, אך אישור המסירה לא נשמר במכשיר בגלל תקלה באחסון.'));
   } finally {
-    for (const workout of pending) healthSyncInFlight.delete(workout.id);
+    for (const workout of pending) {
+      healthSyncInFlight.delete(workout.id);
+      refreshHealthSummaries(workout.id);
+    }
   }
+}
+
+function persistHealthDelivery(records, status, reason = '', nativeId) {
+  const updatedAt = new Date().toISOString();
+  for (const record of records) {
+    const current = workouts.find((workout) => workout.id === record.id);
+    for (const target of new Set([record, current].filter(Boolean))) {
+      target.healthDelivery = { status, reason: String(reason), updatedAt, ...(nativeId ? { nativeId } : {}) };
+      target.healthSyncPending = native.isNative() && status !== 'saved';
+      if (status === 'saved') target.healthSyncedAt = updatedAt;
+    }
+  }
+  db.saveWorkouts(workouts);
+  for (const record of records) refreshHealthSummaries(record.id);
+}
+
+function healthDeliveryState(record) {
+  const status = record.healthSyncedAt ? 'saved' : healthSyncInFlight.has(record.id) ? 'syncing'
+    : record.healthDelivery?.status || (record.healthSyncPending ? 'pending' : 'unknown');
+  const messages = {
+    saved: 'האימון עודכן באפליקציית בריאות — התקבל אישור שמירה מ-Apple Health.',
+    syncing: 'ממתין לתשובה מ-Apple Health. עדיין אין אישור שמירה.',
+    pending: 'האימון נשמר ב-AutoFit וממתין לסנכרון לבריאות. עדיין אין אישור שמירה.',
+    unavailable: record.healthDelivery?.reason === 'browser'
+      ? 'בדפדפן אין כתיבה ישירה לבריאות. אפשר לבקש פתיחת Shortcuts, אך לא ניתן לאמת כאן שהאימון נשמר בבריאות.'
+      : 'החיבור לבריאות אינו זמין כרגע. האימון נשמר ב-AutoFit, אך לא התקבל אישור שמירה בבריאות.',
+    unauthorized: 'לא התקבל אישור כתיבה לבריאות. האימון נשמר ב-AutoFit. בדוק הרשאה בהגדרות בריאות ונסה שוב.',
+    failed: 'העדכון בבריאות לא הושלם בגלל תקלה. האימון נשמר ב-AutoFit וניתן לנסות לסנכרן שוב.',
+    shortcut: 'נשלחה בקשת פתיחת Shortcuts בלבד. אין כאן אישור שהאימון נשמר בבריאות; בדוק באפליקציית בריאות לפני שליחה נוספת.',
+    unknown: 'אין לאימון הזה אישור מסירה מתועד לבריאות. אי אפשר לקבוע אם הוא עודכן.',
+  };
+  return { status, message: messages[status] || messages.unknown, reason: record.healthDelivery?.reason || '',
+    canRetry: native.isNative() && record.healthSyncPending === true && !healthSyncInFlight.has(record.id) && !record.healthSyncedAt };
+}
+
+function renderHealthSummary(row, record) {
+  const state = healthDeliveryState(record);
+  row.querySelector('.health-delivery-message').textContent = state.message;
+  row.querySelector('.health-delivery-reason').textContent = state.reason && state.reason !== 'browser' ? state.reason : '';
+  const retry = row.querySelector('.btnRetryHealth');
+  retry.classList.toggle('hidden', !state.canRetry);
+  retry.disabled = !state.canRetry;
+  const send = row.closest('dialog')?.querySelector('.btnSendHealth');
+  if (send) send.disabled = state.status === 'shortcut' || state.status === 'saved';
+  if (typeof i18n !== 'undefined') i18n.translateDOM(row);
+}
+
+function refreshHealthSummaries(workoutId) {
+  if (typeof document === 'undefined') return;
+  const current = workouts.find((record) => record.id === workoutId);
+  if (!current) return;
+  document.querySelectorAll('dialog[open] [data-health-workout]').forEach((row) => {
+    if (row.dataset.healthWorkout === workoutId) renderHealthSummary(row, current);
+  });
 }
 
 function openHealthSyncHelp() {
@@ -2677,7 +3148,7 @@ function openHealthSyncHelp() {
           <li>שמור את הקיצור.</li>
         </ol>
         <p>חשוב: יש לבדוק את הקיצור רק דרך כפתור "שלח ל-Shortcuts" ב-AutoFit (למשל אחרי סיום אימון, או מההיסטוריה) — לא ע"י הפעלה ישירה בתוך אפליקציית הקיצורים, כי אז אין קלט בכלל והקיצור ייכשל.</p>
-        <p>מעכשיו, בכל לחיצה על "שלח ל-Shortcuts" מ-AutoFit, משך האימון והתאריך האמיתי שלו יועברו אוטומטית ויירשמו בבריאות. (בבחירת כמה אימונים יחד — יישלח התאריך של הראשון מביניהם.)</p>
+        <p>כפתור Shortcuts מבקש לפתוח את הקיצור עם משך האימון והתאריך. רק קיצור שהוגדר ופעל בהצלחה יכול לרשום בבריאות; AutoFit בדפדפן לא מקבל אישור מסירה. בדוק בבריאות לפני שליחה חוזרת כדי למנוע כפילות. בבחירת כמה אימונים יחד נשלח התאריך של הראשון.</p>
       </div>
     </div>
   `;
@@ -3085,12 +3556,14 @@ function openExerciseGuide(exercise) {
       ${info.muscles.length > 1 ? `<br><span>שרירים מסייעים</span>: ${info.muscles.slice(1).map((muscle) => `<span>${escapeHtml(muscle)}</span>`).join(' · ')}` : ''}</p>
     <h4>הווריאציה המודגמת</h4><p>${escapeHtml(info.name.he)}</p>
     <figure class="exercise-technique">${library.exerciseIllustration(info, exercise.inputType === 'hold')}
-      <figcaption><span>איור תנועה סכמטי</span>${info.view ? ` · <span>${escapeHtml(info.view.he)}</span>` : ''} · <span>${exercise.inputType === 'hold' ? 'עמדת החזקה' : 'התחלה ← סיום'}</span></figcaption></figure>
+      <figcaption><span>איור הדרכה עם הדגשת שרירים</span>${info.view ? ` · <span>${escapeHtml(info.view.he)}</span>` : ''} · <span>${exercise.inputType === 'hold' ? 'עמדת החזקה' : 'התחלה ← סיום'}</span><br><span>הדגשת השרירים להמחשה בלבד</span></figcaption></figure>
     <h4>איך מבצעים</h4><ol class="guide-steps">${info.steps.map((step) => `<li>${escapeHtml(step.he)}</li>`).join('')}</ol>
     <h4>נשימה ודגשים</h4><p>${escapeHtml(info.cue.he)}</p>
-    ${info.video ? `<a class="btn btn-secondary guide-video" href="https://www.youtube.com/watch?v=${encodeURIComponent(info.video.id)}"
-      target="_blank" rel="noopener noreferrer"><span>סרטון הדרכה ב-YouTube</span> ↗<small data-no-translate>${escapeHtml(info.video.publisher)} · ${escapeHtml(info.video.title)}</small></a>
-      <p class="about-desc">פתיחת הסרטון דורשת חיבור לאינטרנט. ההוראות והאיור זמינים גם בלי רשת.</p>`
+    ${info.videos?.length ? `<h4>סרטוני הדרכה</h4>${info.videos.map((video) => `<a class="btn btn-secondary guide-video" href="${escapeAttr(video.href)}"
+      target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"><span>צפייה בסרטון באתר המקור</span> ↗<small data-no-translate>${escapeHtml(video.publisher)} · ${escapeHtml(video.title)}</small></a>`).join('')}
+      ${info === library.EXERCISE_GUIDES.overhead ? '<p class="about-desc">הסרטון מציג פשיטת מרפקים עם משקולת בישיבה. בחר מנח יציב ונוח.</p>' : ''}
+      ${exercise.inputType === 'hold' && info.pose === 'bridge' ? '<p class="about-desc">הסרטון מדגים עלייה וירידה לגשר. בתרגיל ההחזקה נשארים בעמדה העליונה ונושמים; אין צורך לחזור על התנועה.</p>' : ''}
+      <p class="about-desc">הסרטונים נפתחים באתר חיצוני ובדרך כלל באנגלית. נדרש אינטרנט; ההוראות והאיור זמינים גם בלי רשת.</p>`
       : '<p class="about-desc">עדיין אין סרטון נבחר לתרגיל הזה.</p>'}
     <p class="about-desc">ההדרכה והסינון מתייחסים לווריאציה המוצגת; בתרגילים עם כמה וריאציות, הציוד והביצוע עשויים להשתנות.</p>
     <p class="about-desc">בחר עומס וטווח נוחים. עצור אם מופיע כאב חד; האיור אינו תחליף להדרכה אישית.</p>`
@@ -3113,6 +3586,7 @@ const DEFAULT_COOLDOWN_NAME = 'שחרור-הליכה';
 const DEFAULT_CARDIO_PACE = 'קצב 6 בהליכון';
 
 function renderExercisesTab() {
+  if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
   const selected = myWorkoutExercises();
   const isMyWorkout = exerciseLibraryCategory === 'my';
   const filters = {
@@ -3184,7 +3658,7 @@ function renderExercisesTab() {
           </div>
         </div>
         <div class="exercise-manage-actions">
-          ${!isCardio && ex.images && ex.images.length ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
+          ${ex.images?.length || library.exerciseGuide(ex) ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
           <button class="btn-icon btnEditEx" aria-label="עריכת ${escapeAttr(ex.name)}">✏️</button>
           ${fixedPosition || isMyWorkout ? '' : `<button class="btn-icon btnDeleteEx" aria-label="מחיקת ${escapeAttr(ex.name)} מהספרייה">🗑️</button>`}
         </div>
@@ -3289,6 +3763,7 @@ function openExerciseEditModal(ex, options = {}) {
       <input class="input" id="editExNotes" value="${escapeAttr(ex.notes || '')}">
       <label class="checkbox-row"><input type="checkbox" id="editExActive" ${ex.active !== false ? 'checked' : ''}> כלול באימונים הבאים</label>
 
+      <p class="edit-program-duration field-hint" data-no-translate></p>
       <label class="field-label">תמונות</label>
       <div class="image-manage-grid" id="editExImageGrid"></div>
       <input type="file" accept="image/*" id="editExImageInput" class="hidden">
@@ -3328,6 +3803,17 @@ function openExerciseEditModal(ex, options = {}) {
     qs('#editExHoldWrap', overlay).classList.toggle('hidden', inputType !== 'hold');
   });
   qs('#editExInputType', overlay).dispatchEvent(new Event('change'));
+  const updateEditDuration = () => {
+    const rest = qs('#editExRest', overlay).value.trim();
+    showProgramEditDuration(overlay, { ...ex, active: qs('#editExActive', overlay).checked, inputType,
+      defaultSets: Math.max(1, Number(qs('#editExSets', overlay).value) || 1),
+      defaultReps: i18n.inputValue(qs('#editExReps', overlay)),
+      holdSeconds: Math.max(1, Number(qs('#editExHoldSeconds', overlay).value) || 15),
+      restSeconds: rest === '' ? 0 : Math.max(10, Number(rest) || 90) }, isNew);
+  };
+  overlay.addEventListener('input', updateEditDuration);
+  overlay.addEventListener('change', updateEditDuration);
+  updateEditDuration();
 
   qs('#btnAddExImage', overlay).addEventListener('click', () => qs('#editExImageInput', overlay).click());
   qs('#editExImageInput', overlay).addEventListener('change', async (e) => {
@@ -3395,6 +3881,7 @@ function openCardioEditModal(ex, options = {}) {
       <label class="field-label">קצב/מהירות ברירת מחדל</label>
       <input class="input" id="editCardioPace" value="${escapeAttr(ex.pace || '')}" placeholder='לדוגמה: 6-10 קמ"ש'>
       <label class="checkbox-row"><input type="checkbox" id="editCardioActive" ${ex.active !== false ? 'checked' : ''}> כלול באימונים הבאים</label>
+      <p class="edit-program-duration field-hint" data-no-translate></p>
       <div class="settings-actions">
         <button class="btn btn-primary" id="btnSaveExEdit">שמור</button>
         <button class="btn btn-secondary" id="btnCancelExEdit">ביטול</button>
@@ -3404,6 +3891,12 @@ function openCardioEditModal(ex, options = {}) {
   document.body.appendChild(overlay);
   i18n.localizeInput(qs('#editCardioName', overlay), ex.name, 'name');
   i18n.localizeInput(qs('#editCardioPace', overlay), ex.pace || '');
+  const updateEditDuration = () => showProgramEditDuration(overlay, { ...ex,
+    active: qs('#editCardioActive', overlay).checked,
+    durationMinutes: Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5) }, isNew);
+  overlay.addEventListener('input', updateEditDuration);
+  overlay.addEventListener('change', updateEditDuration);
+  updateEditDuration();
   const close = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   qs('.btnCloseExEdit', overlay).addEventListener('click', close);
@@ -3428,12 +3921,22 @@ function openCardioEditModal(ex, options = {}) {
   });
 }
 
+function showProgramEditDuration(overlay, proposed, isNew) {
+  const program = isNew ? [...exercises, proposed] : exercises.map((exercise) => exercise.id === proposed.id ? proposed : exercise);
+  const estimate = trainingTools.estimateWorkoutDuration(trainingTools.durationSession(program,
+    (exercise) => setsForWeek(exercise)), [], settings.restSeconds);
+  qs('.edit-program-duration', overlay).textContent = `${i18n.text('אחרי שמירת העריכה — זמן משוער לאימון שלי')}: ${durationEstimateText(estimate)}`;
+}
+
 function syncExerciseNameEverywhere(ex) {
   if (!activeSession) return;
   let changed = false;
-  activeSession.entries.forEach((e) => {
+  const entries = [...activeSession.entries, ...(activeSession.timeBudget?.deferred || []),
+    ...(activeSession.substitutions || []).map((item) => item.original)];
+  entries.forEach((e) => {
     if (e.exerciseId === ex.id && e.exerciseName !== ex.name) {
       e.exerciseName = ex.name;
+      if (e.exerciseSnapshot) e.exerciseSnapshot.name = ex.name;
       changed = true;
     }
   });
@@ -3483,6 +3986,10 @@ function makeSortable(listEl, onReorder) {
 
 function reorderActiveSessionToMatchExercises() {
   if (!activeSession) return;
+  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length || settings.training?.activePlan) {
+    showToast('הבחירה נשמרה לתוכנית. האימון המותאם הנוכחי נשאר ללא שינוי.');
+    return;
+  }
   const warmupEx = exercises.find((e) => e.id === 'warmup');
   const cooldownEx = exercises.find((e) => e.id === 'cooldown');
   const byExId = Object.fromEntries(activeSession.entries.map((e) => [e.exerciseId, e]));
@@ -3539,21 +4046,32 @@ function reorderActiveSessionToMatchExercises() {
 
 /* ---- photo modal ---- */
 function openPhotoModal(ex) {
-  if (!ex.images || !ex.images.length) { showToast('אין תמונה לתרגיל זה'); return; }
+  const info = library.exerciseGuide(ex);
+  const savedImages = ex.images || [];
+  if (!savedImages.length && !info) { showToast('אין תמונה לתרגיל זה'); return; }
+  const stockSchematics = ['images/ex_hammer.png', 'images/ex_plank.png', 'images/ex_shrugs.png'];
+  const images = info ? savedImages.filter((src) => !stockSchematics.includes(src)) : savedImages;
   const overlay = document.createElement('div');
   overlay.className = 'photo-overlay';
   overlay.innerHTML = `
     <div class="photo-modal">
       <div class="photo-modal-head"><b data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</b><button class="btn-icon btnClosePhoto">✕</button></div>
       <div class="photo-grid">
-        ${ex.images.map((src) => `<img src="${src}" alt="${escapeAttr(ex.name)}" loading="lazy">`).join('')}
+        ${images.map((src) => `<img src="${escapeAttr(src)}" alt="${escapeAttr(i18n.exerciseName(ex.name))}" loading="lazy">`).join('')}
+        ${!images.length && info ? `<figure class="exercise-technique">${library.exerciseIllustration(info, ex.inputType === 'hold')}
+          <figcaption><span>${escapeHtml(info.name.he)}</span> · <span>${ex.inputType === 'hold' ? 'עמדת החזקה' : 'התחלה ← סיום'}</span><br><span>הדגשת השרירים להמחשה בלבד</span></figcaption></figure>` : ''}
       </div>
-      ${ex.images.length > 1 ? '<div class="photo-caption">יש כמה אפשרויות ביצוע — בחרו לפי מה שזמין באולם</div>' : ''}
+      ${images.length > 1 ? '<div class="photo-caption">יש כמה אפשרויות ביצוע — בחרו לפי מה שזמין באולם</div>' : ''}
+      ${info ? '<button class="btn btn-secondary btnPhotoGuide">הדרכה וסרטונים</button>' : ''}
+      ${info && savedImages.some((src) => stockSchematics.includes(src)) ? `<details class="guide-saved-images"><summary>תמונות שמורות</summary>${savedImages
+        .filter((src) => stockSchematics.includes(src)).map((src) => `<img src="${escapeAttr(src)}" alt="${escapeAttr(i18n.exerciseName(ex.name))}" loading="lazy">`).join('')}</details>` : ''}
     </div>
   `;
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   qs('.btnClosePhoto', overlay).addEventListener('click', () => overlay.remove());
+  if (info) qs('.btnPhotoGuide', overlay).addEventListener('click', () => { overlay.remove(); openExerciseGuide(ex); });
   document.body.appendChild(overlay);
+  i18n.translateDOM(overlay);
 }
 
 /* ================= SETTINGS TAB ================= */
@@ -4147,11 +4665,15 @@ async function bootstrap() {
     native.onWorkoutActivityAvailable(() => {
       activitySnapshotKey = '';
       syncWorkoutActivity();
+      native.consumeWorkoutActivityAction?.().then((request) => { if (request) handleWorkoutActivityAction(request); });
     });
+    native.onWorkoutActivityAction?.((request) => handleWorkoutActivityAction(request));
     native.onAnnouncementError((data) => showToast('השמעת שמע נכשלה: ' + data.reason));
     native.onVoiceError((data) => {
       voiceListeningRevision++;
       voiceListeningActive = false;
+      voiceActivationPending = false;
+      voiceCountingState = null;
       pendingVoiceFinish = null;
       voiceListeningError = data.reason;
       updateVoiceBadgeForListeningState();
