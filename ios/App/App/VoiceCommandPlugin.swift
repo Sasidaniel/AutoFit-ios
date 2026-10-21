@@ -68,6 +68,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var task: SFSpeechRecognitionTask?
     private var utterance = SpeechUtteranceBuffer()
     private var pendingUtterance: DispatchWorkItem?
+    private var pendingRestart: DispatchWorkItem?
     private var generation = UUID()
     private var captureGeneration = UUID()
     private var lastInputName = ""
@@ -121,6 +122,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func applicationBecameActive() {
+        audioInterrupted = false
+        consecutiveFailures = 0
         if Self.usesRecordingSession && !Self.isListening && !BackgroundAnnouncerPlugin.isAnnouncing {
             restart(after: 0.2)
         }
@@ -130,6 +133,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             guard Self.usesRecordingSession, !self.audioInterrupted, !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             if notification.name == .AVAudioEngineConfigurationChange && self.audioEngine.isRunning { return }
+            if let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+               AVAudioSession.RouteChangeReason(rawValue: raw) == .categoryChange,
+               self.audioEngine.isRunning, WorkoutAudioSession.matches(recording: true) { return }
             self.end()
             self.restart(after: 0.2)
         }
@@ -178,7 +184,6 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             self.contextualPhrases = Array((call.getArray("contextualStrings") as? [String] ?? [])
                 .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
-                if self.audioInterrupted { throw self.voiceError("Microphone audio is interrupted by another app") }
                 if Self.usesRecordingSession && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
                 call.resolve(["inputName": AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? ""])
             } catch {
@@ -213,7 +218,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let currentGeneration = generation
 
-        try WorkoutAudioSession.activate(recording: true)
+        try WorkoutAudioSession.activate(recording: true, force: !audioEngine.isRunning)
+        audioInterrupted = false
 
         let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
         self.recognizer = recognizer
@@ -289,24 +295,20 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let result = result {
                     if !result.bestTranscription.formattedString.isEmpty { self.consecutiveFailures = 0 }
                     self.handle(transcript: result.bestTranscription.formattedString, isFinal: result.isFinal)
+                    guard self.generation == currentGeneration else { return }
                 }
                 if let error = error {
-                    self.consecutiveFailures += 1
-                    if self.consecutiveFailures >= 3 {
-                        Self.wantsMicrophone = false
-                        self.end()
-                        self.notifyListeners("voiceError", data: ["reason": error.localizedDescription])
-                        return
-                    }
-                }
-                if error != nil || (result?.isFinal ?? false) {
-                    self.restart(after: error == nil ? 0.05 : 1)
+                    self.retryRecognition(after: error)
+                } else if result?.isFinal == true {
+                    self.restart(after: 0.05)
                 }
             }
         }
     }
 
     private func endRecognition() {
+        pendingRestart?.cancel()
+        pendingRestart = nil
         VoiceCommandPlugin.isListening = false
         generation = UUID()
         pendingUtterance?.cancel()
@@ -344,18 +346,32 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func restart(after delay: TimeInterval) {
+        endRecognition()
         let currentGeneration = generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
             guard self.generation == currentGeneration, Self.usesRecordingSession, !self.audioInterrupted,
                   !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()
             } catch {
-                Self.wantsMicrophone = false
                 self.end()
-                self.notifyListeners("voiceError", data: ["reason": error.localizedDescription])
+                self.retryRecognition(after: error)
             }
         }
+        pendingRestart = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func retryRecognition(after error: Error) {
+        consecutiveFailures += 1
+        guard let delay = WorkoutAudioPolicy.recognitionRetryDelay(failures: consecutiveFailures) else {
+            Self.wantsMicrophone = false
+            end()
+            notifyListeners("voiceError", data: ["reason": error.localizedDescription])
+            return
+        }
+        restart(after: delay)
     }
 
     // Speech recognition may keep returning partial results until its minute

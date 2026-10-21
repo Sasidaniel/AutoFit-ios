@@ -22,14 +22,14 @@ enum WorkoutAudioSession {
             && session.mode == .default && session.categoryOptions == options(recording: recording, ducking: ducking)
     }
 
-    static func activate(recording: Bool, ducking: Bool = false) throws {
+    static func activate(recording: Bool, ducking: Bool = false, force: Bool = false) throws {
         let session = AVAudioSession.sharedInstance()
         let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
         let changed = !matches(recording: recording, ducking: ducking)
         if changed {
             try session.setCategory(category, mode: .default, options: options(recording: recording, ducking: ducking))
         }
-        if !active || changed {
+        if !active || changed || force {
             try session.setActive(true)
             active = true
         }

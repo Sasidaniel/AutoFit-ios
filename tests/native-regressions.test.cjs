@@ -579,6 +579,38 @@ test('late voice start cannot re-enable listening after leaving the workout tab'
   assert.equal(vm.runInContext('voiceListeningActive', context), false);
 });
 
+test('repeated foreground returns request mixed voice before a workout without disabling the saved setting', async () => {
+  const calls = [];
+  const context = vm.createContext({
+    native: {
+      isNative: () => true,
+      voiceStartListening: async () => { calls.push('start'); return { listening: true, inputName: 'iPhone' }; },
+      voiceStopListening: async () => { calls.push('stop'); return true; },
+    },
+    document: { visibilityState: 'visible' },
+    settings: { voiceCommandsEnabled: true },
+    activeSession: { running: false, entries: [] }, voiceExerciseNames: () => [],
+    showToast: () => assert.fail('Unexpected toast'),
+    updateVoiceBadgeForListeningState: () => {},
+  });
+  vm.runInContext(section('let voiceListeningActive = false;', 'function startRestTimer('), context);
+  await context.updateVoiceListeningState();
+  assert.equal(calls.length, 0);
+  vm.runInContext("currentTab = 'workout'", context);
+  for (let index = 0; index < 10; index++) {
+    context.document.visibilityState = 'visible';
+    await context.updateVoiceListeningState();
+    await context.updateVoiceListeningState();
+    assert.equal(vm.runInContext('voiceListeningActive', context), true);
+    context.document.visibilityState = 'hidden';
+    await context.updateVoiceListeningState();
+    assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  }
+  assert.deepEqual(calls, Array.from({ length: 10 }, () => ['start', 'stop']).flat());
+  assert.equal(context.settings.voiceCommandsEnabled, true);
+  assert.equal(context.activeSession.running, false);
+});
+
 test('PDF generation returns real PDF bytes using the bundled library', async () => {
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
   const context = vm.createContext({
@@ -2598,7 +2630,7 @@ test('native announcements use system-managed speech, without permanently duckin
   assert.doesNotMatch(read('ios/App/App/VoiceCommandPlugin.swift'), /\.duckOthers/);
   assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking \{ options.insert\(.duckOthers\) \}/);
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
-  assert.match(announcer, /usesRecordingSession, ducking: true/);
+  assert.match(announcer, /usesRecordingSession,\s*ducking: true/);
   assert.match(announcer, /audioEngine.stop\(\)[\s\S]*WorkoutAudioSession.deactivate\(\)/);
 });
 
@@ -2623,8 +2655,8 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.match(delegate, /options: AVAudioSession.CategoryOptions = \[.mixWithOthers\]/);
   assert.match(delegate, /let changed = !matches\(recording: recording, ducking: ducking\)/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
-  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession\)/);
-  assert.match(voice, /WorkoutAudioSession.activate\(recording: true\)/);
+  assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession,\s*force: audioInterrupted\)/);
+  assert.match(voice, /WorkoutAudioSession.activate\(recording: true, force: !audioEngine.isRunning\)/);
   assert.match(voice, /!BackgroundAnnouncerPlugin.isAnnouncing/);
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
   assert.match(delegate, /notifyOthersOnDeactivation/);
@@ -2656,6 +2688,51 @@ test('recognition task replacement reuses capture and synchronizes request acces
   assert.match(swift, /lock.lock\(\)[\s\S]*request\?\.endAudio\(\)[\s\S]*request = next[\s\S]*lock.unlock\(\)/);
   assert.match(swift, /lock.lock\(\)[\s\S]*request\?\.append\(buffer\)[\s\S]*lock.unlock\(\)/);
   assert.match(swift, /captureGeneration == capture/);
+});
+
+test('native interruption recovery wiring clears speech ownership before late delegate callbacks', () => {
+  const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  const interruption = audio.slice(audio.indexOf('@objc private func audioSessionInterrupted'),
+    audio.indexOf('@objc func speakNow'));
+  assert.match(interruption, /speechQueue.interrupt\(\)[\s\S]*stopSpeaking\(at: .immediate\)[\s\S]*releaseAnnouncementSession\(\)/);
+  assert.match(interruption, /notifyListeners\("announcementError"/);
+  const cleanup = audio.slice(audio.indexOf('private func releaseAnnouncementSession'),
+    audio.indexOf('private func startSilentLoop'));
+  assert.match(cleanup, /if !audioInterrupted \{[\s\S]*WorkoutAudioSession.deactivate\(\)/);
+  assert.match(cleanup, /Self.isAnnouncing = false[\s\S]*NotificationCenter.default.post\(name: Self.announcementEnded/);
+  assert.match(audio, /guard speechQueue.finish\(utterance, cancelled: cancelled\) else \{ return \}/);
+  assert.match(audio, /if cancelled \{[\s\S]*notifyListeners\("announcementError"/);
+  assert.doesNotMatch(audio, /pendingSpeechCount|recentAnnouncementIDs/);
+});
+
+test('native foreground and new announcement attempts cannot be permanently blocked by a stale interruption flag', () => {
+  for (const file of ['VoiceCommandPlugin.swift', 'BackgroundAnnouncerPlugin.swift']) {
+    const swift = read(`ios/App/App/${file}`);
+    assert.match(swift, /UIApplication.didBecomeActiveNotification/);
+    assert.match(swift, /applicationBecameActive\(\) \{[\s\S]*?audioInterrupted = false/);
+  }
+  const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  const speak = audio.slice(audio.indexOf('private func speak('), audio.indexOf('public func speechSynthesizer'));
+  assert.doesNotMatch(speak, /guard !audioInterrupted/);
+  assert.match(speak, /ducking: true, force: audioInterrupted\)[\s\S]*audioInterrupted = false/);
+  assert.match(speak, /catch \{\s*releaseAnnouncementSession\(\)\s*throw error/);
+  assert.match(read('ios/App/App/AppDelegate.swift'), /if !active \|\| changed \|\| force \{[\s\S]*setActive\(true\)/);
+});
+
+test('native recognition recovery coalesces restarts, ignores own category churn and retries transient failures', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  const restart = swift.slice(swift.indexOf('private func restart('), swift.indexOf('private func handle('));
+  assert.match(restart, /restart\(after delay: TimeInterval\) \{\s*endRecognition\(\)\s*let currentGeneration = generation/);
+  assert.match(restart, /pendingRestart = work[\s\S]*execute: work/);
+  assert.match(swift, /endRecognition\(\) \{\s*pendingRestart\?\.cancel\(\)\s*pendingRestart = nil/);
+  assert.match(restart, /self.generation == currentGeneration[\s\S]*!self.audioInterrupted/);
+  assert.match(restart, /catch \{\s*self.end\(\)\s*self.retryRecognition\(after: error\)/);
+  assert.match(restart, /guard let delay = WorkoutAudioPolicy.recognitionRetryDelay[\s\S]*Self.wantsMicrophone = false/);
+  assert.match(swift, /self.handle\(transcript:[^\n]*\n\s*guard self.generation == currentGeneration else \{ return \}/);
+  assert.match(swift, /== .categoryChange,\s*self.audioEngine.isRunning, WorkoutAudioSession.matches\(recording: true\) \{ return \}/);
+  const session = read('ios/App/App/AppDelegate.swift');
+  assert.match(session, /if !active \|\| changed \|\| force \{\s*try session.setActive\(true\)\s*active = true/);
+  assert.match(session, /if recording \{ try selectInput\(session\) \}/);
 });
 
 test('actual microphone name survives the bridge and route-change events', async () => {
@@ -3134,8 +3211,8 @@ test('timer speech carries the same stable identity through foreground and backg
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(payload.announcementID, 'rest:12345:done');
   const swift = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
-  assert.match(swift, /recentAnnouncementIDs.contains\(announcementID\)/);
-  assert.match(swift, /recentAnnouncementIDs.count > 512/);
+  assert.match(swift, /speechQueue.contains\(announcementID\)/);
+  assert.match(read('ios/App/App/WorkoutAudioPolicy.swift'), /completed.count > 512/);
   assert.match(swift, /self\?\.speak\(announcement.text, language: announcement.language,\s*announcementID: announcement.identifier\)/);
   assert.match(swift, /restorePlaybackAfterMicrophone/);
 });

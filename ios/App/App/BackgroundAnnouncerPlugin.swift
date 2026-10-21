@@ -32,8 +32,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
 
     private let speechSynthesizer = AVSpeechSynthesizer()
     private var pendingTimers: [Timer] = []
-    private var pendingSpeechCount = 0
-    private var recentAnnouncementIDs: [String] = []
+    private var speechQueue = WorkoutAnnouncementQueue()
     static var isAnnouncing = false
     static var isKeepingAlive = false
     static let announcementStarted = Notification.Name("AutoFitAnnouncementStarted")
@@ -60,6 +59,8 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(audioSessionInterrupted),
             name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationBecameActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     deinit {
@@ -85,6 +86,13 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         DispatchQueue.main.async { self.restorePlaybackAfterMicrophone() }
     }
 
+    @objc private func applicationBecameActive() {
+        // iOS may omit interruption-ended while suspended. Activation remains
+        // authoritative: an unavailable session still throws a visible error.
+        audioInterrupted = false
+        restorePlaybackAfterMicrophone()
+    }
+
     @objc private func audioSessionInterrupted(_ notification: Notification) {
         guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -96,6 +104,14 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                 self.playerNode.stop()
                 self.beepNode.stop()
                 self.audioEngine.stop()
+                if !self.speechQueue.isEmpty {
+                    self.speechQueue.interrupt()
+                    self.speechSynthesizer.stopSpeaking(at: .immediate)
+                    self.releaseAnnouncementSession()
+                    self.notifyListeners("announcementError", data: [
+                        "reason": "Announcement interrupted by another audio session"
+                    ])
+                }
             } else if AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
                 self.restorePlaybackAfterMicrophone()
             }
@@ -222,50 +238,53 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             throw NSError(domain: "AutoFit.Audio", code: 5,
                 userInfo: [NSLocalizedDescriptionKey: "Requested announcement voice is unavailable"])
         }
-        if let announcementID = announcementID, recentAnnouncementIDs.contains(announcementID) { return }
-        guard !audioInterrupted else {
-            throw NSError(domain: "AutoFit.Audio", code: 4,
-                userInfo: [NSLocalizedDescriptionKey: "Announcement interrupted by another audio session"])
-        }
-        if pendingSpeechCount == 0 {
+        if let announcementID = announcementID, speechQueue.contains(announcementID) { return }
+        if speechQueue.isEmpty {
             Self.isAnnouncing = true
             NotificationCenter.default.post(name: Self.announcementStarted, object: nil)
             do {
-                try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.usesRecordingSession, ducking: true)
+                try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.usesRecordingSession,
+                                                 ducking: true, force: audioInterrupted)
+                audioInterrupted = false
             } catch {
-                finishAnnouncement()
+                releaseAnnouncementSession()
                 throw error
             }
         }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        pendingSpeechCount += 1
+        speechQueue.insert(utterance, identifier: announcementID)
         speechSynthesizer.speak(utterance)
-        if let announcementID = announcementID {
-            recentAnnouncementIDs.append(announcementID)
-            if recentAnnouncementIDs.count > 512 { recentAnnouncementIDs.removeFirst() }
-        }
     }
 
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.finishAnnouncement() }
+        DispatchQueue.main.async { self.finishAnnouncement(utterance, cancelled: false) }
     }
 
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.finishAnnouncement() }
+        DispatchQueue.main.async { self.finishAnnouncement(utterance, cancelled: true) }
     }
 
-    private func finishAnnouncement() {
-        pendingSpeechCount = max(0, pendingSpeechCount - 1)
-        guard pendingSpeechCount == 0 else { return }
+    private func finishAnnouncement(_ utterance: AVSpeechUtterance, cancelled: Bool) {
+        guard speechQueue.finish(utterance, cancelled: cancelled) else { return }
+        if cancelled {
+            notifyListeners("announcementError", data: ["reason": "Announcement playback was cancelled"])
+        }
+        guard speechQueue.isEmpty else { return }
+        releaseAnnouncementSession()
+    }
+
+    private func releaseAnnouncementSession() {
         playerNode.stop()
         beepNode.stop()
         audioEngine.stop()
-        do {
-            try WorkoutAudioSession.deactivate()
-        } catch {
-            notifyListeners("announcementError", data: ["reason": error.localizedDescription])
+        if !audioInterrupted {
+            do {
+                try WorkoutAudioSession.deactivate()
+            } catch {
+                notifyListeners("announcementError", data: ["reason": error.localizedDescription])
+            }
         }
         Self.isAnnouncing = false
         if Self.isKeepingAlive && !audioInterrupted {
@@ -283,7 +302,9 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     // for the scheduled timers above to actually fire while minimized).
     private func startSilentLoop() throws {
         if !Self.isAnnouncing {
-            try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.usesRecordingSession)
+            try WorkoutAudioSession.activate(recording: VoiceCommandPlugin.usesRecordingSession,
+                                             force: audioInterrupted)
+            audioInterrupted = false
         }
         if silentBuffer == nil {
             guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1) else {

@@ -1,5 +1,39 @@
 # AutoFit release notes
 
+## Unreleased: Voice and music lifecycle recovery
+
+An internal TestFlight release was approved on 2026-10-21, but release/build
+availability is still pending. No new Apple build number has been verified or
+assigned, and no build has been uploaded. Local validation: all 290 Node
+regressions, test syntax and whitespace checks pass. Native compilation and the
+four Swift suites have not run in this Windows environment; the added Swift
+recovery cases and actual device behavior remain unverified.
+
+- Keeps voice enabled on the visible Workout tab, including before starting a
+  workout. Listening/keepalive continue to mix with other apps; only announcements
+  request temporary ducking. No HFP or voice-chat routing is introduced, and the
+  existing high-quality Bluetooth / iPhone microphone selection is retained.
+- Returning to the foreground clears stale interruption gates. New audio requests
+  attempt real session activation and report an activation failure instead of
+  permanently rejecting every subsequent announcement from a cached flag.
+- An external interruption explicitly cancels and clears the affected speech
+  queue, releases announcement ownership and reports the interruption. Late
+  callbacks cannot end a newer announcement or restart the microphone over it.
+  Interrupted, time-sensitive announcements are not automatically replayed;
+  their IDs remain retryable, while completed announcements stay deduplicated.
+- Recognition restarts are coalesced and invalidate old callbacks immediately.
+  Transient recovery failures retry with bounded backoff before surfacing a
+  terminal error; stopping, backgrounding or app speech cancels pending retries.
+  Healthy capture ignores its own category-change notification; replacing a
+  recognition task preserves running capture without forcing reactivation.
+- Device acceptance remains required: repeated Apple Music round-trips before
+  and during a workout, interruption during speech followed by later working
+  announcements, music quality/pause/resume, and Hebrew/English exercise-name,
+  counting, target completion, undo, rest and summaries. Unsupported Bluetooth
+  microphones still use the iPhone microphone, which must be within speaking
+  range. Source-level regressions do not establish real-device recognition or
+  identify the exact physical cause of the reported initial music stop.
+
 ## Version 1.0 (29): Library, insights and hands-free training
 
 The user explicitly approved an internal TestFlight build on 2026-10-20.
