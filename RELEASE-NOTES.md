@@ -1,13 +1,18 @@
 # AutoFit release notes
 
-## Unreleased: Voice and music lifecycle recovery
+## Version 1.0 (30): Voice and music lifecycle recovery
 
-An internal TestFlight release was approved on 2026-10-21, but release/build
-availability is still pending. No new Apple build number has been verified or
-assigned, and no build has been uploaded. Local validation: all 290 Node
-regressions, test syntax and whitespace checks pass. Native compilation and the
-four Swift suites have not run in this Windows environment; the added Swift
-recovery cases and actual device behavior remain unverified.
+An internal TestFlight release was approved on 2026-10-21 and is verified
+available for internal testing. Source: `082af03ae08f0d36334e23d0a4ea81208ffe68e6`.
+Actions run [39572840557](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39572840557)
+(workflow run #31, explicit Apple build **30**) passed the Node 22 regressions,
+all four Swift suites including the added recovery tests, and signed iOS
+archive/export/upload. Local validation: all 290 Node regressions, test syntax
+and whitespace checks pass.
+Apple build: `868bcebf-84bb-40d9-9963-d12d0f4a5a1b`, processing `VALID`,
+internal `IN_BETA_TESTING`, exempt encryption `false`, external
+`READY_FOR_BETA_SUBMISSION` (not submitted). No App Store or external release.
+Actual iPhone music/recognition acceptance remains unverified.
 
 - Keeps voice enabled on the visible Workout tab, including before starting a
   workout. Listening/keepalive continue to mix with other apps; only announcements
