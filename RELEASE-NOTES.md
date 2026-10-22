@@ -1,12 +1,19 @@
 # AutoFit release notes
 
-## Version 1.0 (31): Personal training tools (uploaded, Apple confirmation pending)
+## Version 1.0 (31): Personal training tools
 
 This phase is based on the completed build-30 release, including `9e035c7`.
 It was developed locally and reviewed in the browser before the user explicitly
 approved an internal TestFlight release on 2026-10-21, including publishing all
-source and documentation changes to GitHub. The signed native build and upload
-have passed; Apple internal-distribution confirmation is still pending.
+source and documentation changes to GitHub. The release is verified available
+for internal TestFlight testing on 2026-10-22.
+Released binary source: `85648f0e94fded1ca511daea9040471001ce14d2`.
+The [successful native release](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39736319112)
+passed 394 Node 22 regressions, all four Swift suites, signed app/widget
+archive/export/upload and actual Apple availability verification.
+Apple build: `c6263e82-ff41-4e7f-8028-b1ce78903269`, processing `VALID`,
+internal `IN_BETA_TESTING`, non-exempt encryption `false`, external
+`READY_FOR_BETA_SUBMISSION` (not submitted).
 Private release credentials and `PROJECT-NOTES.md` remain excluded from Git.
 The native audio policy from build 30 is unchanged. The approved widget request
 adds Live Activity controls and bridge/state changes, not native audio changes.
@@ -21,6 +28,13 @@ It never creates testers or submits an external beta. The separate
 without rebuilding or uploading the same Apple build number again.
 Future binaries explicitly declare `ITSAppUsesNonExemptEncryption=false`;
 the already-uploaded build uses the equivalent App Store Connect metadata.
+Apple initially reported `MISSING_EXPORT_COMPLIANCE` after successful processing.
+The [successful delivery completion](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39738262703),
+using configuration source `a01b9cb11429bf1ecc8c2d1cc694a2f81daed460`,
+passed five targeted Node 22 verification tests, applied the established
+encryption declaration and confirmed `VALID / IN_BETA_TESTING`.
+The existing binary was not rebuilt or re-uploaded. All app changes and
+documentation are published to GitHub; private credentials remain local.
 
 The first build attempt
 ([39619157490](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39619157490))
