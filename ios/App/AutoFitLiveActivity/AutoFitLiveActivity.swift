@@ -147,17 +147,31 @@ private struct AdaptiveWorkoutSummary: View {
 }
 
 @main
-struct AutoFitLiveActivity: Widget {
-    @WidgetConfigurationBuilder
-    var body: some WidgetConfiguration {
+struct AutoFitWidgetBundle: WidgetBundle {
+    @WidgetBundleBuilder
+    var body: some Widget {
         if #available(iOS 18.0, *) {
-            configuration.supplementalActivityFamilies([.small, .medium])
-        } else {
-            configuration
+            AutoFitWatchLiveActivity()
+        }
+        if #unavailable(iOS 18.0) {
+            AutoFitLiveActivity()
         }
     }
+}
 
-    private var configuration: some WidgetConfiguration {
+@available(iOS 18.0, *)
+private struct AutoFitWatchLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        AutoFitLiveActivity.configuration.supplementalActivityFamilies([.small, .medium])
+    }
+}
+
+struct AutoFitLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        Self.configuration
+    }
+
+    fileprivate static var configuration: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
             Group {
                 if #available(iOS 18.0, *) {

@@ -2750,6 +2750,9 @@ test('Live Activity extension is embedded, shares its exact data type, signs sep
   assert.match(widget, /Button\(intent: WorkoutControlIntent/);
   assert.match(widget, /#available\(iOS 17\.0/);
   assert.match(widget, /supplementalActivityFamilies\(\[\.small, \.medium\]\)/);
+  assert.doesNotMatch(widget, /@WidgetConfigurationBuilder/);
+  assert.match(widget, /struct AutoFitWidgetBundle: WidgetBundle/);
+  assert.match(widget, /#unavailable\(iOS 18\.0\)/);
   assert.match(read('ios/App/App/WorkoutActivityAttributes.swift'), /struct WorkoutControlIntent: LiveActivityIntent/);
   assert.match(read('ios/App/App/LiveActivityBridgePlugin.swift'), /AutoFitDismissedActivitySession/);
   assert.match(read('ios/App/App/SceneDelegate.swift'), /connectionOptions.urlContexts.forEach/);

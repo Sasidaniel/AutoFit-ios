@@ -14,6 +14,15 @@ The release workflow now verifies Apple's actual `VALID / IN_BETA_TESTING`
 status after upload using the existing CI-only App Store Connect credentials.
 It does not submit an external beta or an App Store release.
 
+The first build attempt
+([39619157490](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39619157490))
+passed all 394 JavaScript regressions and four Swift suites, but the widget
+archive failed because `WidgetConfigurationBuilder` is not an SDK API and the
+availability branches returned different configuration types. Export/upload
+were skipped, so Apple build 31 was not consumed. The retry uses the supported
+`WidgetBundleBuilder` to register exactly one OS-appropriate widget: the
+iOS 18+ Watch-capable configuration or the existing older-iOS configuration.
+
 ### Review flows
 
 - **Workout / Exercises > Photo > Instructions and videos:** all 57 built-in
