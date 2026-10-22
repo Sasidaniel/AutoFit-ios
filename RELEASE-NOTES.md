@@ -21,7 +21,11 @@ archive failed because `WidgetConfigurationBuilder` is not an SDK API and the
 availability branches returned different configuration types. Export/upload
 were skipped, so Apple build 31 was not consumed. The retry uses the supported
 `WidgetBundleBuilder` to register exactly one OS-appropriate widget: the
-iOS 18+ Watch-capable configuration or the existing older-iOS configuration.
+iOS 18+ Watch-capable configuration or the existing iOS 17 configuration.
+The first retry exposed a further compiler type-inference failure in conditional
+bundle registration. Both branches now explicitly use the SDK's public,
+non-generic `WidgetBundleBuilder.buildOptional` result and
+`buildLimitedAvailability` rather than an unsupported conditional builder path.
 
 ### Review flows
 

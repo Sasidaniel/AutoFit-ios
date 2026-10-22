@@ -148,14 +148,20 @@ private struct AdaptiveWorkoutSummary: View {
 
 @main
 struct AutoFitWidgetBundle: WidgetBundle {
-    @WidgetBundleBuilder
     var body: some Widget {
+        configuredWidget()
+    }
+
+    private func configuredWidget() -> some Widget {
+        // The non-generic builder result keeps both OS branches the same type.
         if #available(iOS 18.0, *) {
-            AutoFitWatchLiveActivity()
+            return WidgetBundleBuilder.buildOptional(
+                WidgetBundleBuilder.buildLimitedAvailability(AutoFitWatchLiveActivity())
+            )
         }
-        if #unavailable(iOS 18.0) {
-            AutoFitLiveActivity()
-        }
+        return WidgetBundleBuilder.buildOptional(
+            WidgetBundleBuilder.buildLimitedAvailability(AutoFitLiveActivity())
+        )
     }
 }
 
