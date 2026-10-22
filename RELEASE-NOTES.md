@@ -1,18 +1,26 @@
 # AutoFit release notes
 
-## Version 1.0 (31): Personal training tools (release approved, native build pending)
+## Version 1.0 (31): Personal training tools (uploaded, Apple confirmation pending)
 
 This phase is based on the completed build-30 release, including `9e035c7`.
 It was developed locally and reviewed in the browser before the user explicitly
 approved an internal TestFlight release on 2026-10-21, including publishing all
-source and documentation changes to GitHub. Native build and Apple distribution
-confirmation are still pending; approval is not evidence of a successful upload.
+source and documentation changes to GitHub. The signed native build and upload
+have passed; Apple internal-distribution confirmation is still pending.
 Private release credentials and `PROJECT-NOTES.md` remain excluded from Git.
 The native audio policy from build 30 is unchanged. The approved widget request
 adds Live Activity controls and bridge/state changes, not native audio changes.
 The release workflow now verifies Apple's actual `VALID / IN_BETA_TESTING`
 status after upload using the existing CI-only App Store Connect credentials.
 It does not submit an external beta or an App Store release.
+The shared verification script also applies the same non-exempt-encryption
+declaration used for previous releases if Apple reports missing compliance,
+and enables only existing internal tester groups when the build is ready.
+It never creates testers or submits an external beta. The separate
+`ios-testflight-status.yml` workflow can finish an already-uploaded build
+without rebuilding or uploading the same Apple build number again.
+Future binaries explicitly declare `ITSAppUsesNonExemptEncryption=false`;
+the already-uploaded build uses the equivalent App Store Connect metadata.
 
 The first build attempt
 ([39619157490](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/39619157490))
@@ -232,9 +240,10 @@ Local Node regressions cover the existing native/controller behavior plus the
 new pure rules and real-controller actions, including write-failure rollback,
 plan restoration, conservative evidence, no transferred replacement loads,
 target persistence, catalog boundaries, dose estimates and note sharing.
-All 394 regressions pass locally (the original 290 plus 104 added tests);
+All 396 regressions pass locally (the original 290 plus 106 added tests);
 all 12 JavaScript modules pass byte-preserving ES-module syntax checks, and
-`git diff --check` passes. No iOS compile or new Swift execution was performed.
+`git diff --check` passes. The Mac release run also passed all four Swift suites,
+signed iOS app/widget archive, export and TestFlight upload.
 Isolated browser acceptance exercises real app controls, including:
 time selection across reload and restore; new-load acceptance without altering
 the active session; swap/restore retaining typed notes and weights; save and
@@ -256,12 +265,12 @@ editing. Existing per-set loads, ratings and optional notes remain available.
 Walking/jogging plans give a gentle starting dose and conservative repeat/add-time
 guidance, not medical advice or a claim of individualized physiological prediction.
 
-Native compilation, real microphone recognition/recovery, music quality and
-pause/duck/resume, physical-device accessibility, HealthKit and iCloud round trips
-and the new AppIntent/Watch controls still require a Mac build and iPhone/Watch
-acceptance pass. Foundation state tests were extended but cannot run here because
-Swift is unavailable. Windows/browser checks do not establish
-those results, and browser mode contains no native microphone simulator.
+Native compilation and the four Swift suites are now verified on the Mac CI
+runner. Real microphone recognition/recovery, music quality and pause/duck/resume,
+physical-device accessibility, HealthKit/iCloud round trips and the new
+AppIntent/Watch controls still require an iPhone/Watch acceptance pass.
+Windows/browser checks do not establish those physical-device results,
+and browser mode contains no native microphone simulator.
 
 For local review, serve **this worktree's `www` only**, bound to `127.0.0.1` on
 a checked free port (for example `python -m http.server 8941 --bind 127.0.0.1

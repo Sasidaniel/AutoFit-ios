@@ -46,18 +46,21 @@ function section(start, end) {
 }
 
 async function runAppleReleaseCheck(responses) {
-  const workflow = read('.github/workflows/ios-build.yml').replace(/\r\n/g, '\n');
-  const script = workflow.split("node <<'NODE'\n")[1]?.split('\n          NODE')[0];
-  assert.ok(script, 'Missing Apple release verifier');
+  const script = read('.github/scripts/verify-testflight.cjs');
+  for (const file of ['ios-build.yml', 'ios-testflight-status.yml']) {
+    assert.match(read('.github/workflows/' + file), /node \.github\/scripts\/verify-testflight\.cjs/);
+  }
   const { privateKey } = require('node:crypto').generateKeyPairSync('ec', { namedCurve: 'prime256v1',
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
   const messages = [], requests = [], summaries = [];
   const process = { env: { APPSTORE_API_KEY_ID: 'test-key', APPSTORE_API_ISSUER_ID: 'test-issuer',
-    APP_BUILD_NUMBER: '31', HOME: 'test-home', GITHUB_STEP_SUMMARY: 'test-summary', GITHUB_SHA: 'test-source' } };
+    APP_BUILD_NUMBER: '31', APPSTORE_API_KEY_P8_BASE64: Buffer.from(privateKey).toString('base64'),
+    GITHUB_STEP_SUMMARY: 'test-summary', GITHUB_SHA: 'test-source' } };
   const context = nodeVM.createContext({
     Buffer, Date, AbortSignal, encodeURIComponent, process,
     require: (name) => name === 'node:fs'
-      ? { readFileSync: () => privateKey, appendFileSync: (path, value) => summaries.push(value) }
+      ? { readFileSync: () => '<key>ITSAppUsesNonExemptEncryption</key><false/>',
+        appendFileSync: (path, value) => summaries.push(value) }
       : require(name),
     console: { log: (...values) => messages.push(values.join(' ')), error: (value) => messages.push(value) },
     setTimeout: (callback) => { callback(); return 0; },
@@ -65,7 +68,7 @@ async function runAppleReleaseCheck(responses) {
       requests.push({ url, options });
       const next = responses.shift();
       assert.ok(next, 'Unexpected Apple API request');
-      return { ok: !next.status || next.status === 200, status: next.status || 200, json: async () => next.body };
+      return { ok: !next.status || next.status >= 200 && next.status < 300, status: next.status || 200, json: async () => next.body };
     },
   });
   await nodeVM.runInContext(script, context);
@@ -73,14 +76,14 @@ async function runAppleReleaseCheck(responses) {
 }
 const appleAppResponse = { body: { data: [{ id: 'autofit-app' }] } };
 function appleBuildResponse(processing, internal = 'IN_BETA_TESTING') {
-  return { body: { data: [{ id: 'apple-build', attributes: { version: '31', processingState: processing },
+  return { body: { data: [{ id: 'apple-build', attributes: { version: '31', processingState: processing, usesNonExemptEncryption: false },
     relationships: { buildBetaDetail: { data: { id: 'beta-detail' } } } }],
     included: [{ type: 'buildBetaDetails', id: 'beta-detail', attributes: {
       internalBuildState: internal, externalBuildState: 'READY_FOR_BETA_SUBMISSION' } }] } };
 }
 test('release verifier waits for actual Apple internal availability and never submits externally', async () => {
   const result = await runAppleReleaseCheck([appleAppResponse, { body: { data: [] } },
-    appleBuildResponse('PROCESSING', 'PROCESSING'), appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'),
+    appleBuildResponse('PROCESSING', 'PROCESSING'), appleBuildResponse('VALID', 'PROCESSING'),
     appleBuildResponse('VALID')]);
   assert.equal(result.process.exitCode, undefined);
   assert.equal(result.requests.length, 5);
@@ -88,7 +91,7 @@ test('release verifier waits for actual Apple internal availability and never su
   assert.match(result.summaries[0], /VALID \/ IN_BETA_TESTING/);
   for (const { url, options } of result.requests) {
     assert.match(url, /^https:\/\/api\.appstoreconnect\.apple\.com\/v1\/(?:apps|builds)\?/);
-    assert.equal(options.method, undefined);
+    assert.equal(options.method, 'GET');
     const jwt = options.headers.Authorization.slice(7).split('.');
     assert.equal(Buffer.from(jwt[2], 'base64url').length, 64);
     assert.equal(JSON.parse(Buffer.from(jwt[1], 'base64url')).aud, 'appstoreconnect-v1');
@@ -106,6 +109,34 @@ test('release verifier surfaces Apple API authentication failure without leaking
   assert.equal(result.summaries.length, 0);
   assert.ok(result.messages.includes('Apple verification failed: HTTP 401'));
   assert.doesNotMatch(result.messages.join('\n'), /PRIVATE KEY|Bearer|test-issuer/);
+});
+test('internal delivery applies the established encryption exemption and selects existing internal groups only', async () => {
+  const missing = appleBuildResponse('VALID', 'MISSING_EXPORT_COMPLIANCE');
+  missing.body.data[0].attributes.usesNonExemptEncryption = null;
+  const result = await runAppleReleaseCheck([appleAppResponse, missing, { status: 200, body: {} },
+    appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'),
+    { body: { data: [{ id: 'internal-group', attributes: { isInternalGroup: true } },
+      { id: 'external-group', attributes: { isInternalGroup: false } }] } },
+    { status: 204 }, appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'),
+    { body: { data: [{ id: 'internal-group', attributes: { isInternalGroup: true } }] } },
+    appleBuildResponse('VALID')]);
+  assert.equal(result.process.exitCode, undefined);
+  const writes = result.requests.filter(({ options }) => options.method !== 'GET');
+  assert.equal(writes.length, 2);
+  assert.equal(writes[0].options.method, 'PATCH');
+  assert.equal(JSON.parse(writes[0].options.body).data.attributes.usesNonExemptEncryption, false);
+  assert.match(writes[1].url, /betaGroups\/internal-group\/relationships\/builds$/);
+  assert.equal(JSON.parse(writes[1].options.body).data[0].id, 'apple-build');
+  assert.equal(result.summaries.length, 1);
+  assert.ok(result.requests.every(({ url }) => !url.includes('external-group')));
+});
+test('internal delivery refuses an inconsistent non-exempt encryption declaration without changing it', async () => {
+  const response = appleBuildResponse('VALID');
+  response.body.data[0].attributes.usesNonExemptEncryption = true;
+  const result = await runAppleReleaseCheck([appleAppResponse, response]);
+  assert.equal(result.process.exitCode, 1);
+  assert.ok(result.requests.every(({ options }) => options.method === 'GET'));
+  assert.ok(result.messages.some((message) => message.includes('encryption declaration differs')));
 });
 
 test('phase-one catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
