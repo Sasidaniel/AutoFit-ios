@@ -1,23 +1,66 @@
 # AutoFit release notes
 
-## 1.0 (32) - Approved internal TestFlight release candidate (2026-10-25)
+## 1.0 (32) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation and
-releasing this update to internal TestFlight. This candidate includes the
+releasing this update to internal TestFlight. This release includes the
 commercial-readiness review, saved workouts, catalog/media expansion, home and
 split planning, jump-rope intervals, workout usability and full catalog browsing
-documented below. Local validation: **464 passing regressions**, 17 ES module
-syntax checks and bilingual browser acceptance. App shell: `autofit-v63`.
+documented below. **464 Node 22 regressions, all four Swift suites, signed
+app/widget archive, export and upload passed in macOS CI.** Local validation also
+covered 17 ES module syntax checks and bilingual browser acceptance.
+App shell: `autofit-v63`.
 
-**Delivery is pending native CI and Apple verification.** A workflow dispatch or
-successful upload alone is not proof that the build is available in TestFlight.
-The verified source, run and Apple build outcome will be recorded after delivery.
-The previous available internal build is 1.0 (31).
+**Apple verified build 32 as VALID / IN_BETA_TESTING at 2026-10-25 08:55:56 UTC.**
+Released binary source:
+[`f6cb3b60a5c7b84ac20497c9483fe65c2e03816a`](https://github.com/Sasidaniel/AutoFit-ios/commit/f6cb3b60a5c7b84ac20497c9483fe65c2e03816a).
+[Successful native release run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40178292936).
+Apple build ID: `b511cd57-fa4d-470c-8841-f4d974243885`.
+External state: `READY_FOR_BETA_SUBMISSION`; no external beta or public App Store
+submission was performed. This replaces internal build 31 for new testing.
 
 This approval does not launch paid subscriptions, activate identity providers,
 certify the draft legal documents or submit the app to the public App Store.
 Purchases remain disabled. Real-device audio, touch, background timer and workout
 data-preservation acceptance remain for the owner's iPhone testing.
+
+### Build 32 iPhone acceptance checklist
+
+1. Update in place from TestFlight; do not uninstall to test the update. Confirm
+   existing history, custom names, photos and selected exercise order remain.
+   Export existing data from the consent screen if needed before accepting.
+2. Review the separate draft terms/privacy confirmations. System microphone,
+   Health and notification permissions remain separate; no purchase or marketing
+   consent is bundled into this confirmation.
+3. Open Exercises: all 130 built-in definitions should be reachable through
+   categories/search, even if only 51 are saved and 25 selected. Search incline
+   chest pressing, overhead cable triceps and jump rope. Browsing must not change
+   the workout; only explicitly chosen entries should be added.
+4. Save two differently named workouts, reopen them and select a session. Verify
+   starting another plan is blocked while current work contains entered data or
+   is running/paused. Do not cancel real recorded work merely to test the guard.
+5. Review home plans for actual equipment, especially chair versus bench and
+   the TRX installation acknowledgment. Review full-body, A/B and A/B/C session
+   letters, exercise choices and disclosed duration/coverage limitations.
+6. Start a beginner rope workout: two-minute walking warmup, 20-second jump and
+   40-second recovery rounds, then two-minute cooldown. Pause/resume and reopen
+   the app without skipping or resetting the interval position. Compare
+   background timing/announcements against elapsed wall-clock time.
+7. Scroll the running workout and use the header-level equipment action.
+   Complete a test set before replacement, then restore it: the original result
+   must remain and replacement loads must not inherit the original weight.
+8. Test voice with playing music first in automatic mode, keeping the iPhone
+   microphone uncovered. Then explicitly test headphone mode; call-quality
+   music in that mode is a disclosed tradeoff, not proof of a regression.
+   Check the displayed input name and permission/recovery errors.
+9. Confirm a saved workout's actual Apple Health write outcome, including a
+   permission denial, rather than assuming a success toast means Health saved.
+10. Export a JSON copy before considering reinstall/reset. New sensitive iCloud
+    backups are disabled, not an alternative automatic backup. Test irreversible
+    deletion only on disposable data, never the owner's only real history.
+11. Confirm subscription purchases stay disabled and no Apple/Google account or
+    free trial is falsely shown as active. This is an internal feature-review
+    build, not a public commercial launch.
 
 ## Build 32: Full catalog visibility in exercise categories
 
@@ -67,8 +110,9 @@ are preserved.
   Bluetooth call routing and warns that music quality can decrease. An unavailable
   headphone microphone produces an error, not a silent phone-microphone fallback.
   This is a route-selection option, not a verified fix for every headset.
-  Swift compilation, recognition with playing music, interruptions and actual
-  headphone routing remain unverified on this Windows development host.
+  Native compilation and the Swift audio-policy suite passed in release CI.
+  Recognition with playing music, interruptions and actual headphone routing
+  still require physical-device acceptance.
 - **Jump-rope builder:** Home and Exercises offer beginner, intermediate and
   advanced workouts with 10/15/20/30-minute budgets, location and an explicit
   equipment/clear-space acknowledgment. Presets use 20/40, 40/40 and 60/30-second
@@ -139,20 +183,22 @@ outside this release approval.
   prevents delayed callbacks from recreating local records. Health records,
   shared files, system backups and other devices are not silently erased.
   A JSON import interface is not included.
-- **Exercises > Add new exercises:** explicitly install 72 additional inactive
+- **Exercises > Add new exercises:** explicitly install 73 additional inactive
   exercises without replacing the user's program, names, photos or records,
   or reinstating deleted older library entries. The combined seed/planning
-  catalog now has **129 definitions** (25 seed, 98 library and 6 planning),
-  with **115 authored instructional guides**. This phase adds 72 definitions:
-  the initial 24 plus **48 more** in response to the larger-database request.
+  catalog now has **130 definitions** (25 seed, 99 library and 6 planning),
+  with **116 authored instructional guides**. This phase adds 73 definitions:
+  the initial 24 plus **48 more** in response to the larger-database request
+  and jump rope in the follow-up.
   The top of Exercises distinguishes the built-in total from the installed
   library and selected-workout counts. Equipment/measurement variants count as
   separate definitions; custom entries do not inflate the built-in total.
   All new guides have Hebrew/English instructions and original local diagrams;
-  all **72 new guides now have selected instructional video links**, completing
-  video coverage across **all 115 authored guides / 129 built-in definitions**.
+  all **73 new guides now have selected instructional video links**, completing
+  video coverage across **all 116 authored guides / 130 built-in definitions**.
   Publisher pages and YouTube publisher/title metadata were checked on
-  2026-10-22. Floor/bench, supported/unsupported, bodyweight/weighted, grip and
+  2026-10-22, with jump rope checked on 2026-10-25. Floor/bench,
+  supported/unsupported, bodyweight/weighted, grip and
   hold variants retain separate appropriate demonstrations. Links open only
   on request at the source; no third-party media or thumbnails are bundled or
   preloaded. Videos generally require internet and are in English; authored
@@ -213,20 +259,20 @@ Face ID is a device lock, not an AutoFit online account.
 **Health data must not be newly backed up to iCloud.** Apple Review 5.1.3(ii)
 prohibits storing personal health information in iCloud, even with consent.
 New sensitive KVS writes and automatic legacy-cloud restoration are therefore
-disabled locally. Existing copies are retained unless explicitly erased.
+disabled in build 32. Existing copies are retained unless explicitly erased.
 Legacy reads may be cached and do not prove the latest server state; requested
 cloud erasure is not confirmed global erasure. Sensitive WebKit/local-storage
 exclusion from system/iCloud backups, native legacy-recovery availability and a
 permitted future backup architecture still require device-level work and review.
-The already-released build-31 behavior has not been changed remotely.
+These protections apply on updating; an installed build 31 is not changed remotely.
 
 **Billing is not launch-ready.** Both public and native configurations disable
 purchases and contain no live product IDs. No App Store products, subscription
 group, real price or introductory offer were created. A published policy, owner
 approval, Apple agreements/banking/tax details, privacy labels, storefront and
 localization review, sandbox/device verification and a clear paid-feature policy
-are required before enabling billing. Native StoreKit changes have not been
-compiled on this Windows host; no sandbox purchase has been attempted.
+are required before enabling billing. Native StoreKit code compiled in the
+successful release archive; no sandbox or real purchase has been attempted.
 
 Before accepting revenue, obtain Israeli accounting/legal advice on the
 appropriate business/VAT registration and classification, income tax, National
@@ -239,7 +285,8 @@ appropriate DSA trader declarations/contact details and territory-specific revie
 
 ### Evidence and acceptance
 
-The local JavaScript suites pass **442 regressions**, including draft consent,
+The initial commercial-review JavaScript suites passed **442 regressions**
+(the complete release candidate now passes **464**), including draft consent,
 exports/deletion failures, deferred writes, real commerce-controller state,
 home equipment/primary coverage, reviewed-plan activation/restoration, per-side
 duration, named-workout snapshots and guarded real-controller start/write
@@ -252,17 +299,20 @@ entries without touching existing work/history, and narrow 316px RTL/LTR layouts
 including an 80-character workout name. Counts and saved-workout previews were
 checked in Hebrew and English. Twelve source diagrams were additionally rendered
 locally for visual inspection after browser screenshot requests timed out.
-The final media pass opened all 129 actual exercise-guide dialogs in Hebrew and
+That media pass opened all 129 then-existing exercise-guide dialogs in Hebrew and
 English, including every dialog at a 316px RTL/LTR viewport: offline diagrams,
 steps and selected source links were present, with no horizontal overflow or
 third-party media requests. External links retain new-tab, no-referrer and
 noopener protections. The isolated review origin was cleared afterward.
-The service-worker cache is `autofit-v61`, with fresh/revalidated module loads.
+That acceptance stage used `autofit-v61`; the complete candidate uses
+`autofit-v63`, including the later rope and full-catalog checks above.
 The protected port-8941 preview was refreshed only while idle; its exercise,
 history, settings, current-workout and profile storage stayed byte-for-byte
-unchanged. It displays 129 built-in, 51 installed and 25 selected exercises.
-Native compilation, permission/device acceptance, legacy iCloud recovery and
-StoreKit sandbox/real-store acceptance remain unverified.
+unchanged. It now displays 130 built-in/category entries, 51 installed and
+25 selected exercises.
+Native compilation is verified by the release CI above. Permission/device
+acceptance, legacy iCloud recovery and StoreKit sandbox/real-store acceptance
+remain unverified.
 
 Reference material (reviewed 2026-10-22; not a substitute for professional advice):
 
