@@ -1,5 +1,78 @@
 # AutoFit release notes
 
+## 1.0 (35) - Approved TestFlight release candidate
+
+App shell: `autofit-v67`. The owner explicitly approved publishing the code and
+documentation and releasing build 35 to internal TestFlight. These changes are
+**not included in TestFlight build 34**. Native CI and Apple delivery verification
+are pending; this candidate is not yet a verified TestFlight release.
+
+1. Automatic microphone selection uses the phone or a wired microphone rather
+   than Bluetooth recording. Playback retains mixing and high-quality Bluetooth
+   output; ducking remains limited to announcements. Explicit headset input is
+   still available, with an honest explanation of the playback tradeoff.
+2. Finishing the last set or a cardio exercise selects the next unfinished
+   exercise, including wraparound to earlier unfinished work, without scrolling
+   the workout. The next strength set can count from "one" without repeating
+   its name. Paused workouts, rests and timed holds do not accidentally arm
+   repetition counting. Late duplicate completion commands cannot finish the
+   newly selected exercise.
+3. Speech partials no longer restart the microphone between each number.
+   Cumulative Hebrew/English phrases are consumed incrementally, including
+   multiword numbers and corrected numeric partials. Recognition rotates once
+   per 45-second task; expected no-speech responses do not exhaust the bounded
+   retry allowance for genuine errors.
+4. Live duration updates estimate only the remaining workout, avoid rebuilding
+   the permanent-program draft and defer estimate work while scrolling/touching.
+   Duration calculations index catalog entries once. Automatic cardio
+   completion updates its own card instead of replacing all exercise cards.
+5. Skipping, replacing or extending rest cancels matching spoken/queued rest
+   announcements, including late deliveries. Unrelated speech is retained.
+   Natural rest completion still delivers its completion announcement.
+6. Saved plans show the total at the top and a sequential number beside every
+   original plan name. Saving/deleting refreshes the count without duplicate
+   list dialogs or modification of other plans.
+7. Difficulty labels are now **Easy / Medium / Hard** (`קל / בינוני / קשה`).
+   Existing stored `right` ratings are preserved, so history, sharing and
+   conservative recommendation rules retain their meaning. Voice input accepts
+   the new Medium phrases and the previous "just right" / `מתאים` phrases.
+8. Nested training dialogs return one level back. Saved-plan save/create,
+   rename/edit/preview, and builder-to-proposal transitions retain their parent.
+   Closing a proposal restores the same builder and unsaved draft; closing a
+   child restores list focus/scroll. Nested headers have a 44px Back arrow.
+   Native dialog cancel requests and backdrop dismissal also close only the
+   current dialog. Successful saves refresh the existing list flow.
+9. The monthly-goal title names the current localized month/year. It shows
+   recorded workouts, remaining workouts to the explicitly saved target, days
+   left including today, and the weekly frequency. A separate suggestion uses
+   `ceil(weekly goal * remaining calendar days / 7)`; a new proposed total adds
+   completed workouts, within the existing 31-workout input limit. Suggestions
+   never overwrite a manual goal, and targets do not carry into a new month.
+
+Local acceptance: **494 JavaScript regressions and 17 module syntax checks
+passed**. Calendar cases include month/year boundaries, leap February, last-day
+rounding, four-per-week pacing, completed targets and preservation of manual
+targets. Dialog regression coverage checks one-level close, focus and listener
+cleanup.
+
+An isolated synthetic browser origin exercised three numbered saved plans;
+save/delete count refresh; cancel from save, create, edit, rename and preview;
+builder/proposal draft restoration; cancel-request/backdrop navigation; Medium
+rating storage as `right`; automatic next-exercise selection; monthly remaining
+calculations; and Hebrew RTL/English LTR. Saved plans remained unchanged after
+cancel/review. During a running 23-exercise workout, live ticks retained card
+and input node identity, unsaved note text and scroll position. The browser
+honestly displayed manual input, not real microphone listening. No actual user
+storage was read or changed.
+
+**Native acceptance pending:** Swift is unavailable on the Windows development
+host. Updated Swift suites and the signed iOS build must pass in macOS CI.
+Actual music playback, Bluetooth routing, extended recognition and iPhone touch
+scrolling still require device testing; browser/controller tests cannot verify
+those physical behaviors. Recommended device sequence: play music, open Workout,
+count multiple sets through rest, finish an exercise and start counting the next,
+skip a spoken rest immediately, then scroll during active timers.
+
 ## 1.0 (34) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation,

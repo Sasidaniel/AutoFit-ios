@@ -1,7 +1,7 @@
 // app.js — main application controller
 import * as db from './db.js';
 import { SEED_EXERCISES } from './seed.js';
-import { Stopwatch, RestTimer, formatHMS, playBeep, speak, primeSpeech } from './timer.js';
+import { Stopwatch, RestTimer, formatHMS, playBeep, speak, primeSpeech, cancelSpeech } from './timer.js';
 import * as native from './native-bridge.js';
 import * as i18n from './i18n.js';
 import * as library from './exercise-library.js';
@@ -78,7 +78,7 @@ const stopwatch = new Stopwatch((elapsed) => {
 });
 let restDoneMessage = 'אפשר להמשיך לסט הבא';
 const restTimer = new RestTimer({
-  onChange: () => persistRestTimerState(),
+  onChange: (completed) => persistRestTimerState(completed),
   onTick: (remaining) => {
     const display = el('restTimeDisplay');
     const text = formatHMS(remaining);
@@ -894,12 +894,13 @@ function showCelebration(record) {
 
 function openTrainingDialog(title, content, exerciseName = '') {
   const previousFocus = document.activeElement;
+  const parent = qsa('dialog.training-dialog[open]').at(-1);
   const dialog = document.createElement('dialog');
   const titleId = `trainingDialogTitle-${db.uid()}`;
   dialog.className = 'training-dialog';
   dialog.setAttribute('aria-labelledby', titleId);
   dialog.innerHTML = `<div class="training-dialog-head"><h3 id="${titleId}" ${exerciseName ? `data-no-translate data-exercise-name="${escapeAttr(exerciseName)}"` : ''}>${escapeHtml(title)}</h3>
-    <button class="btn-icon btnCloseTrainingDialog" aria-label="סגור">✕</button></div>
+    <button class="btn-icon btnCloseTrainingDialog" aria-label="${parent ? 'חזרה' : 'סגור'}">${parent ? '←' : '✕'}</button></div>
     <div class="training-dialog-body"><p class="training-dialog-error hidden" role="alert"></p>${content}</div>`;
   document.body.appendChild(dialog);
   const storageError = () => {
@@ -1062,8 +1063,8 @@ function trainingAPI() {
   };
   return {
     uid: db.uid, dialog: openTrainingDialog, guide: openExerciseGuide,
-    durationState: () => ({ session: activeSession, exercises, settings,
-      program: trainingTools.durationSession(myWorkoutExercises(), (exercise) => setsForWeek(exercise)),
+    durationState: ({ live = false } = {}) => ({ session: activeSession, exercises, settings,
+      program: live ? null : trainingTools.durationSession(myWorkoutExercises(), (exercise) => setsForWeek(exercise)),
       restSeconds: remainingRest() }),
     repTarget(set, exercise) { return voiceRepTarget(set, exercise); },
     getState: () => ({ session: activeSession, exercises, settings, history: workouts,
@@ -1179,8 +1180,12 @@ function trainingAPI() {
   };
 }
 
-function persistRestTimerState() {
+function persistRestTimerState(completed = false) {
   if (!activeSession) return;
+  const previous = restTimer.announcementEndAt;
+  const current = restTimer.isRunning() ? restTimer.endAt : null;
+  if (previous && previous !== current) cancelSpeech(`rest:${previous}:${completed ? 'start' : ''}`);
+  restTimer.announcementEndAt = current;
   activeSession.rest = restTimer.isRunning() ? {
     endAt: restTimer.endAt, totalSeconds: restTimer.totalSeconds,
     lastAnnouncedElapsed: restTimer.lastAnnouncedElapsed,
@@ -1586,6 +1591,7 @@ function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
   const previousSet = { ...set };
   const previousMarker = activeSession.lastCompletedSet;
   const previousRevision = activeSession.activityControlRevision;
+  const previousFocus = activeSession.currentExerciseId;
   const timerKey = `${entry.exerciseId}:${index}`;
   const timer = exercise.inputType === 'hold' ? holdTimers.get(timerKey) : null;
   set.completed = completed;
@@ -1611,6 +1617,10 @@ function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
     else activeSession.lastCompletedSet = previousMarker;
     if (previousRevision === undefined) delete activeSession.activityControlRevision;
     else activeSession.activityControlRevision = previousRevision;
+    if (previousFocus === undefined) delete activeSession.currentExerciseId;
+    else activeSession.currentExerciseId = previousFocus;
+    refreshVoiceSelection();
+    updateVoiceBadgeForListeningState();
     throw error;
   }
   if (timer) {
@@ -1785,6 +1795,7 @@ function renderCardioCard(entry, number) {
   qs('.btnCardioDone', card).addEventListener('click', () => {
     delete entry.resumeAfterPause;
     entry.completed = !entry.completed;
+    if (entry.completed) advanceWorkoutFocus(entry);
     if (entry.completed) ensureWorkoutStarted();
     entry.elapsedSec = entry.completed ? entry.durationSec : 0;
     entry.startedAt = null;
@@ -1827,18 +1838,31 @@ function tickCardioTimers() {
       entry.completed = true;
       entry.elapsedSec = entry.durationSec;
       entry.startedAt = null;
+      advanceWorkoutFocus(entry);
       persistActiveSession();
       playBeep();
       const msg = cardioCompletionMessage(entry);
       if (settings.voiceAnnouncements) speak(msg, i18n.locale(), announcementID);
       showToast(`${msg} ✅`);
       notify('AutoFit', msg);
+      const index = activeSession.entries.indexOf(entry);
+      const previous = qs(`.exercise-card[data-entry-index="${index}"]`, el('exerciseList'));
+      if (previous) {
+        const replacement = renderCardioCard(entry, index + 1);
+        replacement.dataset.entryIndex = index;
+        previous.replaceWith(replacement);
+      }
       needsRerender = true;
     } else if (span) {
-      span.textContent = formatHMS(remaining);
+      const text = formatHMS(remaining);
+      if (span.textContent !== text) span.textContent = text;
     }
   });
-  if (needsRerender) renderWorkoutTab();
+  if (needsRerender) {
+    updateProgress();
+    refreshVoiceSelection();
+    syncWorkoutActivity();
+  }
 }
 
 /* ---- hold-type (e.g. plank) per-set timer: start -> counts up -> beeps/announces at
@@ -1935,13 +1959,14 @@ function isEntryDone(entry) {
 // skipping over any that are already done (e.g. when the user isn't working strictly
 // in order), so the rest-timer announcement always names the actual upcoming exercise.
 function nextEntryName(entry) {
+  return nextWorkoutEntry(entry)?.exerciseName || null;
+}
+
+function nextWorkoutEntry(entry) {
   const idx = activeSession.entries.indexOf(entry);
   if (idx < 0) return null;
-  for (let i = idx + 1; i < activeSession.entries.length; i++) {
-    const candidate = activeSession.entries[i];
-    if (!isEntryDone(candidate)) return candidate.exerciseName;
-  }
-  return null;
+  return [...activeSession.entries.slice(idx + 1), ...activeSession.entries.slice(0, idx)]
+    .find((candidate) => !isEntryDone(candidate)) || null;
 }
 
 /* ---------------- Voice commands: Hebrew number parsing ---------------- */
@@ -2038,10 +2063,20 @@ function rememberCompletedSet(entry, set) {
   const setIndex = entry.sets.indexOf(set);
   if (set.completed && setIndex >= 0) {
     activeSession.lastCompletedSet = { exerciseId: entry.exerciseId, setIndex };
+    advanceWorkoutFocus(entry);
   } else if (activeSession.lastCompletedSet?.exerciseId === entry.exerciseId
     && activeSession.lastCompletedSet.setIndex === setIndex) {
     delete activeSession.lastCompletedSet;
   }
+}
+
+function advanceWorkoutFocus(entry) {
+  if (!isEntryDone(entry) || activeSession.currentExerciseId && activeSession.currentExerciseId !== entry.exerciseId) return;
+  const remaining = nextWorkoutEntry(entry);
+  if (remaining) activeSession.currentExerciseId = remaining.exerciseId;
+  else delete activeSession.currentExerciseId;
+  refreshVoiceSelection();
+  updateVoiceBadgeForListeningState();
 }
 
 function lastCompletedVoiceSet() {
@@ -2240,9 +2275,10 @@ function matchVoiceExercise(text) {
 }
 
 function refreshVoiceSelection() {
+  const current = activeSession.entries[voiceTargetEntryIndex()];
   qsa('.exercise-card[data-entry-index]', el('exerciseList')).forEach((card) => {
     card.classList.toggle('voice-selected',
-      activeSession.entries[Number(card.dataset.entryIndex)]?.exerciseId === activeSession.currentExerciseId);
+      activeSession.entries[Number(card.dataset.entryIndex)] === current);
   });
 }
 
@@ -2269,6 +2305,7 @@ function selectVoiceExercise(index, highlight = true) {
 function voiceTargetEntryIndex(preferStrength = false) {
   const selected = activeSession.entries.findIndex((entry) =>
     entry.exerciseId === activeSession.currentExerciseId &&
+    (!preferStrength || entry.type !== 'cardio') &&
     (!isEntryDone(entry) || (!preferStrength && entry.type === 'cardio')));
   if (selected >= 0) return selected;
   const running = activeSession.entries.findIndex((entry) =>
@@ -2301,7 +2338,7 @@ function updateVoiceBadgeForListeningState() {
   el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive || !!activeSession?.paused);
   el('btnEnableWorkoutVoice').textContent = i18n.text(voiceListeningError ? 'נסה שוב להפעיל מיקרופון' : '🎙️ הפעל מיקרופון ופקודות קוליות');
   if (voiceCountingState && voiceListeningActive) { updateVoiceCountingBadge(); return; }
-  const current = activeSession.entries.find((entry) => entry.exerciseId === activeSession.currentExerciseId);
+  const current = activeSession.entries[voiceTargetEntryIndex()];
   const microphone = voiceInputName ? ` (${voiceInputName})` : '';
   setVoiceBadge(voiceListeningActive ? current
     ? `🎙️ מקשיב${microphone} — תרגיל נוכחי: ${current.exerciseName}`
@@ -2366,6 +2403,21 @@ function handleVoiceTranscript(transcript) {
       if (!match.start && !match.stop && !autoCount) return;
       requestedEntryIndex = index;
       command = match.stop ? 'stopExercise' : 'startExercise';
+    }
+  }
+
+  if (!voiceCountingState && !command && spokenCount === 1 && activeSession.running && !restTimer.isRunning()) {
+    const index = voiceTargetEntryIndex(true);
+    const entry = activeSession.entries[index];
+    const exercise = entry && (entry.exerciseSnapshot || exercises.find((item) => item.id === entry.exerciseId));
+    if (entry && exercise?.inputType !== 'hold') {
+      const setIndex = entry.sets.findIndex((set) => !set.completed);
+      const set = entry.sets[setIndex];
+      selectVoiceExercise(index, false);
+      const targetReps = voiceRepTarget(set, exercise);
+      if (targetReps) set.voiceTargetReps = targetReps;
+      lastAutoCountCompletion = null;
+      voiceCountingState = { entry, set, entryIndex: index, setIndex, count: 0, targetReps };
     }
   }
 
@@ -2490,7 +2542,6 @@ function handleVoiceTranscript(transcript) {
     }
     if (lastAutoCountCompletion?.session === activeSession
       && activeSession.entries.includes(lastAutoCountCompletion.entry)
-      && lastAutoCountCompletion.entry.exerciseId === activeSession.currentExerciseId
       && lastAutoCountCompletion.entry.sets.includes(lastAutoCountCompletion.set)
       && lastAutoCountCompletion.set.completed) {
       showToast('🎙️ הסט כבר הסתיים ביעד. לסט הבא אמור שוב את שם התרגיל או התחל סט');
@@ -2602,20 +2653,20 @@ function startRestTimer(ex, exerciseDone, nextExerciseName) {
   el('restExerciseName').textContent = i18n.exerciseName(ex.name);
   el('restOverlay').classList.remove('hidden');
   playBeep();
+  restDoneMessage = exerciseDone ? nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!' : 'אפשר להמשיך לסט הבא';
+  restTimer.start(seconds);
+  const announcementID = `rest:${restTimer.endAt}:start`;
   if (exerciseDone) {
-    restDoneMessage = nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!';
     if (settings.voiceAnnouncements && !voiceReportInProgress) {
       const pct = getWorkoutSetProgress().percent;
       // announce the next exercise FIRST, then that the rest period has started
       speak(nextExerciseName
         ? `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. התרגיל הבא: ${nextExerciseName}. עכשיו זמן מנוחה`
-        : `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. זה היה התרגיל האחרון. זמן מנוחה`);
+        : `${ex.name} הסתיים. ${pct} אחוז מהאימון הושלמו. זה היה התרגיל האחרון. זמן מנוחה`, i18n.locale(), announcementID);
     }
   } else {
-    restDoneMessage = 'אפשר להמשיך לסט הבא';
-    if (settings.voiceAnnouncements && !voiceReportInProgress) speak('סט הושלם, זמן מנוחה');
+    if (settings.voiceAnnouncements && !voiceReportInProgress) speak('סט הושלם, זמן מנוחה', i18n.locale(), announcementID);
   }
-  restTimer.start(seconds);
 }
 
 /* ================= HISTORY TAB ================= */

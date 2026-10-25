@@ -479,6 +479,7 @@ test('real rope cardio ticking updates only phase labels until completion and co
     settings: { voiceAnnouncements: true }, formatHMS: (seconds) => String(Math.ceil(seconds)),
     persistActiveSession: () => saves++, speak: (...args) => speech.push(args), playBeep() {}, notify() {}, showToast() {},
     cardioCompletionMessage: () => 'Complete', renderWorkoutTab: () => rerenders++,
+    advanceWorkoutFocus() {}, qs: () => null, updateProgress() {}, refreshVoiceSelection() {}, syncWorkoutActivity() {},
   });
   vm.runInContext(source.slice(source.indexOf('function intervalPhaseText('), source.indexOf('function renderCardioCard(')), context);
   vm.runInContext(source.slice(source.indexOf('function tickCardioTimers('), source.indexOf('/* ---- hold-type')), context);
@@ -491,9 +492,9 @@ test('real rope cardio ticking updates only phase labels until completion and co
   assert.equal(speech.length, 2); assert.equal(rerenders, 0);
   now = 601000;
   context.tickCardioTimers();
-  assert.equal(item.completed, true); assert.equal(rerenders, 1);
+  assert.equal(item.completed, true); assert.equal(rerenders, 0);
   context.tickCardioTimers();
-  assert.equal(rerenders, 1);
+  assert.equal(rerenders, 0);
 });
 
 test('home planning without equipment uses honest floor/wall options, never imaginary back coverage', () => {
@@ -628,7 +629,7 @@ function pauseController(savedSession) {
     document: { visibilityState: 'visible' }, currentTab: 'workout', voiceListeningActive: !!activeSession.running,
     voiceListeningRevision: 0, voiceActivationPending: false, voiceListeningError: '', voiceInputName: '',
     voiceReports: { voiceReportHints: () => [] }, voiceExerciseNames: () => [],
-    requestWakeLock() {}, speak() {}, playBeep() {}, updateVoiceBadgeForListeningState() {},
+    requestWakeLock() {}, speak() {}, playBeep() {}, cancelSpeech() {}, refreshVoiceSelection() {}, updateVoiceBadgeForListeningState() {},
     isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.every((set) => set.completed),
     showToast: (value) => messages.push(value),
     syncNativeAnnouncementPlan: () => calls.push(context.activeSession.running ? 'runningPlan' : 'stoppedPlan'),
@@ -648,7 +649,7 @@ function pauseController(savedSession) {
   for (const [start, end] of [
     ['function ensureWorkoutStarted()', '// Cancels the current workout'],
     ['function persistActiveSession()', 'function trainingAPI()'],
-    ['function persistRestTimerState()', 'function buildWorkoutActivityPayload()'],
+    ['function persistRestTimerState(', 'function buildWorkoutActivityPayload()'],
     ['function stopWorkoutTimers()', 'function renderWorkoutTab()'],
     ['async function updateVoiceListeningState()', 'function startRestTimer('],
     ['function handleVoiceTranscript(', '/* ---------------- Voice commands: listening lifecycle'],
@@ -1097,6 +1098,57 @@ test('actual duration UI refreshes totals/program/remaining for edits, completio
   assert.equal(update().total.seconds, full);
 });
 
+test('live duration refresh estimates only remaining work and never reconstructs the permanent program', () => {
+  const nodes = Object.fromEntries(['trainingDurationTotal', 'trainingDurationRemaining', 'trainingProgramDuration']
+    .map((id) => [id, { textContent: 'unchanged' }]));
+  const ui = load('www/js/training-ui.js', ['refreshDurationEstimates'], { tools, i18n: { text: String } });
+  const draft = tools.durationSession([{ ...find('chest'), active: true }]);
+  draft.running = true;
+  const state = { session: draft, exercises: catalog, settings: { restSeconds: 90 }, restSeconds: 30 };
+  Object.defineProperty(state, 'program', { get() { assert.fail('Live ticks must not rebuild/estimate the saved program'); } });
+  let requests = 0;
+  const result = ui.refreshDurationEstimates({ durationState(options) {
+    assert.equal(options.live, true);
+    requests++;
+    return state;
+  } }, { getElementById: (id) => nodes[id] }, { live: true });
+  assert.equal(requests, 1);
+  assert.equal(result.total, null);
+  assert.equal(result.program, null);
+  assert.ok(result.remaining.seconds > 0);
+  assert.equal(nodes.trainingDurationTotal.textContent, 'unchanged');
+  assert.equal(nodes.trainingProgramDuration.textContent, 'unchanged');
+  assert.notEqual(nodes.trainingDurationRemaining.textContent, 'unchanged');
+});
+
+test('cardio completion replaces only its own card and keeps unrelated focused inputs and scroll structure intact', () => {
+  const source = read('www/js/app.js');
+  const otherInput = { value: '37.5' }, sibling = { input: otherInput };
+  const entry = { exerciseId: 'walk', exerciseName: 'Walk', type: 'cardio', startedAt: 1000, durationSec: 1 };
+  const nodes = [sibling, null], replacement = { dataset: {} };
+  const previous = { replaceWith(next) { nodes[1] = next; } };
+  nodes[1] = previous;
+  let progress = 0;
+  const context = vm.createContext({ activeSession: { entries: [{ exerciseId: 'strength' }, entry] },
+    Date: { now: () => 3000 }, settings: { voiceAnnouncements: false },
+    el: () => null, qs: (selector) => { assert.match(selector, /data-entry-index="1"/); return previous; },
+    renderCardioCard: (value, number) => { assert.equal(value, entry); assert.equal(number, 2); return replacement; },
+    renderWorkoutTab: () => assert.fail('Completing cardio must not rebuild the exercise list'),
+    advanceWorkoutFocus() {}, persistActiveSession() {}, playBeep() {}, cardioCompletionMessage: () => 'done',
+    showToast() {}, notify() {}, updateProgress: () => progress++, refreshVoiceSelection() {}, syncWorkoutActivity() {},
+  });
+  vm.runInContext(source.slice(source.indexOf('function tickCardioTimers()'), source.indexOf('/* ---- hold-type')), context);
+  context.tickCardioTimers();
+  assert.equal(nodes[0], sibling);
+  assert.equal(nodes[0].input, otherInput);
+  assert.equal(otherInput.value, '37.5');
+  assert.equal(nodes[1], replacement);
+  assert.equal(replacement.dataset.entryIndex, 1);
+  assert.equal(progress, 1);
+  context.tickCardioTimers();
+  assert.equal(progress, 1);
+});
+
 test('actual plan-preview controller estimates inactive library choices and immediately reflects edited doses', () => {
   const source = read('www/js/training-ui.js');
   const start = source.indexOf('function updateEstimates()');
@@ -1439,7 +1491,44 @@ test('monthly goals reset by local calendar month and count completed workouts, 
   const result = tools.monthlyGoalProgress(history, { month: '2026-10', target: 4 }, now);
   assert.equal(result.count, 2);
   assert.equal(result.percent, 50);
+  assert.equal(result.remaining, 2);
   assert.equal(tools.monthlyGoalProgress(history, { month: '2026-09', target: 4 }, now).target, 0);
+});
+
+test('monthly pacing uses remaining local calendar days including today, weekly frequency and leap months', () => {
+  for (const [date, weekly, days, suggested] of [
+    [new Date(2026, 9, 25, 12), 4, 7, 4],
+    [new Date(2026, 9, 31, 23, 59), 4, 1, 1],
+    [new Date(2026, 9, 1, 0), 4, 31, 18],
+    [new Date(2028, 1, 28, 12), 4, 2, 2],
+    [new Date(2028, 1, 29, 12), 1, 1, 1],
+    [new Date(2026, 1, 28, 12), 7, 1, 1],
+    [new Date(2026, 11, 31, 12), 3, 1, 1],
+    [new Date(2027, 0, 1, 12), 7, 31, 31],
+  ]) {
+    const result = tools.monthlyGoalProgress([], null, date, weekly);
+    assert.equal(result.daysRemaining, days);
+    assert.equal(result.suggestedRemaining, suggested);
+    assert.equal(result.suggestedTarget, suggested);
+    assert.equal(result.weeklyGoal, weekly);
+    assert.equal(result.target, 0, 'A suggestion must not silently become a saved goal');
+  }
+});
+
+test('monthly suggestion adds completed workouts without replacing the saved manual target or carrying last month', () => {
+  const date = new Date(2026, 9, 25, 12), goal = { month: '2026-10', target: 12 };
+  const history = [record('one', new Date(2026, 9, 20).toISOString()), record('two', new Date(2026, 9, 21).toISOString())];
+  const result = tools.monthlyGoalProgress(history, goal, date, 4);
+  assert.equal(result.count, 2);
+  assert.equal(result.target, 12);
+  assert.equal(result.remaining, 10);
+  assert.equal(result.suggestedTarget, 6);
+  assert.deepEqual(goal, { month: '2026-10', target: 12 });
+  assert.equal(tools.monthlyGoalProgress(history, { month: '2026-10', target: 1 }, date, 4).remaining, 0);
+  const nextMonth = tools.monthlyGoalProgress(history, goal, new Date(2026, 10, 1), 4);
+  assert.equal(nextMonth.target, 0);
+  assert.equal(nextMonth.count, 0);
+  assert.equal(nextMonth.month, '2026-11');
 });
 
 function storageContext(failAt = -1) {
@@ -1494,7 +1583,7 @@ function controllerContext(initial = {}) {
       exercise.inputType === 'cardio' ? { exerciseId: exercise.id, type: 'cardio' } : entry(exercise))),
   });
   const start = source.indexOf('function trainingAPI()');
-  const end = source.indexOf('function persistRestTimerState()', start);
+  const end = source.indexOf('function persistRestTimerState(', start);
   vm.runInContext(source.slice(start, end), context);
   return { context, api: context.trainingAPI(), writes, notices };
 }
@@ -1505,7 +1594,7 @@ test('real removal controller pauses and freezes clocks, preserves archived comp
   context.openTrainingDialog = () => {};
   context.openExerciseGuide = () => {};
   context.renderHomeTab = () => {};
-  vm.runInContext(source.slice(source.indexOf('function trainingAPI()'), source.indexOf('function persistRestTimerState()')), context);
+  vm.runInContext(source.slice(source.indexOf('function trainingAPI()'), source.indexOf('function persistRestTimerState(')), context);
   vm.runInContext(source.slice(source.indexOf('function removeLastWorkoutSet('), source.indexOf('function setWorkoutSetCompletion(')), context);
   assert.equal(typeof context.openWorkoutRemovalDialog, 'function', 'Removal dialog must be available to every workout card');
   const api = context.trainingAPI();

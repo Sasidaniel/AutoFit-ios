@@ -38,11 +38,10 @@ private final class RecognitionAudioSink {
  * device supports it (no audio leaves the device); falls back to Apple's
  * standard (server-assisted) recognizer automatically otherwise.
  *
- * Listening runs for the whole time the Workout tab is open (not just once a
- * workout has started — "start workout" itself is a voice command), restarting
- * a fresh recognition task after each completed phrase (or any error) since a
- * single SFSpeechRecognitionTask ends once it delivers a final result — this
- * keeps the mic "always on" without the caller having to manage task lifecycles.
+ * Listening runs while the Workout tab is open. Partial phrases share one
+ * capture/task so counting does not lose audio between numbers; final results,
+ * errors and the bounded task lifetime rotate recognition without dropping the
+ * input tap. App announcements temporarily release capture.
  */
 @objc(VoiceCommandPlugin)
 public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -69,6 +68,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var utterance = SpeechUtteranceBuffer()
     private var pendingUtterance: DispatchWorkItem?
     private var pendingRestart: DispatchWorkItem?
+    private var pendingRotation: DispatchWorkItem?
     private var generation = UUID()
     private var captureGeneration = UUID()
     private var lastInputName = ""
@@ -311,12 +311,20 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.restart(after: 0.05)
                 }
             }
+            let rotation = DispatchWorkItem { [weak self] in
+                guard let self = self, self.generation == currentGeneration, Self.isListening else { return }
+                self.restart(after: 0.05)
+            }
+            pendingRotation = rotation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: rotation)
         }
     }
 
     private func endRecognition() {
         pendingRestart?.cancel()
         pendingRestart = nil
+        pendingRotation?.cancel()
+        pendingRotation = nil
         VoiceCommandPlugin.isListening = false
         generation = UUID()
         pendingUtterance?.cancel()
@@ -372,6 +380,11 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func retryRecognition(after error: Error) {
+        let speechError = error as NSError
+        if speechError.domain == "kAFAssistantErrorDomain" && speechError.code == 1110 {
+            restart(after: 0.2)
+            return
+        }
         consecutiveFailures += 1
         guard let delay = WorkoutAudioPolicy.recognitionRetryDelay(failures: consecutiveFailures) else {
             Self.wantsMicrophone = false
@@ -405,6 +418,5 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private func emit(_ transcript: String) {
         pendingUtterance?.cancel()
         notifyListeners("voiceTranscript", data: ["transcript": transcript])
-        restart(after: 0.05)
     }
 }

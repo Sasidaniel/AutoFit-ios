@@ -68,7 +68,7 @@ function reportNumber(text) {
 
 function ratingValue(value) {
   if (/^(?:קל(?: מדי)?|(?:too )?easy)$/.test(value)) return 'easy';
-  if (/^(?:מתאים|just right)$/.test(value)) return 'right';
+  if (/^(?:מתאים|בינוני|medium|moderate|just right)$/.test(value)) return 'right';
   if (/^(?:קשה(?: מדי)?|(?:too )?hard)$/.test(value)) return 'hard';
   return null;
 }
@@ -114,10 +114,10 @@ export function parseWorkoutVoice(transcript) {
 
 export function voiceReportHints(language) {
   return language === 'en' ? [
-    'I did twelve reps with forty kilograms', 'The set was hard', 'It was just right',
+    'I did twelve reps with forty kilograms', 'The set was hard', 'It was medium',
     'Add half a minute of rest', 'Confirm finish', 'Undo',
   ] : [
-    'עשיתי שתים עשרה חזרות עם ארבעים קילו', 'הסט היה קשה', 'היה מתאים',
+    'עשיתי שתים עשרה חזרות עם ארבעים קילו', 'הסט היה קשה', 'היה בינוני',
     'תוסיף חצי דקה מנוחה', 'מאשר סיום', 'בטל',
   ];
 }

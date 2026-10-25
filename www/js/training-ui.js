@@ -22,22 +22,22 @@ export function durationEstimateText(estimate) {
     : hours ? hourText : minuteText;
 }
 
-export function refreshDurationEstimates(api, doc = document) {
-  const state = api.durationState();
+export function refreshDurationEstimates(api, doc = document, { live = false } = {}) {
+  const state = api.durationState({ live });
   const write = (id, text) => {
     const node = doc.getElementById(id);
     if (node && node.textContent !== text) node.textContent = text;
   };
-  const total = tools.estimateWorkoutDuration(state.session, state.exercises, state.settings.restSeconds, { remaining: false });
+  const total = live ? null : tools.estimateWorkoutDuration(state.session, state.exercises, state.settings.restSeconds, { remaining: false });
   const remaining = tools.estimateWorkoutDuration(state.session, state.exercises, state.settings.restSeconds,
     { remaining: true, restSeconds: state.restSeconds });
-  const program = tools.estimateWorkoutDuration(state.program, [], state.settings.restSeconds, { remaining: false });
-  write('trainingDurationTotal', `${i18n.text('זמן האימון המשוער')}: ${durationEstimateText(total)}`);
+  const program = live ? null : tools.estimateWorkoutDuration(state.program, [], state.settings.restSeconds, { remaining: false });
+  if (total) write('trainingDurationTotal', `${i18n.text('זמן האימון המשוער')}: ${durationEstimateText(total)}`);
   const begun = state.session.running || state.session.paused || state.session.accumulatedSec > 0 || state.session.entries.some((entry) =>
     entry.type === 'cardio' ? entry.completed || entry.startedAt || entry.elapsedSec > 0
       : entry.sets.some((set) => set.completed || set.holdStartedAt));
   write('trainingDurationRemaining', begun ? `${i18n.text('זמן משוער שנותר מעכשיו')}: ${durationEstimateText(remaining)}` : '');
-  write('trainingProgramDuration', `${i18n.text('זמן משוער לאימון שלי')}: ${durationEstimateText(program)}`);
+  if (program) write('trainingProgramDuration', `${i18n.text('זמן משוער לאימון שלי')}: ${durationEstimateText(program)}`);
   return { total, remaining, program };
 }
 const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ'], ['rope', 'קפיצה על חבל']];
@@ -51,11 +51,11 @@ const REASONS = {
   hard: 'תועד דירוג קשה. שמור על העומס ואל תמהר להעלות.',
   assistance: 'בגרביטון יותר משקל הוא יותר סיוע. אין כאן המלצה להפוך את כיוון העומס.',
   target: 'לא תועד אותו יעד חזרות מפורש בשני האימונים. הגדר יעד להמשך, בלי לשנות היסטוריה.',
-  rating: 'חסר דירוג קל או מתאים בחלק מהסטים. אין מספיק מידע להצעת העלאה.',
+  rating: 'חסר דירוג קל או בינוני בחלק מהסטים. אין מספיק מידע להצעת העלאה.',
   reps: 'בחלק מהסטים טרם הושג היעד. התמקד בחזרות נשלטות באותו עומס.',
   mixed: 'העומסים או החזרות משתנים. שמור על ההגדרות עד שתצטבר השוואה תואמת.',
   load: 'משקל גוף או מתח גומייה אינם עומס ציוד מתועד בר השוואה בקילוגרמים. אין כאן הצעה להעלאת משקל.',
-  top: 'בשני אימונים תואמים הושג היעד בכל הסטים באותו משקל, עם דירוג קל או מתאים.',
+  top: 'בשני אימונים תואמים הושג היעד בכל הסטים באותו משקל, עם דירוג קל או בינוני.',
 };
 const RECOMMENDATIONS = { insufficient: 'אין מספיק מידע', hold: 'שמירה על העומס', reps: 'התמקדות בחזרות', increase: 'אפשר לשקול העלאה קטנה' };
 const MOVEMENTS = { squat: 'סקוואט', lunge: 'מכרע', hinge: 'תנועת ירך',
@@ -300,7 +300,6 @@ export function createTrainingUI(api) {
         if (data.get('ropeReady') !== 'on') throw new Error('Confirm a jump rope and clear space');
         const plan = tools.generateRopePlan(data.get('ropeLevel'), Number(data.get('minutes')), api.getState().exercises, data.get('location'));
         plan.id = api.uid();
-        dialog.close();
         planPreview(plan);
       });
     };
@@ -354,7 +353,6 @@ export function createTrainingUI(api) {
           split: data.get('split') || 'full-body',
           muscles: data.getAll('muscles') }, api.getState().exercises);
         plan.id = api.uid();
-        dialog.close();
         planPreview(plan);
       });
     };
@@ -618,10 +616,17 @@ export function createTrainingUI(api) {
     });
   }
   function savedPlans() {
+    const previous = document.querySelector('.saved-plans-dialog');
+    const scrollTop = previous?.scrollTop || 0;
+    if (previous) {
+      const dialogs = [...document.querySelectorAll('dialog.training-dialog')];
+      dialogs.slice(dialogs.indexOf(previous)).reverse().forEach((item) => { item.close(); item.remove(); });
+    }
     const plans = trainingSettings().plans || [];
     const canStart = api.canStartSavedPlan();
     const dialog = api.dialog(t('תוכניות שמורות'), `${!canStart ? note('יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו, או בטל אותו במפורש במסך אימון, לפני התחלת אימון אחר. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
-      ${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong data-no-translate>${esc(workoutTitle(plan))}</strong>
+      <p class="saved-plans-count" data-no-translate>${i18n.text('תוכניות שמורות')}: ${plans.length}</p>
+      ${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong data-no-translate>${index + 1}. ${esc(workoutTitle(plan))}</strong>
       <p>${plan.sessions.length} <span>${t('אימונים בתוכנית')}</span></p>
       ${plan.options.muscles?.length ? `<p>${plan.options.muscles.map((muscle) => `<span>${esc(t(muscle))}</span>`).join(' · ')}</p>` : ''}
       ${plan.sessions.map((day, dayIndex) => `<p data-no-translate>${plan.sessions.length > 1 ? `${i18n.text('אימון')} ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''} · ` : ''}${day.exercises.length} ${i18n.text('תרגילים')} · ${durationEstimateText(tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false }))}</p>
@@ -635,8 +640,10 @@ export function createTrainingUI(api) {
       ${button('btnCreateSavedPlan', 'יצירת תוכנית חדשה')}
       ${note('עד שמונה תוכניות חלופיות במכשיר. מחיקה כאן לא משנה אימון פעיל או את האימון שלי.')}
       ${trainingSettings().programBackup ? button('btnRestoreProgram', 'שחזור הבחירה שלפני התוכנית', true) : ''}`);
-    document.getElementById('btnCreateSavedPlan').onclick = () => { dialog.close(); planBuilder(); };
-    document.getElementById('btnSaveWorkoutFromPlans').onclick = () => { dialog.close(); saveCurrentWorkout(); };
+    dialog.classList.add('saved-plans-dialog');
+    dialog.scrollTop = scrollTop;
+    document.getElementById('btnCreateSavedPlan').onclick = () => planBuilder();
+    document.getElementById('btnSaveWorkoutFromPlans').onclick = () => saveCurrentWorkout();
     const openCurrent = document.getElementById('btnOpenCurrentWorkout');
     if (openCurrent) openCurrent.onclick = () => { dialog.close(); api.openCurrentWorkout(); };
     dialog.querySelectorAll('[data-start-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
@@ -644,11 +651,10 @@ export function createTrainingUI(api) {
       dialog.close();
       refresh();
     }));
-    dialog.querySelectorAll('[data-rename-plan]').forEach((btn) => btn.onclick = () => { dialog.close(); renameWorkout(plans[Number(btn.dataset.renamePlan)]); });
-    dialog.querySelectorAll('[data-edit-plan]').forEach((btn) => btn.onclick = () => { dialog.close(); savedPlanEditor(plans[Number(btn.dataset.editPlan)]); });
+    dialog.querySelectorAll('[data-rename-plan]').forEach((btn) => btn.onclick = () => renameWorkout(plans[Number(btn.dataset.renamePlan)]));
+    dialog.querySelectorAll('[data-edit-plan]').forEach((btn) => btn.onclick = () => savedPlanEditor(plans[Number(btn.dataset.editPlan)]));
     dialog.querySelectorAll('[data-preview]').forEach((btn) => btn.onclick = () => {
       const plan = plans[Number(btn.dataset.preview)];
-      dialog.close();
       if (plan.kind === 'saved-workout') savedWorkoutPreview(plan);
       else savedPlanEditor(plan);
     });
@@ -679,11 +685,23 @@ export function createTrainingUI(api) {
       <p><span>${t('סטים ללא מיפוי מאומת')}</span>: ${result.unknownSets}</p>`);
   }
   function monthlyGoal() {
-    const result = tools.monthlyGoalProgress(api.getState().history, trainingSettings().monthlyGoal);
-    const dialog = api.dialog(t('יעד חודשי אישי'), `<p>${result.month}: ${result.count} <span>${t('אימונים שתועדו')}</span></p>
-      ${field('יעד אימונים לחודש הזה', `<input class="input" id="monthlyTarget" type="number" min="1" max="31" value="${result.target || 8}">`)}
+    const state = api.getState();
+    const result = tools.monthlyGoalProgress(state.history, trainingSettings().monthlyGoal, new Date(), state.settings.weeklyGoal);
+    const monthName = new Date(`${result.month}-01T12:00:00`).toLocaleDateString(i18n.locale(), { month: 'long', year: 'numeric' });
+    const dialog = api.dialog(`${i18n.text('יעד חודשי אישי')} — ${monthName}`, `<p data-no-translate>${esc(monthName)}: ${result.count} ${i18n.text('אימונים שתועדו')}</p>
+      <p data-no-translate>${i18n.text('ימים שנותרו בחודש (כולל היום)')}: ${result.daysRemaining} · ${i18n.text('יעד שבועי')}: ${result.weeklyGoal}</p>
+      <p data-no-translate>${i18n.text('הצעה לאימונים נוספים עד סוף החודש')}: ${result.suggestedRemaining}</p>
+      ${note('ההצעה מחושבת לפי היעד השבועי כפול מספר הימים שנותרו חלקי שבע, בעיגול כלפי מעלה. היא אינה לוח זמנים מחייב ולא משנה יעד שכבר שמרת.')}
+      ${field('יעד אימונים לחודש הזה', `<input class="input" id="monthlyTarget" type="number" min="1" max="31" value="${result.target || result.suggestedTarget}">`)}
+      <p id="monthlyRemainingTarget" data-no-translate></p>
       ${note('יעד לבחירתך, בלי דירוג או נקודות. חודש חדש מתחיל בלי חובה להשלים את הקודם.')}
       <div class="training-actions">${button('btnSaveMonthlyGoal', 'שמירת היעד', true)}${button('btnRemoveMonthlyGoal', 'ללא יעד חודשי')}</div>`);
+    const remaining = () => {
+      const target = Number(dialog.querySelector('#monthlyTarget').value);
+      dialog.querySelector('#monthlyRemainingTarget').textContent = `${i18n.text('אימונים שנותרו להשגת היעד')}: ${Number.isInteger(target) && target >= 1 && target <= 31 ? Math.max(0, target - result.count) : '—'}`;
+    };
+    dialog.querySelector('#monthlyTarget').addEventListener('input', remaining);
+    remaining();
     document.getElementById('btnSaveMonthlyGoal').onclick = () => safely(dialog, () => {
       const target = Number(document.getElementById('monthlyTarget').value);
       if (!Number.isInteger(target) || target < 1 || target > 31) throw new RangeError('Target must be 1–31');
@@ -694,8 +712,12 @@ export function createTrainingUI(api) {
   }
 
   let liveTicks = 0;
+  let scrollingUntil = 0;
+  const deferEstimates = () => { scrollingUntil = Date.now() + 350; };
+  window.addEventListener('scroll', deferEstimates, { passive: true, capture: true });
+  window.addEventListener('touchmove', deferEstimates, { passive: true });
   function refresh({ live = false } = {}) {
-    if (!live || ++liveTicks % 5 === 0) refreshDurationEstimates(api);
+    if (!live || ++liveTicks % 5 === 0 && Date.now() > scrollingUntil) refreshDurationEstimates(api, document, { live });
     const t = i18n.text;
     const state = api.getState();
     if (!state.session) return;
@@ -717,8 +739,9 @@ export function createTrainingUI(api) {
       document.getElementById(id).setAttribute('aria-pressed', String((state.session.timeBudget?.minutes || null) === minutes));
     }
     write('trainingPlanStatus', trainingSettings().activePlan ? t('תוכנית אישית פעילה. הבחירה הקודמת זמינה לשחזור בתוכניות שמורות.') : '');
-    const monthly = tools.monthlyGoalProgress(state.history, trainingSettings().monthlyGoal);
-    write('monthlyGoalStatus', monthly.target ? `${t('החודש שלך')}: ${monthly.count} / ${monthly.target} ${t('אימונים')} · ${monthly.percent}%` : '');
+    const monthly = tools.monthlyGoalProgress(state.history, trainingSettings().monthlyGoal, new Date(), state.settings.weeklyGoal);
+    const monthName = new Date(`${monthly.month}-01T12:00:00`).toLocaleDateString(i18n.locale(), { month: 'long', year: 'numeric' });
+    write('monthlyGoalStatus', monthly.target ? `${monthName}: ${monthly.count} / ${monthly.target} ${t('אימונים')} · ${monthly.percent}% · ${t('אימונים שנותרו להשגת היעד')}: ${monthly.remaining}` : '');
     document.querySelectorAll('#exerciseList .exercise-card[data-entry-index]').forEach((card) => {
       const entry = state.session.entries[Number(card.dataset.entryIndex)];
       if (!entry || entry.type === 'cardio') return;
@@ -758,7 +781,11 @@ export function createTrainingUI(api) {
   const refreshDuration = () => refreshDurationEstimates(api);
   document.addEventListener('input', refreshDuration);
   document.addEventListener('change', refreshDuration);
-  window.addEventListener('pagehide', () => clearInterval(interval), { once: true });
+  window.addEventListener('pagehide', () => {
+    clearInterval(interval);
+    window.removeEventListener('scroll', deferEstimates, true);
+    window.removeEventListener('touchmove', deferEstimates);
+  }, { once: true });
   refresh();
   return { refresh, refreshDuration };
 }

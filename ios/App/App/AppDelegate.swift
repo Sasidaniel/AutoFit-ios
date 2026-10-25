@@ -12,7 +12,6 @@ enum WorkoutAudioSession {
         if ducking { options.insert(.duckOthers) }
         if recording {
             options.formUnion([.allowBluetoothA2DP, .defaultToSpeaker])
-            if #available(iOS 26.0, *), !preferHeadsetMicrophone { options.insert(.bluetoothHighQualityRecording) }
             if preferHeadsetMicrophone { options.insert(.allowBluetooth) }
         }
         return options
@@ -44,20 +43,14 @@ enum WorkoutAudioSession {
             [AVAudioSession.Port.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType)
         }
         let wired = inputs.first { [AVAudioSession.Port.headsetMic, .usbAudio, .lineIn].contains($0.portType) }
-        var highQuality: AVAudioSessionPortDescription?
-        if #available(iOS 26.0, *), !preferHeadsetMicrophone {
-            highQuality = inputs.first {
-                $0.bluetoothMicrophoneExtension?.highQualityRecording.isSupported == true
-            }
-        }
+        // Automatic capture leaves Bluetooth output on its music route.
         let choice = WorkoutAudioPolicy.input(bluetoothOutput: bluetoothOutput,
-            wiredInput: wired != nil, highQualityBluetooth: highQuality != nil,
+            wiredInput: wired != nil,
             preferHeadset: preferHeadsetMicrophone,
             headsetAvailable: inputs.contains { $0.portType == .bluetoothHFP })
         let preferred: AVAudioSessionPortDescription?
         switch choice {
         case .wired: preferred = wired
-        case .highQualityBluetooth: preferred = highQuality
         case .headset: preferred = inputs.first { $0.portType == .bluetoothHFP }
         case .builtIn: preferred = inputs.first { $0.portType == .builtInMic }
         }

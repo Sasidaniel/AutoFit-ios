@@ -301,8 +301,9 @@ export function estimateEntryDuration(entry, exercise, defaultRest = 90, { remai
 
 export function estimateWorkoutDuration(session, catalog = [], defaultRest = 90, options = {}) {
   const result = { seconds: 0, lowSeconds: 0, highSeconds: 0, restSeconds: 0, unknownRepSets: 0 };
+  const byId = new Map(catalog.map((exercise) => [exercise.id, exercise]));
   for (const entry of session.entries) {
-    const exercise = { ...catalog.find((exercise) => exercise.id === entry.exerciseId), ...entry.exerciseSnapshot };
+    const exercise = { ...byId.get(entry.exerciseId), ...entry.exerciseSnapshot };
     const estimate = estimateEntryDuration(entry, exercise, defaultRest, { remaining: false, ...options });
     for (const key of Object.keys(result)) result[key] += estimate[key];
   }
@@ -701,7 +702,7 @@ export function weeklyMuscleWork(history, now = new Date()) {
   return { startISO: start.toISOString(), muscles, unknownSets };
 }
 
-export function monthlyGoalProgress(history, goal, now = new Date()) {
+export function monthlyGoalProgress(history, goal, now = new Date(), weeklyGoal = 3) {
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const target = goal?.month === month ? Number(goal.target) : 0;
   const count = history.filter((workout) => {
@@ -710,5 +711,12 @@ export function monthlyGoalProgress(history, goal, now = new Date()) {
       && date.getMonth() === now.getMonth() && workout.entries.some((entry) => entry.type === 'cardio'
         ? entry.completed : entry.sets?.some((set) => set.completed));
   }).length;
-  return { month, count, target, percent: target > 0 ? Math.min(100, Math.round(count / target * 100)) : 0 };
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysRemaining = daysInMonth - now.getDate() + 1;
+  const weekly = Number.isInteger(Number(weeklyGoal)) && Number(weeklyGoal) >= 1 && Number(weeklyGoal) <= 7
+    ? Number(weeklyGoal) : 3;
+  const suggestedRemaining = Math.ceil(weekly * daysRemaining / 7);
+  return { month, count, target, percent: target > 0 ? Math.min(100, Math.round(count / target * 100)) : 0,
+    remaining: Math.max(0, target - count), daysRemaining, weeklyGoal: weekly, suggestedRemaining,
+    suggestedTarget: Math.min(31, count + suggestedRemaining) };
 }

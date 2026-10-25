@@ -1,5 +1,5 @@
 // timer.js — workout stopwatch + rest countdown with sound/vibration
-import { isNative, announce, beep } from './native-bridge.js';
+import { isNative, announce, beep, cancelAnnouncementSpeech } from './native-bridge.js';
 import * as i18n from './i18n.js';
 export function formatHMS(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
@@ -45,6 +45,7 @@ export class Stopwatch {
 }
 
 let audioCtx = null;
+let browserAnnouncementID = '';
 export function playBeep() {
   if (isNative()) {
     beep().catch(reportAudioError);
@@ -78,6 +79,7 @@ export function speak(text, lang = i18n.locale(), announcementID) {
   }
   try {
     if (!('speechSynthesis' in window)) return;
+    browserAnnouncementID = announcementID || '';
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang;
@@ -85,6 +87,15 @@ export function speak(text, lang = i18n.locale(), announcementID) {
     u.volume = 1;
     window.speechSynthesis.speak(u);
   } catch (e) { /* speech not available */ }
+}
+
+export function cancelSpeech(announcementPrefix) {
+  if (isNative()) {
+    cancelAnnouncementSpeech(announcementPrefix).catch(reportAudioError);
+  } else if (browserAnnouncementID.startsWith(announcementPrefix) && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    browserAnnouncementID = '';
+  }
 }
 
 function reportAudioError(error) {
@@ -151,7 +162,7 @@ export class RestTimer {
     if (remaining <= 0) {
       const endAt = this.endAt;
       this.onTick(0);
-      this.stop();
+      this.stop(true);
       this.onDone(endAt);
       return;
     }
@@ -170,14 +181,14 @@ export class RestTimer {
       if (elapsed - nextThreshold < 2) this.onInterval(nextThreshold);
     }
   }
-  stop() {
+  stop(completed = false) {
     const wasRunning = this.intervalId !== null;
     if (this.intervalId) clearInterval(this.intervalId);
     this.intervalId = null;
     this.endAt = null;
     this.totalSeconds = 0;
     this.lastAnnouncedElapsed = 0;
-    if (wasRunning) this.onChange?.();
+    if (wasRunning) this.onChange?.(completed);
   }
   isRunning() {
     return this.intervalId !== null;

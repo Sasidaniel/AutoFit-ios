@@ -27,12 +27,15 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         CAPPluginMethod(name: "speakNow", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "playBeep", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "scheduleAnnouncements", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "cancelAnnouncements", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "cancelAnnouncements", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelSpeech", returnType: CAPPluginReturnPromise)
     ]
 
     private let speechSynthesizer = AVSpeechSynthesizer()
     private var pendingTimers: [Timer] = []
     private var speechQueue = WorkoutAnnouncementQueue()
+    private var pendingSpeech: [(utterance: AVSpeechUtterance, identifier: String?)] = []
+    private var cancelledPrefixes: [String] = []
     static var isAnnouncing = false
     static var isKeepingAlive = false
     static let announcementStarted = Notification.Name("AutoFitAnnouncementStarted")
@@ -106,6 +109,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                 self.audioEngine.stop()
                 if !self.speechQueue.isEmpty {
                     self.speechQueue.interrupt()
+                    self.pendingSpeech.removeAll()
                     self.speechSynthesizer.stopSpeaking(at: .immediate)
                     self.releaseAnnouncementSession()
                     self.notifyListeners("announcementError", data: [
@@ -232,7 +236,38 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         pendingTimers.removeAll()
     }
 
+    @objc func cancelSpeech(_ call: CAPPluginCall) {
+        guard let prefix = call.getString("announcementPrefix"), prefix.hasPrefix("rest:"), prefix.count <= 100 else {
+            call.reject("Invalid rest announcement prefix")
+            return
+        }
+        DispatchQueue.main.async {
+            self.cancelledPrefixes.append(prefix)
+            if self.cancelledPrefixes.count > 128 { self.cancelledPrefixes.removeFirst() }
+            guard self.pendingSpeech.contains(where: { $0.identifier?.hasPrefix(prefix) == true }) else {
+                call.resolve()
+                return
+            }
+            let retained = self.pendingSpeech.filter { $0.identifier?.hasPrefix(prefix) != true }
+            self.speechQueue.interrupt()
+            self.pendingSpeech.removeAll()
+            self.speechSynthesizer.stopSpeaking(at: .immediate)
+            do {
+                for item in retained {
+                    try self.speak(item.utterance.speechString,
+                        language: item.utterance.voice?.language ?? "he-IL", announcementID: item.identifier)
+                }
+                if self.speechQueue.isEmpty { self.releaseAnnouncementSession() }
+                call.resolve()
+            } catch {
+                if self.speechQueue.isEmpty { self.releaseAnnouncementSession() }
+                call.reject("Cannot retain unrelated announcements: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func speak(_ text: String, language: String = "he-IL", announcementID: String? = nil) throws {
+        if let identifier = announcementID, cancelledPrefixes.contains(where: { identifier.hasPrefix($0) }) { return }
         guard ["he-IL", "en-US"].contains(language),
               let voice = AVSpeechSynthesisVoice(language: language) else {
             throw NSError(domain: "AutoFit.Audio", code: 5,
@@ -255,6 +290,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         utterance.voice = voice
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         speechQueue.insert(utterance, identifier: announcementID)
+        pendingSpeech.append((utterance, announcementID))
         speechSynthesizer.speak(utterance)
     }
 
@@ -268,6 +304,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
 
     private func finishAnnouncement(_ utterance: AVSpeechUtterance, cancelled: Bool) {
         guard speechQueue.finish(utterance, cancelled: cancelled) else { return }
+        pendingSpeech.removeAll { $0.utterance === utterance }
         if cancelled {
             notifyListeners("announcementError", data: ["reason": "Announcement playback was cancelled"])
         }

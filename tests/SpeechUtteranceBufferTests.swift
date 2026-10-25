@@ -17,10 +17,28 @@ struct SpeechUtteranceBufferTests {
         precondition(buffer.flush(at: 5) == nil)
 
         buffer = SpeechUtteranceBuffer()
-        precondition(buffer.update("אחת", isFinal: false, at: 0) == nil)
-        precondition(buffer.update("אחת שתיים", isFinal: false, at: 0.4) == nil)
-        precondition(buffer.update("אחת שתיים שלוש", isFinal: false, at: 0.8) == nil)
-        precondition(buffer.flush(at: 1.5) == "אחת שתיים שלוש")
+        precondition(buffer.update("אחת", isFinal: false, at: 0) == "אחת")
+        precondition(buffer.update("אחת שתיים", isFinal: false, at: 0.4) == "אחת שתיים")
+        precondition(buffer.update("אחת שתיים שלוש", isFinal: false, at: 0.8) == "אחת שתיים שלוש")
+        precondition(buffer.flush(at: 1.5) == nil)
+        precondition(buffer.update("אחת שתיים שלוש", isFinal: true, at: 1.6) == nil)
+
+        buffer = SpeechUtteranceBuffer()
+        precondition(buffer.update("התחל סט", isFinal: true, at: 0) == "התחל סט")
+        precondition(buffer.update("התחל סט 1", isFinal: false, at: 1) == "1")
+        precondition(buffer.update("התחל סט 1 2", isFinal: false, at: 2) == "1 2")
+        precondition(buffer.update("התחל סט 1 2 סיימתי", isFinal: true, at: 3) == "סיימתי")
+        precondition(buffer.update("התחל סט 1 2 סיימתי התחל סט", isFinal: true, at: 4) == "התחל סט")
+
+        buffer = SpeechUtteranceBuffer()
+        precondition(buffer.update("אחת", isFinal: false, at: 0) == "אחת")
+        precondition(buffer.update("אחת עשרה", isFinal: false, at: 0.1) == "אחת עשרה")
+        precondition(buffer.update("אחת עשרה שתיים עשרה", isFinal: false, at: 0.2) == "אחת עשרה שתיים עשרה")
+
+        buffer = SpeechUtteranceBuffer()
+        precondition(buffer.update("9", isFinal: false, at: 0) == "9")
+        precondition(buffer.update("10", isFinal: false, at: 0.1) == "10")
+        precondition(buffer.update("10", isFinal: true, at: 0.2) == nil)
 
         buffer = SpeechUtteranceBuffer()
         precondition(buffer.update("התחל אימון", isFinal: false, at: 1) == nil)

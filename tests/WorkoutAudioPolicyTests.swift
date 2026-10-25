@@ -3,24 +3,18 @@ struct WorkoutAudioPolicyTests {
     static func main() {
         for bluetooth in [false, true] {
             for wired in [false, true] {
-                for highQuality in [false, true] {
-                    let expected: WorkoutAudioPolicy.Input = wired ? .wired
-                        : bluetooth && highQuality ? .highQualityBluetooth : .builtIn
-                    precondition(WorkoutAudioPolicy.input(bluetoothOutput: bluetooth,
-                        wiredInput: wired, highQualityBluetooth: highQuality) == expected)
-                }
+                let expected: WorkoutAudioPolicy.Input = wired ? .wired : .builtIn
+                precondition(WorkoutAudioPolicy.input(bluetoothOutput: bluetooth,
+                    wiredInput: wired) == expected)
             }
         }
         for prefer in [false, true] {
             for available in [false, true] {
                 precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: false,
-                    highQualityBluetooth: false, preferHeadset: prefer, headsetAvailable: available)
+                    preferHeadset: prefer, headsetAvailable: available)
                     == (prefer && available ? .headset : .builtIn))
-                precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: false,
-                    highQualityBluetooth: true, preferHeadset: prefer, headsetAvailable: available)
-                    == (prefer && available ? .headset : .highQualityBluetooth))
                 precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: true,
-                    highQualityBluetooth: true, preferHeadset: prefer, headsetAvailable: available) == .wired)
+                    preferHeadset: prefer, headsetAvailable: available) == .wired)
             }
         }
         for engine in [false, true] {

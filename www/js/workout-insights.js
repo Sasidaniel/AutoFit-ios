@@ -1,6 +1,6 @@
 import { EXERCISE_GUIDES } from './exercise-library.js';
 
-export const DIFFICULTY_LABELS = { easy: 'קל', right: 'מתאים', hard: 'קשה' };
+export const DIFFICULTY_LABELS = { easy: 'קל', right: 'בינוני', hard: 'קשה' };
 // These original program entries explicitly combine multiple equipment or movement variants.
 const UNSPECIFIED_VARIANTS = new Set([
   'לחיצת חזה', 'משיכה לפנים בפולי עליון', 'פרפר חזה', 'הרחקה אופקית (פרפר הפוך)',

@@ -159,6 +159,12 @@ export async function beep() {
   await announcer.playBeep();
 }
 
+export async function cancelAnnouncementSpeech(announcementPrefix) {
+  const announcer = plugin('BackgroundAnnouncer');
+  if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
+  await announcer.cancelSpeech({ announcementPrefix });
+}
+
 export function onAnnouncementError(callback) {
   const announcer = plugin('BackgroundAnnouncer');
   if (announcer?.addListener) announcer.addListener('announcementError', callback);

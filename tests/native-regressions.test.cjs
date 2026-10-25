@@ -20,6 +20,15 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
+test('difficulty is Easy, Medium, Hard while legacy right values and spoken phrases remain compatible', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(insights.DIFFICULTY_LABELS)), { easy: 'קל', right: 'בינוני', hard: 'קשה' });
+  for (const phrase of ['היה בינוני', 'הסט היה בינוני', 'היה מתאים', 'it was medium', 'it was moderate', 'it was just right']) {
+    assert.deepEqual(JSON.parse(JSON.stringify(voiceReports.parseWorkoutVoice(phrase))), { kind: 'difficulty', difficulty: 'right' });
+  }
+  const i18n = localizationContext();
+  i18n.setLanguage('en');
+  assert.equal(i18n.text(insights.DIFFICULTY_LABELS.right), 'Medium');
+});
 const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData'],
   loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
@@ -36,7 +45,7 @@ const vm = {
     const i18n = localizationContext();
     return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
-      rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, ...values });
+      rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, cancelSpeech: () => {}, ...values });
   },
 };
 
@@ -46,6 +55,50 @@ function section(start, end) {
   assert.ok(from >= 0 && to > from, `Missing app section: ${start}`);
   return app.slice(from, to);
 }
+
+test('nested training dialogs close only one level, restore focus and release only their own error listener', () => {
+  const dialogs = [], listeners = new Set();
+  let focused = { isConnected: true, focus() {} }, id = 0;
+  const makeDialog = () => {
+    const events = new Map(), close = { addEventListener: (type, fn) => events.set('button:' + type, fn) };
+    return { open: false, isConnected: true, events, closeButton: close,
+      setAttribute() {}, addEventListener: (type, fn) => events.set(type, fn),
+      showModal() { this.open = true; },
+      close() { this.open = false; events.get('close')(); },
+      remove() { this.isConnected = false; },
+    };
+  };
+  const document = { get activeElement() { return focused; }, createElement: makeDialog,
+    body: { appendChild: (dialog) => dialogs.push(dialog) } };
+  const context = nodeVM.createContext({ document, db: { uid: () => ++id },
+    qsa: () => dialogs.filter((dialog) => dialog.open && dialog.isConnected),
+    qs: (selector, dialog) => dialog.closeButton, escapeHtml: (s) => s, escapeAttr: (s) => s,
+    i18n: { translateDOM() {} }, window: {
+      addEventListener: (type, fn) => listeners.add(fn), removeEventListener: (type, fn) => listeners.delete(fn),
+    } });
+  nodeVM.runInContext(section('function openTrainingDialog(', 'function openWorkoutSummary('), context);
+  const parent = context.openTrainingDialog('Saved plans', 'Draft');
+  assert.match(parent.innerHTML, /aria-label="סגור"/);
+  let restored = 0;
+  focused = { isConnected: true, focus() { restored++; } };
+  const child = context.openTrainingDialog('Create plan', 'Fields');
+  assert.match(child.innerHTML, /aria-label="חזרה"/);
+  assert.equal(listeners.size, 2);
+  child.events.get('button:click')();
+  assert.equal(parent.open, true);
+  assert.equal(parent.isConnected, true);
+  assert.equal(child.isConnected, false);
+  assert.equal(restored, 1);
+  assert.equal(listeners.size, 1);
+  const next = context.openTrainingDialog('Preview', 'Unsaved');
+  next.events.get('click')({ target: {} });
+  assert.equal(next.open, true);
+  next.events.get('click')({ target: next });
+  assert.equal(next.isConnected, false);
+  assert.equal(parent.open, true);
+  parent.close();
+  assert.equal(listeners.size, 0);
+});
 
 async function runAppleReleaseCheck(responses) {
   const script = read('.github/scripts/verify-testflight.cjs');
@@ -1788,8 +1841,70 @@ function voiceContext(entries = []) {
   });
   vm.runInContext(section('function isEntryDone(', 'function startRestTimer('), context);
   vm.runInContext("voiceListeningActive = true; currentTab = 'workout';", context);
-  return { context, calls, messages, session, el };
+  return { context, calls, messages, session, el, cards };
 }
+
+test('counting starts on one after rest, completes sets and follows the next exercise without another exercise name', () => {
+  const entries = ['bench', 'row'].map((id) => ({ exerciseId: id, exerciseName: id, defaultReps: '3',
+    sets: [{ weightKg: 20, reps: '', completed: false }] }));
+  const { context, session, cards, calls } = voiceContext(entries);
+  session.running = true;
+  session.currentExerciseId = 'bench';
+  context.startRestTimer = () => context.restTimer.start(90);
+  vm.runInContext(section('function setWorkoutSetCompletion(', 'function getWorkoutSetProgress()'), context);
+  cards.forEach((card) => card.rows.forEach((row, index) => {
+    row.button.click = () => context.setWorkoutSetCompletion(card.entry, row.set,
+      context.exercises.find((exercise) => exercise.id === card.entry.exerciseId), index, true);
+  }));
+  for (const phrase of ['1', '1 2', '1 2 3']) context.handleVoiceTranscript(phrase);
+  assert.equal(entries[0].sets[0].completed, true);
+  assert.equal(entries[0].sets[0].reps, 3);
+  assert.equal(session.currentExerciseId, 'row');
+  assert.equal(cards[1].classList.contains('voice-selected'), true);
+  context.handleVoiceTranscript('סיימתי');
+  context.handleVoiceTranscript('1');
+  assert.equal(entries[1].sets[0].completed, false, 'Late completion/count during rest cannot complete another exercise');
+  assert.equal(entries[1].sets[0].reps, '');
+  context.restTimer.stop();
+  for (const phrase of ['1', '2', '3']) context.handleVoiceTranscript(phrase);
+  assert.equal(entries[1].sets[0].completed, true);
+  assert.equal(entries[1].sets[0].reps, 3);
+  assert.equal(session.currentExerciseId, undefined);
+  assert.ok(!calls.includes('scroll'), 'Automatic focus must not scroll the workout under the user');
+});
+
+test('counting a second set needs no exercise name, while paused workouts and holds cannot auto-start from numbers', () => {
+  const entry = { exerciseId: 'bench', exerciseName: 'bench', defaultReps: '3',
+    sets: [{ reps: '', completed: false }, { reps: '', completed: false }] };
+  const { context, session } = voiceContext([entry]);
+  session.running = true;
+  context.handleVoiceTranscript('1');
+  context.handleVoiceTranscript('3');
+  context.restTimer.stop();
+  context.handleVoiceTranscript('1');
+  assert.equal(entry.sets[1].reps, 1);
+  assert.equal(entry.sets[1].completed, false);
+  session.paused = true;
+  context.handleVoiceTranscript('3');
+  assert.equal(entry.sets[1].reps, 1);
+  const hold = voiceContext([{ exerciseId: 'plank', exerciseName: 'plank', inputType: 'hold', sets: [{ reps: '', completed: false }] }]);
+  hold.session.running = true;
+  hold.context.handleVoiceTranscript('1');
+  assert.equal(hold.session.entries[0].sets[0].reps, '');
+});
+
+test('automatic next exercise wraps to unfinished earlier work and never steals focus from another selected exercise', () => {
+  const { context, session } = voiceContext([
+    { exerciseId: 'first', exerciseName: 'first', sets: [{ completed: false }] },
+    { exerciseId: 'second', exerciseName: 'second', sets: [{ completed: true }] },
+  ]);
+  session.currentExerciseId = 'second';
+  context.advanceWorkoutFocus(session.entries[1]);
+  assert.equal(session.currentExerciseId, 'first');
+  assert.equal(context.nextEntryName(session.entries[1]), 'first');
+  context.advanceWorkoutFocus(session.entries[1]);
+  assert.equal(session.currentExerciseId, 'first');
+});
 
 for (const [phrase, expected] of [
   ['עשיתי 12 חזרות עם 40 קילו', { kind: 'report', reps: 12, weight: 40, unit: 'kg' }],
@@ -2288,7 +2403,7 @@ test('named prefix/suffix commands start the intended timer even when earlier ex
   const { context, session, calls } = voiceContext(contextualEntries());
   context.handleVoiceTranscript('פלנק התחל');
   context.handleVoiceTranscript('סט הושלם');
-  assert.equal(session.currentExerciseId, 'plank');
+  assert.equal(session.currentExerciseId, 'cooldown');
   assert.equal(session.entries[3].sets[0].completed, true);
   assert.equal(session.entries[1].sets[0].completed, false);
   assert.ok(calls.includes('startHold') && calls.includes('rest'));
@@ -3138,8 +3253,7 @@ test('music routing keeps HFP opt-in only and capability-gates microphone enhanc
   assert.match(swift, /static var preferHeadsetMicrophone = false/);
   assert.match(swift, /if preferHeadsetMicrophone \{ options.insert\(\.allowBluetooth\) \}/);
   assert.match(swift, /setCategory\(category, mode: .default/);
-  assert.match(swift, /#available\(iOS 26.0, \*\).*bluetoothHighQualityRecording/);
-  assert.match(swift, /highQualityRecording.isSupported == true/);
+  assert.doesNotMatch(swift, /bluetoothHighQualityRecording|highQualityRecording/);
   assert.match(swift, /case .builtIn: preferred = inputs.first \{ \$0.portType == .builtInMic \}/);
   assert.match(swift, /#available\(iOS 18.2, \*\), session.isEchoCancelledInputAvailable/);
   assert.match(swift, /setPrefersEchoCancelledInput\(true\)/);
@@ -3318,7 +3432,7 @@ test('listening badge identifies the actual microphone alongside the selected ex
     native: { isNative: () => true }, el: () => badge,
     activeSession: { currentExerciseId: 'bench', entries: [{ exerciseId: 'bench', exerciseName: 'Bench' }] },
     voiceListeningActive: true, voiceListeningError: '', voiceCountingState: null,
-    voiceInputName: 'iPhone microphone',
+    voiceInputName: 'iPhone microphone', voiceTargetEntryIndex: () => 0,
   });
   vm.runInContext(section('function setVoiceBadge(', 'function handleVoiceTranscript('), context);
   context.updateVoiceBadgeForListeningState();
@@ -3364,7 +3478,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3373,7 +3487,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -3447,7 +3561,7 @@ test('reviewed home-plan activation adds only chosen catalog entries and restore
     openTrainingDialog() {}, openExerciseGuide() {}, renderExercisesTab() {}, renderWorkoutTab() {}, renderHomeTab() {}, showToast() {},
     buildProgramDraft: () => { throw Error('Populated session must not be replaced'); },
   });
-  vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState()'), context);
+  vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState('), context);
   const proposed = ['chairStand', 'wallPushup'].map((id) => ({
     ...library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === id),
     defaultSets: 2, targetReps: 8, restSeconds: 75,
@@ -3492,7 +3606,7 @@ test('one-click saved-plan start uses the real workout controller, blocks logged
       el: () => ({ classList: { add() {}, remove() {} } }), native: { isNative: () => false },
       syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {},
     });
-    vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState()'), context);
+    vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState('), context);
     vm.runInContext(section('function persistActiveSession()', 'function trainingAPI()'), context);
     vm.runInContext(section('function ensureWorkoutStarted()', 'function cancelWorkoutGreeting()'), context);
     const api = context.trainingAPI();
@@ -3552,7 +3666,7 @@ test('pausing and resuming cardio banks elapsed time without shortening the hist
     Date: { now: () => now }, exercises: [], activeSession: { entries: [entry] }, settings: {},
     document: { createElement: () => ({}) }, formatHMS: String, escapeHtml: String, escapeAttr: String,
     qs: (selector) => ({ setAttribute() {}, addEventListener: (name, callback) => { callbacks[selector] = callback; } }),
-    ensureWorkoutStarted() {}, persistActiveSession() {}, renderWorkoutTab() {},
+    ensureWorkoutStarted() {}, persistActiveSession() {}, renderWorkoutTab() {}, advanceWorkoutFocus() {},
     restTimer: { stop() {} }, el: () => ({ classList: { add() {} } }),
   });
   vm.runInContext(section('function renderCardioCard(', 'function tickCardioTimers('), context);
@@ -4123,7 +4237,7 @@ function nativePlanContext() {
     activeSession: { running: true, entries: [] }, holdTimers: new Map(), exercises: [],
     settings: { voiceAnnouncements: true, voiceIntervalAnnouncements: true },
     restDoneMessage: 'continue', el: () => ({ textContent: 'Bench' }),
-    db: { saveActiveSession() {} }, syncWorkoutActivity() {},
+    db: { saveActiveSession() {} }, syncWorkoutActivity() {}, cancelSpeech() {},
     native: { isNative: () => true, bgScheduleAnnouncements: async (items) => {
       calls.push(JSON.parse(JSON.stringify(items))); return true;
     } },
@@ -4131,10 +4245,63 @@ function nativePlanContext() {
   });
   vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
   vm.runInContext(section('function persistActiveSession()', 'function buildWorkoutActivityPayload()'), context);
-  context.restTimer = clock.rest({ onChange: () => context.persistRestTimerState(), onTick() {}, onDone() {} });
+  context.restTimer = clock.rest({ onChange: (completed) => context.persistRestTimerState(completed), onTick() {}, onDone() {} });
   return { ...clock, calls, messages };
 }
 
+test('skip, replacement and extension cancel expired rest speech while natural completion preserves its completion announcement', () => {
+  const { context, advance } = nativePlanContext(), cancelled = [];
+  context.cancelSpeech = (prefix) => cancelled.push(prefix);
+  context.restTimer.start(90);
+  let end = context.restTimer.endAt;
+  context.restTimer.stop();
+  assert.equal(cancelled.at(-1), `rest:${end}:`);
+  context.restTimer.start(90);
+  end = context.restTimer.endAt;
+  context.restTimer.addSeconds(15);
+  assert.equal(cancelled.at(-1), `rest:${end}:`);
+  end = context.restTimer.endAt;
+  context.restTimer.start(30);
+  assert.equal(cancelled.at(-1), `rest:${end}:`);
+  end = context.restTimer.endAt;
+  advance(30);
+  context.restTimer.forceTick();
+  assert.equal(cancelled.at(-1), `rest:${end}:start`);
+});
+
+test('rest cancellation reaches native speech and browser cancellation leaves unrelated speech untouched', async () => {
+  let payload;
+  const native = bridgeContext({ BackgroundAnnouncer: { cancelSpeech: async (data) => { payload = data; } } });
+  await native.cancelAnnouncementSpeech('rest:123:');
+  assert.equal(payload.announcementPrefix, 'rest:123:');
+  let cancelled = 0;
+  const context = vm.createContext({ isNative: () => false,
+    window: { speechSynthesis: { speak() {}, cancel: () => cancelled++ } },
+    SpeechSynthesisUtterance: function (text) { this.text = text; } });
+  vm.runInContext(read('www/js/timer.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  context.speak('rest intro', 'he-IL', 'rest:123:start');
+  const before = cancelled;
+  context.cancelSpeech('rest:123:');
+  assert.equal(cancelled, before + 1);
+  context.speak('hold cue', 'he-IL', 'hold:456:');
+  const other = cancelled;
+  context.cancelSpeech('rest:123:');
+  assert.equal(cancelled, other);
+  const swift = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  assert.match(swift, /cancelledPrefixes.contains\(where:[\s\S]*identifier.hasPrefix/);
+  assert.match(swift, /let retained = self.pendingSpeech.filter[\s\S]*self.speechQueue.interrupt\(\)[\s\S]*self.speechSynthesizer.stopSpeaking[\s\S]*for item in retained/);
+  assert.match(swift, /pendingSpeech.removeAll \{ \$0.utterance === utterance \}/);
+});
+
+test('native speech keeps partial count capture alive and rotates final or stalled requests instead of every emitted phrase', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  const emit = swift.slice(swift.indexOf('private func emit('));
+  assert.doesNotMatch(emit, /restart\(/);
+  assert.match(swift, /result\?\.isFinal == true[\s\S]*restart\(after: 0.05\)/);
+  assert.match(swift, /pendingRotation = rotation[\s\S]*\.now\(\) \+ 45/);
+  assert.match(swift, /pendingRotation\?\.cancel\(\)/);
+  assert.match(swift, /speechError.domain == "kAFAssistantErrorDomain" && speechError.code == 1110[\s\S]*restart\(after: 0.2\)/);
+});
 test('catalog hold IDs retain their full identity in native announcement plans', () => {
   const { context } = nativePlanContext();
   context.exercises = [{ id: 'library:side-plank', holdSeconds: 42 }];
