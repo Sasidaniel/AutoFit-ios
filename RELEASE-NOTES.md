@@ -1,11 +1,26 @@
 # AutoFit release notes
 
-## 1.0 (35) - Approved TestFlight release candidate
+## 1.0 (35) - Verified internal TestFlight release (2026-10-25)
 
 App shell: `autofit-v67`. The owner explicitly approved publishing the code and
 documentation and releasing build 35 to internal TestFlight. These changes are
-**not included in TestFlight build 34**. Native CI and Apple delivery verification
-are pending; this candidate is not yet a verified TestFlight release.
+**not included in TestFlight build 34**. **494 Node 22 regressions, all four Swift
+suites, signed app/widget archive, export and upload passed in macOS CI.**
+
+**Apple verified build 35 as VALID / IN_BETA_TESTING at 2026-10-25 14:17:59 UTC.**
+Released binary source:
+[`ef88284652c749d48b411f521dc42175377a96b7`](https://github.com/Sasidaniel/AutoFit-ios/commit/ef88284652c749d48b411f521dc42175377a96b7).
+Apple build ID: `8e93d7dc-fd25-4274-bd13-9b7d68b9d9ce`.
+External state: `READY_FOR_BETA_SUBMISSION`; no external submission was performed.
+
+The [native build/upload run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40201060019)
+passed all tests and uploaded the signed binary. Its internal-distribution
+verification failed after Apple processing was already `VALID`, so that run's
+overall conclusion is failure. The
+[successful verification-only completion](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40201567072)
+then confirmed actual internal availability using the exact same source and
+already-uploaded binary. It did not rebuild, reupload, create testers or submit
+an external beta or public App Store release.
 
 1. Automatic microphone selection uses the phone or a wired microphone rather
    than Bluetooth recording. Playback retains mixing and high-quality Bluetooth
@@ -63,11 +78,12 @@ calculations; and Hebrew RTL/English LTR. Saved plans remained unchanged after
 cancel/review. During a running 23-exercise workout, live ticks retained card
 and input node identity, unsaved note text and scroll position. The browser
 honestly displayed manual input, not real microphone listening. No actual user
-storage was read or changed.
+storage was read or changed. Synthetic storage, caches and service workers were
+removed and the temporary acceptance server was stopped afterward.
 
-**Native acceptance pending:** Swift is unavailable on the Windows development
-host. Updated Swift suites and the signed iOS build must pass in macOS CI.
-Actual music playback, Bluetooth routing, extended recognition and iPhone touch
+**Device acceptance remains necessary:** Swift is unavailable on the Windows
+development host, but all updated Swift suites and the signed iOS build passed
+in macOS CI. Actual music playback, Bluetooth routing, extended recognition and iPhone touch
 scrolling still require device testing; browser/controller tests cannot verify
 those physical behaviors. Recommended device sequence: play music, open Workout,
 count multiple sets through rest, finish an exercise and start counting the next,
