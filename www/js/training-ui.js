@@ -63,6 +63,7 @@ const MOVEMENTS = { squat: 'סקוואט', lunge: 'מכרע', hinge: 'תנועת
   'hip-extension': 'פשיטת ירך', 'core-control': 'שליטה בגו', 'elbow-flexion': 'כפיפת מרפקים' };
 const ACTION_ERRORS = {
   'The saved plan changed; reopen the editor': 'התוכנית השתנתה או נמחקה מאז פתיחת העריכה. סגור ופתח אותה מחדש; לא נשמרו שינויים.',
+  'Undo exercise removal before restoring the equipment swap': 'בטל קודם את הסרת התרגיל כדי לשחזר את החלפת הציוד. הביצועים נשמרו.',
   'Keep at least one exercise per workout': 'יש להשאיר לפחות תרגיל אחד בכל אימון.',
   'Keep the interval recipe intact': 'רצף האינטרוולים נשמר בשלמותו. לשינוי הסבבים אפשר לבנות אימון חבל חדש ולשמור אותו בנפרד.',
   'Selected muscle groups do not cover every split day': 'קבוצות השרירים שנבחרו אינן מכסות כל חלק בחלוקה. בחר גם קבוצות מהחלקים האחרים, או בחר פול בודי.',
@@ -220,7 +221,9 @@ export function createTrainingUI(api) {
     const state = api.getState();
     const entry = state.session.entries.find((entry) => entry.exerciseId === exerciseId);
     const exercise = entry.exerciseSnapshot || state.exercises.find((exercise) => exercise.id === exerciseId);
-    const choices = tools.alternatives(exercise, tools.planningCatalog(state.exercises)).filter((choice) => !state.session.entries.some((entry) => entry.exerciseId === choice.id));
+    const choices = tools.alternatives(exercise, tools.planningCatalog(state.exercises)).filter((choice) =>
+      !state.session.entries.some((entry) => entry.exerciseId === choice.id)
+      && !state.session.removedExercises?.some(({ entry }) => entry.exerciseId === choice.id));
     const dialog = api.dialog(t('המכשיר תפוס'), `<p data-no-translate>${name(exercise)}</p>
       ${note('החלפה לתנועה ולאזור עבודה תואמים עם ציוד שונה, לא הבטחה לשקילות. בחר עומס חדש; המשקל אינו מועתק.')}
       ${choices.length ? field('בחר חלופה', `<select id="swapChoice" class="select" data-no-translate>${choices.map((choice) => `<option value="${esc(choice.id)}">${name(choice)}</option>`).join('')}</select>`)

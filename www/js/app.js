@@ -646,7 +646,7 @@ function setsForWeek(ex, config = settings) {
 
 function applyProgramWeekToActiveSession() {
   if (!activeSession) return;
-  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length) {
+  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length || activeSession.removedExercises?.length) {
     showToast('הבחירה נשמרה לתוכנית. האימון המותאם הנוכחי נשאר ללא שינוי.');
     return;
   }
@@ -841,6 +841,7 @@ function resumeWorkout() {
 }
 
 function updateWorkoutPauseControls() {
+  el('btnStartWorkout').disabled = !activeSession.entries.length;
   el('btnPauseWorkout').disabled = !activeSession.running;
   el('btnStartWorkout').textContent = activeSession.paused ? 'המשך אימון' : 'התחל אימון';
   i18n.translateDOM(el('btnStartWorkout'));
@@ -979,7 +980,8 @@ function finishWorkout() {
   activeSession.running = false;
   activeSession.accumulatedSec = durationSec;
 
-  const hasCompleted = activeSession.entries.some((e) =>
+  const recordedEntries = trainingTools.workoutHistoryEntries(activeSession);
+  const hasCompleted = recordedEntries.some((e) =>
     e.type === 'cardio' ? e.completed : e.sets.some((s) => s.completed)
   );
   if (hasCompleted) {
@@ -992,15 +994,17 @@ function finishWorkout() {
       ...(native.isNative() ? { healthSyncPending: true } : {}),
       healthDelivery: { status: native.isNative() ? 'pending' : 'unavailable',
         reason: native.isNative() ? '' : 'browser', updatedAt: new Date().toISOString() },
-      entries: activeSession.entries
+      entries: recordedEntries
         .map((e) => {
           if (e.type === 'cardio') {
             return e.completed
               ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '',
-                ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}) }
+                ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}),
+                ...(e.removedFromWorkout ? { removedFromWorkout: true } : {}) }
               : null;
           }
-          return insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
+          const completed = insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
+          return e.removedFromWorkout ? { ...completed, removedFromWorkout: true } : completed;
         })
         .filter((e) => e && (e.type === 'cardio' || e.sets.length > 0)),
     };
@@ -1042,7 +1046,7 @@ function trainingAPI() {
   const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'restSeconds', 'durationMinutes', 'holdSeconds', 'pace', 'intervals']
     .map((key) => [key, exercise[key] ?? null]));
   const sessionHasData = () => activeSession.running || activeSession.paused || activeSession.startedAt || activeSession.accumulatedSec > 0
-    || activeSession.timeBudget || activeSession.substitutions?.length
+    || activeSession.timeBudget || activeSession.substitutions?.length || activeSession.removedExercises?.length
     || activeSession.entries.some((entry) => trainingTools.entryHasActivity(entry));
   const applyProgram = (nextExercises, nextSettings) => {
     const keepSession = sessionHasData();
@@ -1067,7 +1071,8 @@ function trainingAPI() {
       busy: !!voiceCountingState || holdTimers.size > 0,
       restSeconds: remainingRest() }),
     saveSession(next) {
-      const entries = [...next.entries, ...(next.timeBudget?.deferred || []), ...(next.substitutions || []).map((item) => item.original)];
+      const entries = [...next.entries, ...(next.removedExercises || []).map((item) => item.entry),
+        ...(next.timeBudget?.deferred || []), ...(next.substitutions || []).map((item) => item.original)];
       for (const entry of entries) {
         if (entry.type === 'cardio' || entry.exerciseSnapshot) continue;
         const exercise = exercises.find((item) => item.id === entry.exerciseId);
@@ -1087,6 +1092,12 @@ function trainingAPI() {
       syncWorkoutActivity();
     },
     saveSettings(next) { db.saveSettings(next); settings = next; },
+    changeWorkoutRemoval(exerciseId, restore = false) {
+      if (activeSession.running) pauseWorkout();
+      const transform = restore ? trainingTools.restoreWorkoutExercise : trainingTools.removeWorkoutExercise;
+      this.saveSession(transform(activeSession, exerciseId));
+      renderHomeTab();
+    },
     saveEditedPlan(original, draft) {
       const latest = db.getSettings();
       const training = latest.training || {};
@@ -1344,6 +1355,18 @@ function renderWorkoutTab() {
   updateWorkoutPauseControls();
   const list = el('exerciseList');
   list.innerHTML = '';
+  if (activeSession.removedExercises?.length) {
+    const removed = document.createElement('section');
+    removed.className = 'card workout-removed-exercises';
+    removed.innerHTML = `<h3>תרגילים שהוסרו מהאימון הנוכחי</h3>
+      <p class="field-hint">אינם נכללים ביעדים ובאחוזים. סטים שהושלמו נשמרים בהיסטוריה. אפשר לבטל הסרה במהלך האימון.</p>
+      ${activeSession.removedExercises.map(({ entry }) => `<div class="workout-removed-row"><span data-no-translate>${escapeHtml(i18n.exerciseName(entry.exerciseName))}</span>
+        <button class="btn btn-secondary btn-small" data-restore-workout-exercise="${escapeAttr(entry.exerciseId)}">ביטול הסרה</button></div>`).join('')}`;
+    qsa('[data-restore-workout-exercise]', removed).forEach((button) =>
+      button.addEventListener('click', () => openWorkoutRemovalDialog(button.dataset.restoreWorkoutExercise, true)));
+    list.appendChild(removed);
+    i18n.translateDOM(removed);
+  }
   const lastByExercise = getLastCompletedValuesByExercise();
 
   let exerciseNumber = 0;
@@ -1377,11 +1400,13 @@ function renderWorkoutTab() {
         </div>
       </div>
       <div class="exercise-head-right">
+        <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
         ${library.exerciseGuide(ex) ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
         ${ex.images?.length || library.exerciseGuide(ex) ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
       </div>
     `;
     const guideButton = qs('.btnExerciseGuide', head);
+    qs('.btnRemoveWorkoutExercise', head).addEventListener('click', () => openWorkoutRemovalDialog(entry.exerciseId));
     if (guideButton) guideButton.addEventListener('click', () => openExerciseGuide(ex));
     if (ex.images?.length || library.exerciseGuide(ex)) {
       qs('.btnShowPhoto', head).addEventListener('click', () => openPhotoModal(ex));
@@ -1534,6 +1559,29 @@ function removeLastWorkoutSet(entry) {
   renderWorkoutTab();
 }
 
+function openWorkoutRemovalDialog(exerciseId, restore = false) {
+  const entry = restore ? activeSession.removedExercises?.find((item) => item.entry.exerciseId === exerciseId)?.entry
+    : activeSession.entries.find((item) => item.exerciseId === exerciseId);
+  if (!entry) { showToast('התרגיל השתנה. פתח שוב את הפעולה.'); return; }
+  const dialog = openTrainingDialog(restore ? 'ביטול הסרת תרגיל' : 'הסרת תרגיל מהאימון הנוכחי', `
+    <p data-no-translate>${escapeHtml(i18n.exerciseName(entry.exerciseName))}</p>
+    <p>השינוי חל רק על האימון הנוכחי. התוכנית הקבועה, התוכניות השמורות וההיסטוריה הקיימת אינן משתנות.</p>
+    <p>תרגיל שהוסר אינו נכלל ביעדים ובאחוזים. סטים שהושלמו יישמרו בהיסטוריה; שאר הנתונים נשמרים לביטול ההסרה במהלך האימון.</p>
+    ${activeSession.running ? '<p>האימון יושהה לפני השינוי כדי לשמור ספירה וטיימרים. אפשר להמשיך אותו לאחר מכן.</p>' : ''}
+    <button class="btn btn-primary btnConfirmWorkoutRemoval">${restore ? 'אישור ביטול ההסרה' : 'אישור הסרה מהאימון הנוכחי'}</button>`);
+  qs('.btnConfirmWorkoutRemoval', dialog).addEventListener('click', () => {
+    try {
+      trainingAPI().changeWorkoutRemoval(exerciseId, restore);
+      dialog.close();
+    } catch (error) {
+      console.error('Workout exercise removal failed', error);
+      const message = qs('.training-dialog-error', dialog);
+      message.textContent = i18n.text('לא ניתן לשנות את ההסרה. הנתונים נשמרו; סגור ופתח שוב את הפעולה.');
+      message.classList.remove('hidden');
+    }
+  });
+}
+
 function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
   const previousSet = { ...set };
   const previousMarker = activeSession.lastCompletedSet;
@@ -1599,12 +1647,12 @@ function updateProgress() {
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
   const { total, done, percent: pct } = getWorkoutSetProgress();
   const progressEntries = strengthEntries.length ? strengthEntries : activeSession.entries.filter((entry) => entry.type === 'cardio');
-  el('setsProgressText').textContent = total ? `${done} / ${total} סטים הושלמו (${pct}%)`
+  el('setsProgressText').textContent = total || !activeSession.entries.length ? `${done} / ${total} סטים הושלמו (${pct}%)`
     : i18n.text(`${progressEntries.filter((entry) => entry.completed).length} / ${progressEntries.length} מקטעי אירובי הושלמו (${pct}%)`);
   el('setsProgressFill').style.width = `${pct}%`;
 
-  const totalEx = progressEntries.length;
-  const doneEx = progressEntries.filter((e) => e.type === 'cardio' ? e.completed : e.sets.length && e.sets.every((s) => s.completed)).length;
+  const totalEx = activeSession.entries.length;
+  const doneEx = activeSession.entries.filter((e) => e.type === 'cardio' ? e.completed : e.sets.length && e.sets.every((s) => s.completed)).length;
   const exPct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
   el('exProgressText').textContent = `${doneEx} / ${totalEx} תרגילים הושלמו (${exPct}%)`;
   el('exProgressFill').style.width = `${exPct}%`;
@@ -1665,6 +1713,7 @@ function renderCardioCard(entry, number) {
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
           <div class="exercise-meta">${entry.exerciseId === 'warmup' || entry.exerciseId === 'cooldown' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
           <div class="exercise-head-right">
+            <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
             ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
             ${hasGuide || mediaExercise.images?.length ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
           </div>
@@ -1692,6 +1741,7 @@ function renderCardioCard(entry, number) {
     </div>
   `;
   if (hasGuide) qs('.btnExerciseGuide', card).addEventListener('click', () => openExerciseGuide(mediaExercise));
+  qs('.btnRemoveWorkoutExercise', card).addEventListener('click', () => openWorkoutRemovalDialog(entry.exerciseId));
   if (hasGuide || mediaExercise.images?.length) qs('.btnShowPhoto', card).addEventListener('click', () => openPhotoModal(mediaExercise));
   qs('.cardioLocation', card).addEventListener('change', (e) => {
     entry.userEdited = true;
@@ -2612,11 +2662,13 @@ function renderHistoryTab() {
         ${w.entries.map((e) => e.type === 'cardio' ? `
           <div class="history-exercise-line">
             <b>${e.exerciseId === 'warmup' ? '🔥' : '🧘'} <span data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</span></b>
+            ${e.removedFromWorkout ? '<p class="field-hint">הוסר מהאימון; הביצועים שהושלמו נשמרו</p>' : ''}
             <div class="history-sets-line"><div>✅ בוצע (${Math.round(e.durationSec / 60)} דקות)${formatCardioExtra(e)}</div></div>
           </div>
         ` : `
           <div class="history-exercise-line">
             <b data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</b>
+            ${e.removedFromWorkout ? '<p class="field-hint">הוסר מהאימון; הביצועים שהושלמו נשמרו</p>' : ''}
             <div class="history-sets-line">
               ${e.sets.map((s, i) => `<div>סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps} ${e.inputType === 'hold' ? 'שניות' : 'חזרות'}${Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty) ? ` · <span>${insights.DIFFICULTY_LABELS[s.difficulty]}</span>` : ''}${s.notes ? `<p data-no-translate>${escapeHtml(s.notes)}</p>` : ''}</div>`).join('')}
             </div>
@@ -4084,7 +4136,7 @@ function showProgramEditDuration(overlay, proposed, isNew) {
 function syncExerciseNameEverywhere(ex) {
   if (!activeSession) return;
   let changed = false;
-  const entries = [...activeSession.entries, ...(activeSession.timeBudget?.deferred || []),
+  const entries = [...activeSession.entries, ...(activeSession.removedExercises || []).map((item) => item.entry), ...(activeSession.timeBudget?.deferred || []),
     ...(activeSession.substitutions || []).map((item) => item.original)];
   entries.forEach((e) => {
     if (e.exerciseId === ex.id && e.exerciseName !== ex.name) {
@@ -4139,7 +4191,7 @@ function makeSortable(listEl, onReorder) {
 
 function reorderActiveSessionToMatchExercises() {
   if (!activeSession) return;
-  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length || settings.training?.activePlan) {
+  if (activeSession.planId || activeSession.timeBudget || activeSession.substitutions?.length || activeSession.removedExercises?.length || settings.training?.activePlan) {
     showToast('הבחירה נשמרה לתוכנית. האימון המותאם הנוכחי נשאר ללא שינוי.');
     return;
   }

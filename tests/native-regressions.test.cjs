@@ -2729,6 +2729,7 @@ for (const finish of [false, true]) {
       syncWorkoutToHealth: () => calls.push('health'),
     });
     vm.runInContext(section('function doCancelWorkout()', 'const CELEBRATION_MESSAGES'), context);
+    context.trainingTools = loadPhaseOneModule('www/js/training-tools.js', ['workoutHistoryEntries'], library);
     vm.runInContext(section('function finishWorkout()', 'function persistActiveSession()'), context);
     vm.runInContext(section('function stopWorkoutTimers()', 'function renderWorkoutTab()'), context);
     if (finish) context.finishWorkout(); else context.doCancelWorkout();
@@ -3363,7 +3364,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3372,7 +3373,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });

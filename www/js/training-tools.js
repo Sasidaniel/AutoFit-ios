@@ -193,6 +193,52 @@ export function entryHasActivity(entry) {
       || !entry.exerciseSnapshot && (set.weightKg !== '' || set.reps !== ''));
 }
 
+export function removeWorkoutExercise(session, exerciseId) {
+  if (session.running) throw new Error('Pause the workout before changing removed exercises');
+  const result = copy(session);
+  const index = result.entries.findIndex((entry) => entry.exerciseId === exerciseId);
+  if (index < 0 || result.removedExercises?.some((item) => item.entry.exerciseId === exerciseId)) {
+    throw new Error('The workout exercise changed; reopen the action');
+  }
+  const entry = result.entries[index];
+  if (entry.startedAt || entry.sets?.some((set) => set.holdStartedAt)) {
+    throw new Error('Pause the workout before changing removed exercises');
+  }
+  result.removedExercises ||= [];
+  const order = result.timeBudget?.order || result.removedExercises[0]?.order;
+  result.removedExercises.push({ entry, order: order?.includes(exerciseId) ? order : result.entries.map((item) => item.exerciseId) });
+  result.entries.splice(index, 1);
+  if (result.currentExerciseId === exerciseId) delete result.currentExerciseId;
+  if (result.lastCompletedSet?.exerciseId === exerciseId) delete result.lastCompletedSet;
+  if (result.pausedVoiceCount?.exerciseId === exerciseId) delete result.pausedVoiceCount;
+  result.programPinned = true;
+  result.activityControlRevision = (result.activityControlRevision || 0) + 1;
+  return result;
+}
+
+export function restoreWorkoutExercise(session, exerciseId) {
+  if (session.running) throw new Error('Pause the workout before changing removed exercises');
+  const result = copy(session);
+  const removed = result.removedExercises?.find((item) => item.entry.exerciseId === exerciseId);
+  if (!removed || result.entries.some((entry) => entry.exerciseId === exerciseId)) {
+    throw new Error('The workout exercise changed; reopen the action');
+  }
+  const originalIndex = removed.order.indexOf(exerciseId);
+  const next = removed.order.slice(originalIndex + 1).find((id) => result.entries.some((entry) => entry.exerciseId === id));
+  const previous = removed.order.slice(0, originalIndex).reverse().find((id) => result.entries.some((entry) => entry.exerciseId === id));
+  const index = next ? result.entries.findIndex((entry) => entry.exerciseId === next)
+    : previous ? result.entries.findIndex((entry) => entry.exerciseId === previous) + 1 : Math.min(originalIndex, result.entries.length);
+  result.entries.splice(index, 0, removed.entry);
+  result.removedExercises = result.removedExercises.filter((item) => item !== removed);
+  if (!result.removedExercises.length) delete result.removedExercises;
+  result.activityControlRevision = (result.activityControlRevision || 0) + 1;
+  return result;
+}
+
+export function workoutHistoryEntries(session) {
+  return [...session.entries, ...(session.removedExercises || []).map(({ entry }) => ({ ...entry, removedFromWorkout: true }))];
+}
+
 export function currentWorkoutEntry(session) {
   const unfinished = (entry) => entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed);
   return session.entries.find((entry) => entry.exerciseId === session.currentExerciseId && unfinished(entry))
@@ -390,6 +436,7 @@ export function swapExercise(session, exerciseId, replacement, catalog) {
     || original.sets.some((set) => set.holdStartedAt || set.resumeAfterPause)
     || !alternatives(source, catalog).some((item) => item.id === replacement.id)
     || result.entries.some((entry) => entry.exerciseId === replacement.id)
+    || result.removedExercises?.some((item) => item.entry.exerciseId === replacement.id)
     || result.substitutions?.some((item) => item.original.exerciseId === exerciseId || item.replacementId === exerciseId)) {
     throw new Error('This replacement is unavailable for the current exercise');
   }
@@ -413,6 +460,10 @@ export function restoreSubstitution(session, replacementId) {
   const result = copy(session);
   const substitution = result.substitutions?.find((item) => item.replacementId === replacementId);
   if (!substitution) throw new Error('Replacement not found');
+  if (result.removedExercises?.some(({ entry }) =>
+    entry.exerciseId === replacementId || entry.exerciseId === substitution.original.exerciseId)) {
+    throw new Error('Undo exercise removal before restoring the equipment swap');
+  }
   const sourceIndex = result.entries.findIndex((entry) => entry.exerciseId === substitution.original.exerciseId);
   const replacementIndex = result.entries.findIndex((entry) => entry.exerciseId === replacementId);
   const replacement = result.entries[replacementIndex];

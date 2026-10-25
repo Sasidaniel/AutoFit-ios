@@ -1,5 +1,50 @@
 # AutoFit release notes
 
+## 1.0 (34) - Approved internal TestFlight release (verification pending)
+
+The owner explicitly approved publishing the code and Markdown documentation,
+using the personal GitHub authentication for this release, and releasing build
+34 to internal TestFlight. App shell: `autofit-v66`. These changes are not in the
+already-delivered build 33. Native CI and Apple availability are pending;
+upload alone will not be reported as verified availability. No external beta or
+public App Store submission is authorized.
+
+- Every workout exercise, including holds, warmup and cardio/rope intervals, has
+  a 44px-minimum Remove exercise action in its header. Confirmation explicitly
+  limits the change to this workout; the exercise library, permanent program,
+  saved plans and existing history are not changed.
+- Exercise totals, completed exercise counts, set totals, progress bars,
+  percentages, current focus and duration estimates refresh immediately from
+  the remaining visible exercises. Exercise counts include visible cardio.
+  Overall progress retains the existing strength-set basis, with an activity
+  fallback for cardio-only workouts. No remaining exercises means zero targets,
+  0% progress and a disabled Start/Resume action rather than a broken denominator.
+- Removal archives the exact session entry instead of deleting logged work.
+  A recovery card at the top supports explicit undo throughout the current
+  workout, including after reload. Set inputs, per-set weights, notes, difficulty,
+  targets, exercise snapshots, paused hold measurements and interval recipes are
+  retained. Multiple undos restore the original ordering without duplicates.
+- A running workout pauses before removal or undo, banking timer/counting state;
+  resuming remains explicit. Control revisions invalidate stale native-widget
+  actions. Time-budget restoration does not resurrect removed exercises, and
+  equipment swaps cannot reuse archived entries or restore either removed
+  participant until removal is undone.
+- Finishing saves completed removed sets/cardio once, with a history explanation.
+  Uncompleted inputs are retained for undo, not recorded as performed exercise.
+  A workout with completed work only in its removal archive can still be saved.
+  Storage failure leaves previous data intact and displays an actionable error.
+
+Acceptance used a separate synthetic browser origin with three saved programs,
+including the supplied custom exercise name "משיכה צרה בפולי עליון במשולש".
+Cancel, storage failure/retry, live 20%-to-33%-to-20% changes, reload/undo,
+all-exercise removal, archived-only completion and unchanged programs/library
+were exercised. Hebrew RTL and English LTR fit 316px without horizontal overflow;
+remove/undo targets measured at least 44px high. No actual iPhone data was read.
+All **482 JavaScript regressions** and **17 module syntax checks** passed locally.
+The protected review preview was updated to v66 only after its unchanged-storage
+guard passed; all five protected storage values remained byte-for-byte unchanged.
+Synthetic test data, caches and service workers were removed afterward.
+
 ## 1.0 (33) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation and

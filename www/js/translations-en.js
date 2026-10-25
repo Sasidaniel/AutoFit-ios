@@ -1,6 +1,21 @@
 import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
+  'הסר תרגיל': 'Remove exercise',
+  'תרגילים שהוסרו מהאימון הנוכחי': 'Exercises removed from this workout',
+  'אינם נכללים ביעדים ובאחוזים. סטים שהושלמו נשמרים בהיסטוריה. אפשר לבטל הסרה במהלך האימון.': 'Excluded from targets and percentages. Completed sets are retained in history. You can undo removal during this workout.',
+  'ביטול הסרה': 'Undo removal',
+  'ביטול הסרת תרגיל': 'Undo exercise removal',
+  'הסרת תרגיל מהאימון הנוכחי': 'Remove exercise from this workout',
+  'השינוי חל רק על האימון הנוכחי. התוכנית הקבועה, התוכניות השמורות וההיסטוריה הקיימת אינן משתנות.': 'This changes only the current workout. Your permanent program, saved plans and existing history are unchanged.',
+  'תרגיל שהוסר אינו נכלל ביעדים ובאחוזים. סטים שהושלמו יישמרו בהיסטוריה; שאר הנתונים נשמרים לביטול ההסרה במהלך האימון.': 'A removed exercise is excluded from targets and percentages. Completed sets will be kept in history; other entered data is retained for undo during this workout.',
+  'האימון יושהה לפני השינוי כדי לשמור ספירה וטיימרים. אפשר להמשיך אותו לאחר מכן.': 'The workout will pause before the change to preserve counting and timers. You can resume afterward.',
+  'אישור ביטול ההסרה': 'Confirm undo removal',
+  'אישור הסרה מהאימון הנוכחי': 'Confirm removal from this workout',
+  'התרגיל השתנה. פתח שוב את הפעולה.': 'The exercise changed. Reopen the action.',
+  'לא ניתן לשנות את ההסרה. הנתונים נשמרו; סגור ופתח שוב את הפעולה.': 'Could not change exercise removal. Your data was kept; close and reopen the action.',
+  'בטל קודם את הסרת התרגיל כדי לשחזר את החלפת הציוד. הביצועים נשמרו.': 'Undo exercise removal before restoring the equipment swap. Your performances were kept.',
+  'הוסר מהאימון; הביצועים שהושלמו נשמרו': 'Removed from workout; completed performances retained',
   'חזרה': 'Back', 'קצב': 'Pace',
   'לכל הקטגוריות': 'All categories',
   'בחר יעד של 1–7 אימונים בשבוע.': 'Choose a goal of 1–7 workouts per week.',

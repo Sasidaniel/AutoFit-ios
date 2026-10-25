@@ -334,6 +334,11 @@ html[dir="ltr"] .card-hint { text-align: left; }
   color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
 }
 .exercise-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; max-width: 48%; }
+.btnRemoveWorkoutExercise { min-height: 44px; color: var(--danger); }
+.workout-removed-exercises h3 { font-size: 16px; margin: 0 0 8px; }
+.workout-removed-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block: 10px; }
+.workout-removed-row > span { min-width: 0; overflow-wrap: anywhere; }
+.workout-removed-row .btn { min-height: 44px; flex-shrink: 0; }
 .exercise-name { overflow-wrap: anywhere; }
 .cardio-body { text-align: center; }
 .rope-phase { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--primary-soft); border-radius: 10px; }
