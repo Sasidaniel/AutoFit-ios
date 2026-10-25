@@ -591,6 +591,10 @@ function buildDraftSession() {
 
 function buildProgramDraft(program, programSettings = settings) {
   const lastByExercise = getLastCompletedValuesByExercise();
+  const selectedPlan = programSettings.training?.activePlan;
+  const savedPlan = programSettings.training?.plans?.find((plan) => plan.id === selectedPlan?.id);
+  const planSnapshot = selectedPlan?.snapshot || (savedPlan?.sessions[selectedPlan.day]
+    ? trainingTools.planIdentity(savedPlan, selectedPlan.day) : null);
   const warmupEx = program.find((ex) => ex.id === 'warmup' && ex.active !== false);
   const cooldownEx = program.find((ex) => ex.id === 'cooldown' && ex.active !== false);
   return {
@@ -600,6 +604,7 @@ function buildProgramDraft(program, programSettings = settings) {
     running: false,
     programPinned: true,
     ...(programSettings.training?.activePlan ? { planId: programSettings.training.activePlan.id } : {}),
+    ...(planSnapshot ? { planSnapshot: JSON.parse(JSON.stringify(planSnapshot)) } : {}),
     entries: [
       ...(warmupEx ? [makeCardioEntry('warmup', program)] : []),
       ...program.filter((ex) => ex.active !== false && ex.id !== 'warmup' && ex.id !== 'cooldown').map((ex) => ex.inputType === 'cardio' ? makeCardioEntry(ex.id, program) : ({
@@ -925,6 +930,7 @@ function openWorkoutSummary(record, celebration = '') {
   };
   const showHealthBtn = !native.isNative();
   const dialog = openTrainingDialog(celebration ? 'האימון נשמר' : 'סיכום אימון', `
+    ${record.planSnapshot ? `<h4 data-no-translate>${escapeHtml(trainingTools.sessionWorkoutTitle(record, i18n.text))}</h4>` : ''}
     ${celebration ? `<p class="summary-celebration">🎉 ${escapeHtml(celebration)}</p>` : ''}
     <div class="summary-stats">
       <div class="stat-box"><div class="stat-value">${formatHMS(record.durationSec)}</div><div class="stat-label">משך האימון</div></div>
@@ -982,6 +988,7 @@ function finishWorkout() {
       dateISO: (activeSession.startedAt || new Date().toISOString()),
       finishedAt: new Date().toISOString(),
       durationSec: Math.round(durationSec),
+      ...(activeSession.planSnapshot ? { planId: activeSession.planId, planSnapshot: JSON.parse(JSON.stringify(activeSession.planSnapshot)) } : {}),
       ...(native.isNative() ? { healthSyncPending: true } : {}),
       healthDelivery: { status: native.isNative() ? 'pending' : 'unavailable',
         reason: native.isNative() ? '' : 'browser', updatedAt: new Date().toISOString() },
@@ -1080,6 +1087,14 @@ function trainingAPI() {
       syncWorkoutActivity();
     },
     saveSettings(next) { db.saveSettings(next); settings = next; },
+    saveEditedPlan(original, draft) {
+      const latest = db.getSettings();
+      const training = latest.training || {};
+      const plans = trainingTools.replaceSavedPlan(training.plans || [], original, draft);
+      const next = { ...latest, training: { ...training, plans } };
+      db.saveSettings(next);
+      settings = next;
+    },
     canStartSavedPlan: () => !sessionHasData() && !voiceCountingState && holdTimers.size === 0,
     startSavedPlan(plan, day) {
       if (!this.canStartSavedPlan()) throw new Error('Finish or save the current workout before starting another');
@@ -1134,7 +1149,8 @@ function trainingAPI() {
       const plans = [...(training.plans || []).filter((item) => item.id !== plan.id), plan];
       if (plans.length > 8) throw new Error('Remove a saved plan before activating another');
       applyProgram(nextExercises, { ...settings, training: { ...training, plans,
-        programBackup: training.programBackup || exercises.map(backupFields), activePlan: { id: plan.id, day } } });
+        programBackup: training.programBackup || exercises.map(backupFields),
+        activePlan: { id: plan.id, day, snapshot: trainingTools.planIdentity(plan, day) } } });
     },
     restoreProgram() {
       const backup = settings.training?.programBackup;
@@ -1324,6 +1340,7 @@ async function handleWorkoutActivityAction(request) {
 }
 
 function renderWorkoutTab() {
+  el('workoutName').textContent = trainingTools.sessionWorkoutTitle(activeSession, i18n.text);
   updateWorkoutPauseControls();
   const list = el('exerciseList');
   list.innerHTML = '';
@@ -2577,6 +2594,7 @@ function renderHistoryTab() {
       <div class="history-item-top">
         <input type="checkbox" class="history-select-check" ${selectedWorkoutIds.has(w.id) ? 'checked' : ''}>
         <div style="flex:1;">
+          ${w.planSnapshot ? `<div class="history-workout-name" data-no-translate>${escapeHtml(trainingTools.sessionWorkoutTitle(w, i18n.text))}</div>` : ''}
           <div class="history-date">${formatDate(w.dateISO)}</div>
           <div class="history-sub">
             <span>⏱ ${formatHMS(w.durationSec)}</span>
@@ -2733,6 +2751,7 @@ function buildWorkoutShareLines(workoutsArr) {
       lines.push(workoutsArr.length > 1 ? `━━━ Workout ${index + 1} ━━━` : `💪 AutoFit workout${who}`,
         `📅 ${formatDate(workout.dateISO)}`, `⏱ Workout duration: ${formatHMS(workout.durationSec)}`,
         `📦 Volume: ${Math.round(computeVolume(workout)).toLocaleString(i18n.locale())} kg`, '');
+      if (workout.planSnapshot) lines.push(trainingTools.sessionWorkoutTitle(workout, i18n.text), '');
       workout.entries.forEach((entry) => {
         if (entry.type === 'cardio') {
           if (entry.completed) lines.push(`⏱ ${i18n.exerciseName(entry.exerciseName)}: ${Math.round(entry.durationSec / 60)} min${formatCardioExtra(entry)}`);
@@ -2759,6 +2778,7 @@ function buildWorkoutShareLines(workoutsArr) {
   workoutsArr.forEach((w, wi) => {
     if (workoutsArr.length > 1) lines.push(`━━━ אימון ${wi + 1} ━━━`);
     else lines.push(`💪 אימון AutoFit${who}`);
+    if (w.planSnapshot) lines.push(trainingTools.sessionWorkoutTitle(w, i18n.text));
     lines.push(`📅 ${formatDate(w.dateISO)}`);
     lines.push(`⏱ משך האימון: ${formatHMS(w.durationSec)}`);
     lines.push(`📦 נפח: ${Math.round(computeVolume(w)).toLocaleString(i18n.locale())} ק"ג`);
@@ -2814,6 +2834,7 @@ function* buildWorkoutShareCanvases(workoutsArr) {
   workoutsArr.forEach((w, wi) => {
     if (wi > 0) add('divider', 24, {});
     if (workoutsArr.length > 1) add('section', 34, { text: `אימון ${wi + 1} — ${formatDate(w.dateISO)}` });
+    if (w.planSnapshot) add('section', 34, { text: trainingTools.sessionWorkoutTitle(w, i18n.text) });
     add('stats', 46, { stats: [formatDate(w.dateISO), `⏱ ${formatHMS(w.durationSec)}`, `📦 ${Math.round(computeVolume(w)).toLocaleString(i18n.locale())} ק"ג`] });
     w.entries.forEach((e) => {
       if (e.type === 'cardio') {
@@ -3370,13 +3391,13 @@ function renderStatsGrid() {
 }
 
 function computeStreak() {
-  // consecutive weeks (ISO week) with at least one workout, counting back from current week
+  // Consecutive Sunday-start weeks with at least one workout, counting back from this week.
   if (!workouts.length) return 0;
-  const weeksWithWorkout = new Set(workouts.map((w) => isoWeekKey(new Date(w.dateISO))));
+  const weeksWithWorkout = new Set(workouts.filter((w) => new Date(w.dateISO) <= new Date()).map((w) => workoutWeekKey(new Date(w.dateISO))));
   let streak = 0;
   let cursor = new Date();
   while (true) {
-    const key = isoWeekKey(cursor);
+    const key = workoutWeekKey(cursor);
     if (weeksWithWorkout.has(key)) {
       streak++;
       cursor.setDate(cursor.getDate() - 7);
@@ -3384,18 +3405,15 @@ function computeStreak() {
   }
   return streak;
 }
-function isoWeekKey(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${weekNo}`;
+function workoutWeekKey(date) {
+  const start = trainingTools.calendarWeekStart(date);
+  return Number.isFinite(start.getTime())
+    ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}` : '';
 }
 function countThisWeek() {
   const now = new Date();
-  const key = isoWeekKey(now);
-  return workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key).length;
+  const key = workoutWeekKey(now);
+  return workouts.filter((w) => new Date(w.dateISO) <= now && workoutWeekKey(new Date(w.dateISO)) === key).length;
 }
 
 function renderVolumeChart() {
@@ -3488,9 +3506,9 @@ function renderConsistencyChart() {
   for (let i = 7; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i * 7);
-    const key = isoWeekKey(d);
+    const key = workoutWeekKey(d);
     weeks.push(key.replace(/^\d+-/, ''));
-    counts.push(workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key).length);
+    counts.push(workouts.filter((w) => new Date(w.dateISO) <= now && workoutWeekKey(new Date(w.dateISO)) === key).length);
   }
   if (consistencyChartInstance) consistencyChartInstance.destroy();
   consistencyChartInstance = new Chart(ctx, {
@@ -3640,10 +3658,14 @@ function wireExercisesTab() {
     el(id).addEventListener(id === 'librarySearch' ? 'input' : 'change', renderExercisesTab);
   });
   el('btnClearLibraryFilters').addEventListener('click', clearLibraryFilters);
-  el('btnBackExerciseCategories').addEventListener('click', () => {
+  const backToCategories = () => {
     exerciseLibraryCategory = null;
     clearLibraryFilters();
-  });
+    el('exerciseCategoryGrid').scrollIntoView({ block: 'start' });
+    qs('[data-category]', el('exerciseCategoryGrid'))?.focus({ preventScroll: true });
+  };
+  el('btnBackExerciseCategories').addEventListener('click', backToCategories);
+  el('btnExerciseCategoryBack').addEventListener('click', backToCategories);
   el('btnAddExercise').addEventListener('click', () => {
     const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
     const draft = { id: db.uid(), name: '', category: group?.category || 'כללי', defaultSets: 3, defaultReps: '12',
@@ -3712,6 +3734,7 @@ function renderExercisesTab() {
     place: el('libraryPlace').value, level: el('libraryLevel').value,
   };
   const filtering = !isMyWorkout && Object.values(filters).some(Boolean);
+  el('btnExerciseCategoryBack').classList.toggle('hidden', !exerciseLibraryCategory && !filtering);
   el('exerciseLibraryFilters').classList.toggle('hidden', isMyWorkout);
   el('btnClearLibraryFilters').classList.toggle('hidden', !filtering);
   const grid = el('exerciseCategoryGrid');
@@ -4578,6 +4601,25 @@ function renderBrand() {
 
 /* ================= HOME TAB ================= */
 function wireHomeTab() {
+  el('homeWeeklyGoal').addEventListener('change', (event) => {
+    const weeklyGoal = Number(event.target.value);
+    if (!Number.isInteger(weeklyGoal) || weeklyGoal < 1 || weeklyGoal > 7) {
+      event.target.value = settings.weeklyGoal;
+      showToast('בחר יעד של 1–7 אימונים בשבוע.');
+      return;
+    }
+    try {
+      const next = { ...db.getSettings(), weeklyGoal };
+      db.saveSettings(next);
+      settings = next;
+      el('settingWeeklyGoal').value = weeklyGoal;
+      renderHomeTab();
+    } catch (error) {
+      console.error('Failed to save weekly goal', error);
+      event.target.value = settings.weeklyGoal;
+      showToast('לא ניתן לשמור את היעד השבועי. הנתונים הקודמים נשמרו.');
+    }
+  });
   wireProfilePhoto('btnHomePhoto', 'homePhotoInput');
   el('btnHomeToDashboard').addEventListener('click', () => switchTab('dashboard'));
   el('btnHomeProgress').addEventListener('click', openHomeProgressModal);
@@ -4638,6 +4680,9 @@ function renderHomeTab() {
   el('homeStartLabel').textContent = overview.running ? 'המשך אימון' : overview.exerciseCount ? 'התחל אימון' : 'בנה את האימון שלי';
   el('homeWeekCount').textContent = overview.weekCount;
   el('homeWeekGoal').textContent = `מתוך ${overview.goal} ${overview.goal === 1 ? 'אימון' : 'אימונים'}`;
+  el('homeWeeklyGoal').value = String(overview.goal);
+  el('homeWorkoutTitle').textContent = trainingTools.sessionWorkoutTitle(activeSession, i18n.text);
+  el('homeWorkoutTitle').setAttribute('data-no-translate', '');
   el('homeWeekFill').style.width = `${overview.percent}%`;
   el('homeWeeklyProgress').setAttribute('aria-valuemax', overview.goal);
   el('homeWeeklyProgress').setAttribute('aria-valuenow', Math.min(overview.weekCount, overview.goal));
@@ -4710,8 +4755,8 @@ function buildHomeStatCards() {
 }
 
 function buildWeekWorkoutsDetailHtml() {
-  const key = isoWeekKey(new Date());
-  const thisWeek = workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key)
+  const key = workoutWeekKey(new Date());
+  const thisWeek = workouts.filter((w) => new Date(w.dateISO) <= new Date() && workoutWeekKey(new Date(w.dateISO)) === key)
     .sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   if (!thisWeek.length) return '<div class="card-hint">עדיין לא בוצע אימון השבוע</div>';
   return `<ul class="home-detail-list">${thisWeek.map((w) => `
@@ -4731,8 +4776,8 @@ function buildStreakDetailHtml() {
   for (let i = 7; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i * 7);
-    const key = isoWeekKey(d);
-    const count = workouts.filter((w) => isoWeekKey(new Date(w.dateISO)) === key).length;
+    const key = workoutWeekKey(d);
+    const count = workouts.filter((w) => new Date(w.dateISO) <= new Date() && workoutWeekKey(new Date(w.dateISO)) === key).length;
     rows.push({ key: key.replace(/^\d+-/, ''), count });
   }
   return `<ul class="home-detail-list">${rows.map((r) => `

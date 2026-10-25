@@ -1,5 +1,84 @@
 # AutoFit release notes
 
+## 1.0 (33) - Approved internal TestFlight release candidate (2026-10-25)
+
+The owner explicitly approved publishing the code and Markdown documentation and
+releasing build 33 to internal TestFlight. These changes follow the already
+delivered build 32; they do not modify that binary. Source publication, macOS CI
+and Apple processing must be verified before claiming availability.
+App shell: `autofit-v65`. No external beta, public App Store launch, identity
+provider activation or paid subscription activation is included.
+
+- Exercise categories now have a sticky, clearly labeled top back arrow and a
+  full-width all-categories button. Both are 48px tall; the top arrow respects
+  RTL/LTR direction. Both return from category or filtered results without writes.
+- Saved manual workouts previously had only a read-only review. A separate editor
+  now supports named and generated saved plans, exercise addition/removal/order,
+  sets, rep ranges, independent optional voice-count targets, rest, load targets,
+  hold seconds and steady-cardio duration/pace. Interval recipes remain intact;
+  changing their rounds requires building a separate rope workout.
+- Editing uses a deep-copy draft and explicit save/cancel, preserves stable IDs,
+  list position, unknown nested metadata and unedited plans, and never activates
+  the edited plan. Saving reads the latest settings to retain unrelated changes
+  and rejects a concurrently changed/deleted target. Storage failure keeps the
+  editor open and the previous persisted/in-memory settings intact.
+- Selected saved workouts carry an immutable name/day snapshot into the workout,
+  home heading, completed history, summary and text/image/PDF sharing. Later saved
+  plan edits cannot rename recorded sessions. Legacy history without recorded
+  plan provenance is retained as-is rather than assigned a guessed workout name.
+- Weeks now run Sunday through Saturday in home counts, adherence charts,
+  streaks, weekly details and muscle-work summaries. Local-calendar calculations
+  handle month/year and daylight-saving boundaries. Existing history is not
+  deleted or redated. A home weekly-goal selector supports explicitly choosing
+  four sessions for A/B/A/B without modifying any saved workout or split.
+- The home training hub no longer shows Save My Workout. Saving remains
+  available in Exercises and the saved-plans dialog.
+
+Difficulty ratings are optional completed-set data, shown in the workout
+summary and retained in history/sharing. They do not change volume or directly
+prove strength gains. Recommendations use the two most recent comparable
+recorded sessions: a hard rating prevents an increase suggestion; missing
+easy/right ratings or mismatched targets do not justify an increase; reaching
+the same explicit rep target throughout both matched sessions at the same load
+can support considering an increase for supported equipment. Changes still
+require explicit acceptance; assistance, holds, cardio and unknown custom
+variants have separate conservative guards. There is no dedicated difficulty
+trend chart.
+
+Preservation was checked on three synthetic existing programs, including the
+owner-provided custom name "משיכה צרה בפולי עליון במשולש" in Back, rep ranges,
+independent hold/cardio targets, full rope recipes and nested metadata. The
+owner's actual iPhone storage is not accessible here. Update in place, not by
+uninstalling; retain a JSON export as an additional precaution (JSON import UI
+is not available).
+
+Local verification: **475 JavaScript regressions and 17 module syntax checks
+passed**; the two calendar/muscle-week cases also passed under
+`TZ=Asia/Jerusalem`. Isolated browser acceptance covered save/cancel, exercise
+addition/removal/reorder, quota failure, concurrent changes, independent
+hold/cardio/rope targets, reload, named activation/completion/history and all 13
+category returns. Hebrew RTL and English LTR fit a 316px content width. The
+existing shared preview was refreshed to v65 with all five original storage
+values byte-for-byte unchanged; synthetic acceptance storage was cleared and
+its temporary server stopped. The original review server remains available.
+
+### Build 33 iPhone acceptance checklist
+
+1. Update in place through TestFlight; do not uninstall. Retain a JSON export as
+   an additional precaution. Confirm all three saved programs, customized targets,
+   exercise order and the personal triangle-handle pulldown in Back remain.
+2. Edit one saved program, cancel once, then save. Confirm the other programs and
+   any already-entered workout remain unchanged. Select the edited plan explicitly
+   to use its new targets; saving alone does not activate it.
+3. Choose a weekly goal of four from Home for A/B/A/B. Confirm only workouts
+   started since Sunday count toward the current week, and earlier history remains.
+   A weekly count goal does not automatically schedule or replace saved programs.
+4. Select/start a saved workout, check its name at the top, complete and save a
+   set, then check the matching history heading. Earlier records without saved
+   plan provenance intentionally retain their existing date-only heading.
+5. Open exercise categories and use both back controls. Check Hebrew/English
+   layout and the existing workout/music/headphone flows on the physical iPhone.
+
 ## 1.0 (32) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation and

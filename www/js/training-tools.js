@@ -94,6 +94,87 @@ export function trainingMetadata(exercise) {
   return info && meta ? { movement: meta[0], primary: meta[1], secondary: meta[2], compound: meta[3], equipment: info.equipment } : null;
 }
 
+export function editSavedPlanExercise(original, changes) {
+  const next = copy(original);
+  const limits = { defaultSets: [1, 100, true], targetReps: [1, 10000, true],
+    restSeconds: [1, 3600, true], holdSeconds: [1, 86400, false],
+    durationMinutes: [0.01, 1440, false], targetWeightKg: [0, 5000, false] };
+  for (const [key, value] of Object.entries(changes)) {
+    if (key === 'defaultReps' || key === 'pace') {
+      const text = String(value).trim();
+      if (text.length > 80 || key === 'defaultReps' && !text) throw new RangeError('Invalid saved exercise target');
+      next[key] = text;
+    } else if (Object.hasOwn(limits, key)) {
+      if (value === '' && ['targetReps', 'targetWeightKg'].includes(key)) {
+        if (key === 'targetReps') delete next[key];
+        else next[key] = null;
+        continue;
+      }
+      const number = Number(value);
+      const [min, max, integer] = limits[key];
+      if (value === '' || !Number.isFinite(number) || number < min || number > max || integer && !Number.isInteger(number)) {
+        throw new RangeError('Invalid saved exercise target');
+      }
+      if (original.intervals && key === 'durationMinutes') throw new Error('Keep the interval recipe intact');
+      next[key] = number;
+    } else throw new Error('Unsupported saved exercise change');
+  }
+  return next;
+}
+
+export function replaceSavedPlan(plans, original, draft) {
+  const index = plans.findIndex((plan) => plan.id === original.id);
+  if (index < 0 || JSON.stringify(plans[index]) !== JSON.stringify(original)) {
+    throw new Error('The saved plan changed; reopen the editor');
+  }
+  if (draft.id !== original.id || !String(draft.name || '').trim() || draft.name.length > 80) {
+    throw new Error('Enter a workout name of 1–80 characters');
+  }
+  if (!draft.sessions?.length || draft.sessions.length !== original.sessions.length) throw new Error('Keep every workout day');
+  for (const day of draft.sessions) {
+    if (!day.exercises.length) throw new Error('Keep at least one exercise per workout');
+    if (new Set(day.exercises.map((exercise) => exercise.id)).size !== day.exercises.length) {
+      throw new Error('Choose distinct exercises in each session');
+    }
+    if (day.splitMuscles && day.exercises.some((exercise) => !day.splitMuscles.includes(trainingMetadata(exercise)?.primary))) {
+      throw new Error('Selected muscle groups do not cover every split day');
+    }
+    const required = day.requiredMuscles || draft.options?.muscles || [];
+    if (required.some((muscle) => !day.exercises.some((exercise) => trainingMetadata(exercise)?.primary === muscle))
+      || draft.options?.muscles?.length && day.exercises.some((exercise) => !draft.options.muscles.includes(trainingMetadata(exercise)?.primary))) {
+      throw new Error('Keep every selected muscle group in the plan');
+    }
+  }
+  return plans.map((plan, position) => position === index ? copy(draft) : plan);
+}
+
+export function planIdentity(plan, day) {
+  return { id: plan.id, day, name: plan.name || '', goal: plan.options?.goal || 'custom',
+    dayLabel: plan.sessions[day].label || String(day + 1), days: plan.sessions.length,
+    ...(plan.options?.goal === 'rope' ? { ropeLevel: plan.options.ropeLevel, minutes: plan.options.minutes } : {}) };
+}
+
+export function sessionWorkoutTitle(session, translate = (text) => text) {
+  const plan = session.planSnapshot;
+  if (!plan) return translate('האימון שלי');
+  const goals = { strength: 'כוח', muscle: 'בניית שריר', fitness: 'כושר כללי / ניהול משקל',
+    walk: 'מתחילים ללכת', run: 'מתחילים לרוץ', rope: 'קפיצה על חבל' };
+  let title = plan.name || translate(goals[plan.goal] || 'אימון שמור');
+  if (!plan.name && plan.goal === 'rope') {
+    const level = { beginner: 'מתחילים', intermediate: 'בינונית', advanced: 'גבוהה' }[plan.ropeLevel];
+    if (level) title += ` · ${translate(level)}`;
+    if (Number.isFinite(plan.minutes) && plan.minutes > 0) title += ` · ${plan.minutes} ${translate('דקות')}`;
+  }
+  return plan.days > 1 ? `${title} · ${translate('אימון')} ${plan.day + 1} (${plan.dayLabel})` : title;
+}
+
+export function calendarWeekStart(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
 export function alternatives(exercise, catalog) {
   const source = trainingMetadata(exercise);
   if (!source || exercise.inputType === 'cardio') return [];
@@ -549,9 +630,7 @@ export function activatePlanExercises(catalog, proposed) {
 }
 
 export function weeklyMuscleWork(history, now = new Date()) {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+  const start = calendarWeekStart(now);
   const muscles = {};
   let unknownSets = 0;
   for (const workout of history) {

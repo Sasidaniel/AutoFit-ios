@@ -10,11 +10,12 @@ function load(file, names, values = {}) {
   vm.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
-const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
+const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
-  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'planCatalog', 'generatePlan',
+  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'editSavedPlanExercise', 'replaceSavedPlan',
+  'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan',
   'generateRopePlan', 'ropeIntervalSchedule', 'cardioIntervalPhase', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
 const insights = load('www/js/workout-insights.js', ['completedEntrySnapshot', 'progressRecommendation', 'compareEntries'], library);
 const catalog = plain(library.LIBRARY_EXERCISES);
@@ -27,6 +28,120 @@ function session(entries) { return { id: 'local-session', running: false, entrie
 function record(id, date, exercise = { ...find('chest'), targetReps: 12 }, sets = [set(20, 12, true, { difficulty: 'right' }), set(20, 12, true, { difficulty: 'easy' })]) {
   return { id, dateISO: date, entries: [insights.completedEntrySnapshot(entry(exercise, sets), exercise)] };
 }
+
+function threeSavedPlans() {
+  const custom = { id: 'owner:triangle-pulldown', name: 'משיכה צרה בפולי עליון במשולש', category: 'גב',
+    inputType: 'reps', defaultSets: 4, defaultReps: '8–12', targetWeightKg: 42.5, restSeconds: 105,
+    personalMetadata: { grip: 'triangle', prescriptions: [{ weightKg: 40, notes: 'keep', difficulty: 'right' }] } };
+  return plain([
+    { id: 'owner:A', name: 'A אישי', kind: 'saved-workout', options: { goal: 'custom', days: 1 },
+      sessions: [{ exercises: [custom, tools.planExercise(find('chest'))], customDay: { keep: true } }], omitted: [], extra: { keep: [1, 2] } },
+    { id: 'owner:B', name: 'B אישי', kind: 'saved-workout', options: { goal: 'custom', days: 1 },
+      sessions: [{ exercises: [{ ...tools.planExercise(find('highPlank')), holdSeconds: 35 },
+        tools.generateRopePlan('intermediate', 15, catalog).sessions[0].exercises[0]] }], omitted: [] },
+    { id: 'owner:C', name: 'אימון שלישי', kind: 'saved-workout', options: { goal: 'custom', days: 1 },
+      sessions: [{ exercises: [tools.planExercise(find('floor'))] }], omitted: [] },
+  ]);
+}
+
+test('editing one of three existing plans preserves custom triangle pulldown identity, ranges, nested targets, order and other plans', () => {
+  const plans = threeSavedPlans(), before = plain(plans), draft = plain(plans[0]);
+  draft.name = 'A עודכן';
+  draft.sessions[0].exercises[0] = tools.editSavedPlanExercise(draft.sessions[0].exercises[0], { defaultSets: '5', defaultReps: '10–14', targetReps: '14' });
+  const next = plain(tools.replaceSavedPlan(plans, plans[0], draft));
+  assert.deepEqual(plans, before, 'Cancel/draft preparation must not mutate stored plans');
+  assert.deepEqual(next.slice(1), before.slice(1));
+  assert.deepEqual(next.map((plan) => plan.id), before.map((plan) => plan.id));
+  assert.equal(next[0].sessions[0].exercises[0].name, 'משיכה צרה בפולי עליון במשולש');
+  assert.equal(next[0].sessions[0].exercises[0].category, 'גב');
+  assert.equal(next[0].sessions[0].exercises[0].targetWeightKg, 42.5);
+  assert.deepEqual(next[0].sessions[0].exercises[0].personalMetadata, before[0].sessions[0].exercises[0].personalMetadata);
+  assert.deepEqual(next[0].sessions[0].customDay, before[0].sessions[0].customDay);
+  assert.deepEqual(next[0].extra, before[0].extra);
+  assert.equal(next[0].sessions[0].exercises[0].defaultSets, 5);
+  assert.equal(next[0].sessions[0].exercises[0].targetReps, 14);
+  assert.equal(next[0].sessions[0].exercises[0].defaultReps, '10–14');
+});
+
+test('saved-plan edits preserve independent holds, full interval recipes and optional targets without inventing voice rep goals', () => {
+  const plans = threeSavedPlans(), exercise = plans[0].sessions[0].exercises[0];
+  const changed = tools.editSavedPlanExercise(exercise, { defaultReps: '6–10', targetWeightKg: '' });
+  assert.equal(changed.targetReps, undefined);
+  assert.equal(changed.targetWeightKg, null);
+  const hold = plans[1].sessions[0].exercises[0], rope = plans[1].sessions[0].exercises[1];
+  assert.equal(tools.editSavedPlanExercise(hold, { holdSeconds: '50' }).holdSeconds, 50);
+  const preserved = tools.editSavedPlanExercise(rope, {});
+  preserved.intervals.rounds++;
+  assert.notEqual(preserved.intervals.rounds, rope.intervals.rounds);
+  assert.throws(() => tools.editSavedPlanExercise(rope, { durationMinutes: '20' }), /interval recipe/);
+  for (const changes of [{ defaultSets: '0' }, { targetReps: '2.5' }, { holdSeconds: '-1' },
+    { restSeconds: '' }, { durationMinutes: '0' }, { targetWeightKg: '-20' }, { defaultReps: '' }, { id: 'replacement' }]) {
+    assert.throws(() => tools.editSavedPlanExercise(exercise, changes));
+  }
+});
+
+test('saving an edited plan retains concurrent unrelated edits but refuses changed or deleted targets and invalid structures', () => {
+  const baseline = threeSavedPlans(), latest = plain(baseline), draft = plain(baseline[0]);
+  latest[2].name = 'Other changes';
+  draft.sessions[0].exercises.reverse();
+  const result = tools.replaceSavedPlan(latest, baseline[0], draft);
+  assert.equal(result[2].name, 'Other changes');
+  assert.equal(result[0].sessions[0].exercises[1].id, 'owner:triangle-pulldown');
+  latest[0].name = 'Concurrent edit';
+  assert.throws(() => tools.replaceSavedPlan(latest, baseline[0], draft), /reopen the editor/);
+  assert.throws(() => tools.replaceSavedPlan(latest.slice(1), baseline[0], draft), /reopen the editor/);
+  const empty = plain(baseline[0]); empty.sessions[0].exercises = [];
+  assert.throws(() => tools.replaceSavedPlan(baseline, baseline[0], empty), /at least one/);
+  const duplicate = plain(baseline[0]); duplicate.sessions[0].exercises.push(duplicate.sessions[0].exercises[0]);
+  assert.throws(() => tools.replaceSavedPlan(baseline, baseline[0], duplicate), /distinct/);
+});
+
+test('saved plan identity snapshots keep custom names and A/B/A/B day labels stable after later edits', () => {
+  const plan = { id: 'four-day', name: 'התוכנית שלי', options: { goal: 'muscle' },
+    sessions: ['A', 'B', 'A', 'B'].map((label) => ({ label, exercises: [] })) };
+  const workout = { planSnapshot: plain(tools.planIdentity(plan, 2)) };
+  plan.name = 'Renamed'; plan.sessions[2].label = 'Changed';
+  assert.equal(tools.sessionWorkoutTitle(workout), 'התוכנית שלי · אימון 3 (A)');
+  assert.equal(workout.planSnapshot.id, 'four-day');
+  assert.equal(tools.sessionWorkoutTitle({}), 'האימון שלי');
+});
+
+test('unnamed rope workout titles retain the saved level and duration with shared bilingual formatting', () => {
+  const plan = tools.generateRopePlan('intermediate', 15, catalog);
+  plan.id = 'saved-rope';
+  const workout = { planSnapshot: tools.planIdentity(plan, 0) };
+  assert.equal(tools.sessionWorkoutTitle(workout), 'קפיצה על חבל · בינונית · 15 דקות');
+  const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: library.LIBRARY_TRANSLATIONS });
+  const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN });
+  i18n.setLanguage('en');
+  assert.equal(tools.sessionWorkoutTitle(workout, i18n.text), 'Jump rope · Intermediate · 15 minutes');
+  workout.planSnapshot.name = 'החבל שלי';
+  assert.equal(tools.sessionWorkoutTitle(workout, i18n.text), 'החבל שלי');
+});
+
+test('calendar week starts on local Sunday across month/year boundaries, including the first week after build 32', () => {
+  for (const [date, expected] of [
+    [new Date(2026, 9, 25, 12), [2026, 9, 25]],
+    [new Date(2026, 9, 24, 23, 59), [2026, 9, 18]],
+    [new Date(2027, 0, 1, 12), [2026, 11, 27]],
+    [new Date(2027, 0, 3, 12), [2027, 0, 3]],
+  ]) {
+    const start = tools.calendarWeekStart(date);
+    assert.deepEqual([start.getFullYear(), start.getMonth(), start.getDate()], expected);
+    assert.equal(start.getHours(), 0);
+    assert.equal(start.getDay(), 0);
+  }
+  const source = read('www/js/app.js'), now = new Date(2026, 9, 25, 12).getTime();
+  class ReviewDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } }
+  const context = vm.createContext({ trainingTools: tools, Date: ReviewDate,
+    workouts: [{ dateISO: new Date(2026, 9, 24, 23, 59).toISOString() },
+      { dateISO: new Date(2026, 9, 26).toISOString() }, { dateISO: 'invalid' }] });
+  vm.runInContext(source.slice(source.indexOf('function workoutWeekKey('), source.indexOf('function renderVolumeChart(')), context);
+  assert.equal(context.countThisWeek(), 0);
+  context.workouts.push({ dateISO: new Date(2026, 9, 25, 10).toISOString() });
+  assert.equal(context.countThisWeek(), 1);
+  assert.equal(context.workoutWeekKey(new ReviewDate(now)), '2026-10-25');
+});
 
 test('73 additional exercises have distinct trusted muscle, movement and real-equipment metadata', () => {
   const additions = catalog.filter((exercise) => exercise.id.startsWith('library:extended-'));
@@ -1182,11 +1297,11 @@ test('completed snapshots preserve per-set loads, ratings, notes, catalog identi
   assert.equal(snapshot.sets[1].difficulty, 'hard');
 });
 
-test('weekly muscle work uses actual completed sets in local Monday week, primary/secondary separately', () => {
+test('weekly muscle work uses actual completed sets in local Sunday week, primary/secondary separately', () => {
   const now = new Date(2026, 9, 21, 12);
   const history = [
     record('current', new Date(2026, 9, 20).toISOString()),
-    record('old', new Date(2026, 9, 18).toISOString()),
+    record('old', new Date(2026, 9, 17, 23, 59).toISOString()),
     record('future', new Date(2026, 9, 24).toISOString()),
   ];
   history[0].entries[0].sets.push(set(100, 100, false));
@@ -1213,7 +1328,7 @@ function storageContext(failAt = -1) {
   const data = new Map([['ft_exercises_v1', '["original"]'], ['ft_settings_v1', '{"before":true}']]);
   let calls = 0;
   const events = [], syncs = [], errors = [];
-  const db = load('www/js/db.js', ['saveProgramState', 'getExercises', 'getSettings', 'getActiveSession', 'setSyncHook'], {
+  const db = load('www/js/db.js', ['saveProgramState', 'saveSettings', 'getExercises', 'getSettings', 'getActiveSession', 'setSyncHook'], {
     localStorage: {
       getItem: (key) => data.get(key) ?? null,
       setItem: (key, value) => { calls++; if (calls === failAt) throw new Error('quota'); data.set(key, value); },
@@ -1265,6 +1380,69 @@ function controllerContext(initial = {}) {
   vm.runInContext(source.slice(start, end), context);
   return { context, api: context.trainingAPI(), writes, notices };
 }
+
+test('real saved-plan editor persistence merges latest settings, preserves three plans and logged work, and survives reload', () => {
+  const { db } = storageContext();
+  const plans = threeSavedPlans();
+  db.saveSettings({ weeklyGoal: 3, training: { plans, activePlan: { id: plans[1].id, day: 0 },
+    programBackup: [{ id: 'keep', active: true }] } });
+  const { context, api, writes } = controllerContext({ settings: plain(db.getSettings()),
+    activeSession: session([entry(find('chest'), [set(42, 12, true, { notes: 'keep', difficulty: 'right' })])]) });
+  const before = plain({ exercises: context.exercises, session: context.activeSession, history: context.workouts });
+  context.db.getSettings = db.getSettings;
+  context.db.saveSettings = (next) => { db.saveSettings(next); writes.push(plain(next)); };
+  const latest = db.getSettings();
+  latest.weeklyGoal = 4;
+  latest.training.plans[2].name = 'Concurrent third plan';
+  db.saveSettings(latest);
+  const draft = plain(plans[0]);
+  draft.sessions[0].exercises[0] = tools.editSavedPlanExercise(draft.sessions[0].exercises[0], { defaultReps: '10–15' });
+  api.saveEditedPlan(plans[0], draft);
+  const reloaded = plain(db.getSettings());
+  assert.equal(reloaded.weeklyGoal, 4);
+  assert.equal(reloaded.training.plans.length, 3);
+  assert.equal(reloaded.training.plans[2].name, 'Concurrent third plan');
+  assert.deepEqual(reloaded.training.plans[1], plans[1]);
+  assert.deepEqual(reloaded.training.activePlan, plain(latest.training.activePlan));
+  assert.deepEqual(reloaded.training.programBackup, plain(latest.training.programBackup));
+  assert.equal(reloaded.training.plans[0].sessions[0].exercises[0].defaultReps, '10–15');
+  assert.deepEqual(plain({ exercises: context.exercises, session: context.activeSession, history: context.workouts }), before);
+  assert.equal(writes.length, 1, 'Only settings are written; never exercises, active session or history');
+});
+
+test('real saved-plan editor refuses storage failure and concurrent target changes without updating memory or any other plan', () => {
+  const plans = threeSavedPlans(), stored = { weeklyGoal: 4, training: { plans: plain(plans) } };
+  const { context, api } = controllerContext({ settings: plain(stored) });
+  context.db.getSettings = () => plain(stored);
+  context.db.saveSettings = () => { throw new Error('QuotaExceededError'); };
+  const before = plain(context.settings), draft = plain(plans[0]);
+  draft.name = 'New name';
+  assert.throws(() => api.saveEditedPlan(plans[0], draft), /QuotaExceededError/);
+  assert.deepEqual(plain(context.settings), before);
+  assert.deepEqual(stored.training.plans, plans);
+  stored.training.plans[0].name = 'Other tab changed it';
+  assert.throws(() => api.saveEditedPlan(plans[0], draft), /reopen the editor/);
+  assert.deepEqual(plain(context.settings), before);
+});
+
+test('real draft builder snapshots the selected saved workout and completion retains that immutable name in history', () => {
+  const plan = threeSavedPlans()[0], source = read('www/js/app.js');
+  const settings = { training: { plans: [plan], activePlan: { id: plan.id, day: 0 } } };
+  const context = vm.createContext({ exercises: [plan.sessions[0].exercises[0]], settings, trainingTools: tools,
+    db: { uid: () => 'named-draft' }, getLastCompletedValuesByExercise: () => ({}) });
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  const draft = context.buildDraftSession();
+  assert.equal(draft.planSnapshot.name, 'A אישי');
+  plan.name = 'Later renamed';
+  assert.equal(draft.planSnapshot.name, 'A אישי');
+  const finished = pauseController();
+  finished.context.activeSession.planId = draft.planId;
+  finished.context.activeSession.planSnapshot = draft.planSnapshot;
+  finished.context.finishWorkout();
+  assert.equal(finished.context.workouts[0].planSnapshot.name, 'A אישי');
+  assert.equal(finished.context.workouts[0].planId, 'owner:A');
+  assert.notEqual(finished.context.workouts[0].planSnapshot, draft.planSnapshot);
+});
 
 test('real app controller activates only after explicit invocation, backs up and restores without losing custom text', () => {
   const { context, api, writes } = controllerContext();

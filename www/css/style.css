@@ -430,7 +430,23 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .exercise-library-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
 .exercise-library-heading h3 { margin: 0; font-size: 18px; }
 .exercise-library-add { margin-bottom: 12px; }
-.exercise-library-back { margin-bottom: 16px; }
+.exercise-library-topbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 12px; background: var(--bg); padding-block: 8px; }
+.exercise-library-topbar .section-title { margin: 0; }
+#exerciseCategoryGrid { scroll-margin-top: 80px; }
+.exercise-category-back { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 10px 14px; }
+[dir="rtl"] .exercise-category-back svg { transform: scaleX(-1); }
+.exercise-library-back { width: 100%; min-height: 48px; margin-bottom: 16px; font-size: 16px; font-weight: 700; }
+.home-week-goal-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block: 12px; }
+.home-week-goal-control .select { width: 76px; margin: 0; }
+.workout-name { margin: 0 0 14px; font-size: 20px; overflow-wrap: anywhere; }
+.history-workout-name { font-weight: 700; margin-bottom: 6px; overflow-wrap: anywhere; }
+.saved-plan-exercise { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-block: 12px; }
+.saved-plan-exercise h4 { margin-block: 4px 12px; overflow-wrap: anywhere; }
+.saved-plan-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.saved-plan-fields .training-field { margin: 0; }
+.saved-plan-day .training-actions .btn { min-height: 44px; }
+.saved-plan-day .select, .saved-plan-fields .input { max-width: 100%; min-width: 0; }
+#btnSaveEditedPlan, #btnCancelEditedPlan { min-height: 44px; margin-block: 4px; }
 .exercise-manage-main { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .exercise-manage-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .exercise-manage-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }

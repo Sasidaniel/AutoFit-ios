@@ -62,6 +62,9 @@ const MOVEMENTS = { squat: 'סקוואט', lunge: 'מכרע', hinge: 'תנועת
   'horizontal-push': 'דחיפה אופקית', 'horizontal-pull': 'משיכה אופקית', 'vertical-push': 'דחיפה מעל הראש',
   'hip-extension': 'פשיטת ירך', 'core-control': 'שליטה בגו', 'elbow-flexion': 'כפיפת מרפקים' };
 const ACTION_ERRORS = {
+  'The saved plan changed; reopen the editor': 'התוכנית השתנתה או נמחקה מאז פתיחת העריכה. סגור ופתח אותה מחדש; לא נשמרו שינויים.',
+  'Keep at least one exercise per workout': 'יש להשאיר לפחות תרגיל אחד בכל אימון.',
+  'Keep the interval recipe intact': 'רצף האינטרוולים נשמר בשלמותו. לשינוי הסבבים אפשר לבנות אימון חבל חדש ולשמור אותו בנפרד.',
   'Selected muscle groups do not cover every split day': 'קבוצות השרירים שנבחרו אינן מכסות כל חלק בחלוקה. בחר גם קבוצות מהחלקים האחרים, או בחר פול בודי.',
   'Invalid plan preferences': 'בדוק שהחלוקה מתאימה למספר האימונים: A/B דורש לפחות שניים, ו-A/B/C לפחות שלושה.',
   'Confirm a jump rope and clear space': 'יש לאשר שיש חבל תקין ומרחב פנוי לפני בניית האימון.',
@@ -89,7 +92,7 @@ export function createTrainingUI(api) {
   const home = document.createElement('section');
   home.className = 'card training-hub';
   home.innerHTML = `<h2>${t('כלים לאימון שלך')}</h2>${note('הצעות מקומיות בלבד. התוכנית וההיסטוריה נשארות שלך.')}
-    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}${button('btnSaveCurrentWorkout', 'שמירת האימון שלי')}
+    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}
     ${button('btnProgressAdvice', 'יעדים אישיים והמלצות')}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
     <p id="trainingPlanStatus" class="field-hint" data-no-translate></p><p id="monthlyGoalStatus" data-no-translate></p>`;
   document.querySelector('.home-workout-hero').after(home);
@@ -112,7 +115,6 @@ export function createTrainingUI(api) {
   on('btnHomePlan', () => planBuilder({ homeOnly: true }));
   on('btnRopePlan', ropeBuilder);
   on('btnSavedPlans', savedPlans);
-  on('btnSaveCurrentWorkout', saveCurrentWorkout);
   on('btnExercisePersonalPlan', () => planBuilder());
   on('btnExerciseHomePlan', () => planBuilder({ homeOnly: true }));
   on('btnExerciseRopePlan', ropeBuilder);
@@ -139,7 +141,7 @@ export function createTrainingUI(api) {
       const message = dialog.querySelector('.training-action-error') || document.createElement('p');
       message.className = 'training-action-error';
       message.setAttribute('role', 'alert');
-      message.textContent = t(ACTION_ERRORS[error.message] || (error instanceof RangeError ? 'בדוק את הטווחים והבחירה ונסה שוב.' : 'לא ניתן לבצע את השינוי. בדוק את הבחירה או את האחסון ונסה שוב.'));
+      message.textContent = i18n.text(ACTION_ERRORS[error.message] || (error instanceof RangeError ? 'בדוק את הטווחים והבחירה ונסה שוב.' : 'לא ניתן לבצע את השינוי. בדוק את הבחירה או את האחסון ונסה שוב.'));
       dialog.querySelector('.training-dialog-body').prepend(message);
       return null;
     }
@@ -355,7 +357,7 @@ export function createTrainingUI(api) {
     };
   }
 
-  function planPreview(original, saved = false) {
+  function planPreview(original) {
     const plan = JSON.parse(JSON.stringify(original));
     const available = tools.planCatalog(tools.planningCatalog(api.getState().exercises), plan.options.equipment, plan.options.location);
     const dialog = api.dialog(t('תוכנית מוצעת — בדיקה ועריכה'), `<p><span>${t(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || '')}</span>
@@ -390,7 +392,7 @@ export function createTrainingUI(api) {
         <p class="field-hint plan-budget-warning" role="status" data-no-translate></p>
         <button class="btn btn-primary btn-small" data-activate="${index}">${t('בדיקה והפעלת האימון הזה')}</button></section>`).join('')}
       ${note('כל אימון מופעל במפורש. נשמר גיבוי של הבחירה הקודמת לשחזור; אין החלפה של תוכנית ללא אישור.')}
-      ${button('btnSaveAlternatePlan', saved ? 'שמירת עריכות בתוכנית החלופית' : 'שמירה כתוכנית חלופית', true)}`);
+      ${button('btnSaveAlternatePlan', 'שמירה כתוכנית חלופית', true)}`);
     function updateEstimates() {
       dialog.querySelectorAll('[data-day]').forEach((section) => {
         const edited = [];
@@ -486,9 +488,92 @@ export function createTrainingUI(api) {
   }
 
   function workoutTitle(plan) {
-    if (plan.name) return plan.name;
-    if (plan.options.goal === 'rope') return `${i18n.text('קפיצה על חבל')} · ${i18n.text(ROPE_LEVELS.find(([key]) => key === plan.options.ropeLevel)?.[1] || '')} · ${plan.options.minutes} ${i18n.text('דקות')}`;
-    return i18n.text(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || 'אימון שמור');
+    return tools.sessionWorkoutTitle({ planSnapshot: { ...tools.planIdentity(plan, 0), days: 1 } }, i18n.text);
+  }
+  function savedPlanEditor(original) {
+    const baseline = JSON.parse(JSON.stringify(original));
+    let draft = JSON.parse(JSON.stringify(original));
+    const available = tools.planningCatalog(api.getState().exercises);
+    const dialog = api.dialog(t('עריכת תוכנית שמורה'), '');
+    const body = dialog.querySelector('.training-dialog-body');
+    const input = (exercise, key, label, numeric = false) => field(label,
+      `<input class="input" data-plan-field="${key}" type="${numeric ? 'number' : 'text'}" ${numeric ? 'step="any"' : 'maxlength="80"'} value="${esc(exercise[key] ?? '')}" data-no-translate>`);
+    function readDraft() {
+      const next = JSON.parse(JSON.stringify(draft));
+      next.name = body.querySelector('#editSavedPlanName').value.trim();
+      body.querySelectorAll('[data-saved-day]').forEach((section) => {
+        const day = next.sessions[Number(section.dataset.savedDay)];
+        section.querySelectorAll('[data-saved-row]').forEach((row) => {
+          const index = Number(row.dataset.savedRow);
+          const changes = {};
+          row.querySelectorAll('[data-plan-field]').forEach((control) => {
+            const key = control.dataset.planField;
+            if (control.value !== String(day.exercises[index][key] ?? '')) changes[key] = control.value;
+          });
+          day.exercises[index] = tools.editSavedPlanExercise(day.exercises[index], changes);
+        });
+      });
+      return next;
+    }
+    function render() {
+      body.innerHTML = `<p class="training-dialog-error hidden" role="alert"></p>${field('שם האימון', `<input class="input" id="editSavedPlanName" maxlength="80" value="${esc(draft.name || workoutTitle(draft))}" data-no-translate>`)}
+        ${note('העריכה נשמרת רק בתוכנית הזו. האימון הנוכחי, תוכניות אחרות וההיסטוריה אינם משתנים. כדי להשתמש בעריכה, בחר שוב את התוכנית במפורש.')}
+        ${note('אפשר להשאיר טווח חזרות כמו 8–12. יעד חזרות לספירה קולית הוא מספר נפרד ואפשר להשאירו ריק.')}
+        ${draft.sessions.map((day, dayIndex) => `<section class="saved-plan-day" data-saved-day="${dayIndex}">
+          <h3><span>${t('אימון')}</span> <span data-no-translate>${dayIndex + 1}${day.label ? ` (${esc(day.label)})` : ''}</span></h3>
+          ${day.exercises.map((exercise, index) => `<section class="saved-plan-exercise" data-saved-row="${index}">
+            <h4 data-no-translate>${name(exercise)}</h4><div class="saved-plan-fields">
+            ${exercise.inputType === 'cardio' ? exercise.intervals ? '' : input(exercise, 'durationMinutes', 'דקות', true) + input(exercise, 'pace', 'קצב') :
+              input(exercise, 'defaultSets', 'סטים', true) + input(exercise, 'restSeconds', 'מנוחה בשניות', true) +
+              (exercise.inputType === 'hold' ? input(exercise, 'holdSeconds', 'שניות החזקה', true) :
+                input(exercise, 'defaultReps', 'חזרות או טווח חזרות') + input(exercise, 'targetReps', 'יעד חזרות לספירה קולית', true)) +
+              input(exercise, 'targetWeightKg', 'משקל יעד בק״ג — לא חובה', true)}
+            </div>${exercise.intervals ? note('רצף האינטרוולים נשמר בשלמותו. לשינוי הסבבים אפשר לבנות אימון חבל חדש ולשמור אותו בנפרד.') : ''}
+            <div class="training-actions">
+              <button class="btn btn-secondary btn-small" data-move="-1" ${index === 0 ? 'disabled' : ''}>${t('הזזה למעלה')}</button>
+              <button class="btn btn-secondary btn-small" data-move="1" ${index === day.exercises.length - 1 ? 'disabled' : ''}>${t('הזזה למטה')}</button>
+              <button class="btn btn-secondary btn-small" data-remove-exercise>${t('הסרה מהתוכנית')}</button>
+            </div></section>`).join('')}
+          ${field('הוספת תרגיל', `<select class="select saved-plan-add" data-no-translate>${available.filter((exercise) =>
+            !day.exercises.some((existing) => existing.id === exercise.id)
+            && (!day.splitMuscles || day.splitMuscles.includes(tools.trainingMetadata(exercise)?.primary))
+            && (!draft.options?.muscles?.length || draft.options.muscles.includes(tools.trainingMetadata(exercise)?.primary)))
+            .map((exercise) => `<option value="${esc(exercise.id)}">${name(exercise)}</option>`).join('')}</select>`)}
+          <button class="btn btn-secondary" data-add-exercise>${t('הוספת התרגיל לתוכנית')}</button>
+        </section>`).join('')}
+        ${button('btnSaveEditedPlan', 'שמירת השינויים בתוכנית', true)} ${button('btnCancelEditedPlan', 'ביטול ללא שמירה')}`;
+      body.querySelectorAll('[data-move], [data-remove-exercise], [data-add-exercise]').forEach((control) => {
+        control.onclick = () => safely(dialog, () => {
+          const next = readDraft();
+          const section = control.closest('[data-saved-day]');
+          const day = next.sessions[Number(section.dataset.savedDay)];
+          if (control.hasAttribute('data-add-exercise')) {
+            const selected = available.find((exercise) => exercise.id === section.querySelector('.saved-plan-add').value);
+            if (!selected) throw new Error('Choose at least one exercise before saving');
+            day.exercises.push(tools.planExercise(selected));
+          } else {
+            const index = Number(control.closest('[data-saved-row]').dataset.savedRow);
+            if (control.hasAttribute('data-remove-exercise')) day.exercises.splice(index, 1);
+            else {
+              const to = index + Number(control.dataset.move);
+              [day.exercises[index], day.exercises[to]] = [day.exercises[to], day.exercises[index]];
+            }
+          }
+          draft = next;
+          render();
+        });
+      });
+      body.querySelector('#btnSaveEditedPlan').onclick = () => safely(dialog, () => {
+        const next = readDraft();
+        api.saveEditedPlan(baseline, next);
+        refresh();
+        dialog.close();
+        savedPlans();
+      });
+      body.querySelector('#btnCancelEditedPlan').onclick = () => dialog.close();
+      i18n.translateDOM(body);
+    }
+    render();
   }
   function saveCurrentWorkout() {
     const dialog = api.dialog(t('שמירת האימון שלי'), `${field('שם האימון', '<input class="input" id="savedWorkoutName" maxlength="80" data-no-translate>')}
@@ -539,6 +624,7 @@ export function createTrainingUI(api) {
       ${plan.sessions.map((day, dayIndex) => `<p data-no-translate>${plan.sessions.length > 1 ? `${i18n.text('אימון')} ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''} · ` : ''}${day.exercises.length} ${i18n.text('תרגילים')} · ${durationEstimateText(tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false }))}</p>
         <button class="btn btn-primary btn-small" data-start-plan="${index}" data-plan-day="${dayIndex}" ${canStart ? '' : 'disabled'}>${t('בחירה והתחלת אימון')}${plan.sessions.length > 1 ? ` ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''}` : ''}</button>`).join('')}
       <div class="training-actions"><button class="btn btn-secondary btn-small" data-preview="${index}">${t(plan.kind === 'saved-workout' ? 'בדיקת האימון השמור' : 'בדיקה ועריכה')}</button>
+      <button class="btn btn-secondary btn-small" data-edit-plan="${index}">${t('עריכת התוכנית השמורה')}</button>
       <button class="btn btn-secondary btn-small" data-rename-plan="${index}">${t('שינוי שם האימון')}</button>
       <button class="btn btn-secondary btn-small" data-delete-plan="${index}">${t('מחיקת התוכנית החלופית')}</button></div></section>`).join('') : note('עדיין אין תוכניות חלופיות שמורות.')}
       ${note('לשמירת תוכנית, פתח בניית תוכנית אישית, צור הצעה ולחץ בתחתית ההצעה על שמירה כתוכנית חלופית. שמירה אינה הפעלה.')}
@@ -556,11 +642,12 @@ export function createTrainingUI(api) {
       refresh();
     }));
     dialog.querySelectorAll('[data-rename-plan]').forEach((btn) => btn.onclick = () => { dialog.close(); renameWorkout(plans[Number(btn.dataset.renamePlan)]); });
+    dialog.querySelectorAll('[data-edit-plan]').forEach((btn) => btn.onclick = () => { dialog.close(); savedPlanEditor(plans[Number(btn.dataset.editPlan)]); });
     dialog.querySelectorAll('[data-preview]').forEach((btn) => btn.onclick = () => {
       const plan = plans[Number(btn.dataset.preview)];
       dialog.close();
       if (plan.kind === 'saved-workout') savedWorkoutPreview(plan);
-      else planPreview(plan, true);
+      else savedPlanEditor(plan);
     });
     dialog.querySelectorAll('[data-delete-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       saveTraining({ plans: plans.filter((_, index) => index !== Number(btn.dataset.deletePlan)) });
@@ -582,7 +669,7 @@ export function createTrainingUI(api) {
 
   function weeklyWork() {
     const result = tools.weeklyMuscleWork(api.getState().history);
-    api.dialog(t('עבודת שרירים השבוע'), `${note('מיום שני לפי תאריך תחילת האימון. רק סטים שהושלמו עם זהות ספרייה מתועדת. זה אינו מדד התאוששות או גדילת שריר; סט יכול להופיע בכמה שרירים.')}
+    api.dialog(t('עבודת שרירים השבוע'), `${note('מיום ראשון לפי תאריך תחילת האימון. רק סטים שהושלמו עם זהות ספרייה מתועדת. זה אינו מדד התאוששות או גדילת שריר; סט יכול להופיע בכמה שרירים.')}
       <table class="training-work-map"><thead><tr><th>${t('שריר')}</th><th>${t('עיקרי')}</th><th>${t('משני')}</th></tr></thead>
       <tbody>${Object.entries(result.muscles).map(([muscle, count]) => `<tr><th>${t(muscle)}</th><td>${count.primary}</td><td>${count.secondary}</td></tr>`).join('')}</tbody></table>
       ${!Object.keys(result.muscles).length ? note('עדיין אין סטים עם מיפוי מאומת השבוע.') : ''}

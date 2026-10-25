@@ -1396,6 +1396,7 @@ function homeScreenContext(records = [], entries = [{ exerciseId: 'bench', sets:
     workouts: records, db: { getWorkouts: () => records }, profile: { name: 'Test' },
     settings: { weeklyGoal: 3 }, activeSession: { entries, running: false },
     countThisWeek: () => 2, computeStreak: () => 3, formatHMS: (seconds) => `${seconds}s`,
+    trainingTools: { sessionWorkoutTitle: (session) => session.planSnapshot?.name || 'האימון שלי' },
     el: element, qsa: () => [], switchTab: (tab) => tabs.push(tab),
     renderExercisesTab: () => libraryRenders++, openHomeProgressModal() {},
     wireProfilePhoto() {}, renderProfilePhotos() {},
@@ -1422,6 +1423,45 @@ test('home overview shows real current exercise/set counts and clamps weekly pro
   assert.equal(element('homeWeekFill').style.width, '100%');
   assert.equal(element('homeWeeklyProgress').attributes['aria-valuenow'], '3');
   assert.match(element('homeWeeklyProgress').attributes['aria-valuetext'], /^5 מתוך 3/);
+});
+
+test('home weekly target can be set to four without replacing saved programs or current workout', () => {
+  const { context, element } = homeScreenContext();
+  const plans = [{ id: 'A', sessions: [{ exercises: [{ id: 'personal' }] }] }, { id: 'B' }, { id: 'C' }];
+  const latest = { weeklyGoal: 3, training: { plans }, customSetting: 'keep' };
+  const session = context.activeSession;
+  let saved;
+  context.db.getSettings = () => latest;
+  context.db.saveSettings = (next) => { saved = next; };
+  context.showToast = () => {};
+  const control = element('homeWeeklyGoal'); control.value = '4';
+  control.listeners.change({ target: control });
+  assert.equal(saved.weeklyGoal, 4);
+  assert.equal(saved.customSetting, 'keep');
+  assert.equal(saved.training.plans, plans);
+  assert.equal(context.activeSession, session);
+  assert.equal(element('settingWeeklyGoal').value, 4);
+  assert.match(element('homeWeekGoal').textContent, /4/);
+});
+
+test('home weekly target rejects invalid input and failed storage without changing the previous goal', () => {
+  const { context, element } = homeScreenContext();
+  const previous = context.settings, notices = [], errors = [];
+  context.console = { error: (...args) => errors.push(args) };
+  context.showToast = (message) => notices.push(message);
+  context.db.getSettings = () => previous;
+  context.db.saveSettings = () => { throw new Error('quota'); };
+  const control = element('homeWeeklyGoal'); control.value = '4';
+  control.listeners.change({ target: control });
+  assert.equal(context.settings, previous);
+  assert.equal(control.value, 3);
+  assert.equal(errors.length, 1);
+  assert.match(notices[0], /לא ניתן לשמור/);
+  control.value = '';
+  control.listeners.change({ target: control });
+  assert.equal(control.value, 3);
+  assert.equal(context.settings, previous);
+  assert.match(notices[1], /1–7/);
 });
 
 test('home start delegates to the existing start control, and resume does not restart the workout', () => {
@@ -3323,7 +3363,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3332,7 +3372,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -3386,7 +3426,7 @@ test('offline installation reloads every shell asset including legal and commerc
 
 test('reviewed home-plan activation adds only chosen catalog entries and restores the program without touching populated work', () => {
   const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
-    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity'], { ...library, ...insights });
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity'], { ...library, ...insights });
   const originals = [
     { id: 'native:bench', catalogId: 'bench', name: 'My personal bench', active: true, defaultSets: 3,
       defaultReps: '8', restSeconds: 120, images: ['personal-photo'], notes: 'keep this' },
@@ -3432,7 +3472,7 @@ test('reviewed home-plan activation adds only chosen catalog entries and restore
 
 test('one-click saved-plan start uses the real workout controller, blocks logged work and remains idle on a failed start write', () => {
   const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
-    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity'], { ...library, ...insights });
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity'], { ...library, ...insights });
   for (const failure of [false, true]) {
     let starts = 0, persisted, failStart = failure;
     const definition = { ...library.LIBRARY_EXERCISES.find((item) => item.catalogId === 'chairStand'), active: true };
