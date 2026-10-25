@@ -1,13 +1,28 @@
 # AutoFit release notes
 
-## 1.0 (34) - Approved internal TestFlight release (verification pending)
+## 1.0 (34) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation,
 using the personal GitHub authentication for this release, and releasing build
 34 to internal TestFlight. App shell: `autofit-v66`. These changes are not in the
-already-delivered build 33. Native CI and Apple availability are pending;
-upload alone will not be reported as verified availability. No external beta or
-public App Store submission is authorized.
+already-delivered build 33. **482 Node 22 regressions, all four Swift suites,
+signed app/widget archive, export and upload passed in macOS CI.**
+No external beta or public App Store submission was performed.
+
+**Apple verified build 34 as VALID / IN_BETA_TESTING at 2026-10-25 10:37:31 UTC.**
+Released binary source:
+[`4a72efeac348dc335d773682951c77a344f4b576`](https://github.com/Sasidaniel/AutoFit-ios/commit/4a72efeac348dc335d773682951c77a344f4b576).
+Apple build ID: `f4a46afb-909a-4b80-a3b8-b67d532464db`.
+External state: `READY_FOR_BETA_SUBMISSION`; no external submission was performed.
+
+The [native build/upload run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40185173828)
+passed all tests and uploaded the binary. Its later internal-group activation
+request received Apple HTTP 422 after processing was already `VALID`; therefore
+that workflow's overall conclusion is failure, not a fully green release run.
+The [successful verification-only completion](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40185535204),
+using the exact same source, then confirmed actual `VALID / IN_BETA_TESTING`.
+It did not rebuild or upload another binary, change the app, create testers,
+or submit an external beta.
 
 - Every workout exercise, including holds, warmup and cardio/rope intervals, has
   a 44px-minimum Remove exercise action in its header. Confirmation explicitly
@@ -44,6 +59,13 @@ All **482 JavaScript regressions** and **17 module syntax checks** passed locall
 The protected review preview was updated to v66 only after its unchanged-storage
 guard passed; all five protected storage values remained byte-for-byte unchanged.
 Synthetic test data, caches and service workers were removed afterward.
+
+Suggested iPhone acceptance: remove an untouched exercise and check the live
+exercise/set totals and percentages; remove an exercise after logging a set;
+undo it and check weights/reps/notes/difficulty; reload and undo again; confirm
+saved plans remain intact; finish and verify retained completed performances
+in history. Removing or undoing during a running workout intentionally pauses
+it first; resume explicitly afterward.
 
 ## 1.0 (33) - Verified internal TestFlight release (2026-10-25)
 
