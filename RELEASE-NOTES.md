@@ -1,13 +1,24 @@
 # AutoFit release notes
 
-## 1.0 (33) - Approved internal TestFlight release candidate (2026-10-25)
+## 1.0 (33) - Verified internal TestFlight release (2026-10-25)
 
 The owner explicitly approved publishing the code and Markdown documentation and
 releasing build 33 to internal TestFlight. These changes follow the already
-delivered build 32; they do not modify that binary. Source publication, macOS CI
-and Apple processing must be verified before claiming availability.
+delivered build 32; they do not modify that binary. **475 Node 22 regressions,
+all four Swift suites, signed app/widget archive, export and upload passed in
+macOS CI.**
 App shell: `autofit-v65`. No external beta, public App Store launch, identity
 provider activation or paid subscription activation is included.
+
+**Apple verified build 33 as VALID / IN_BETA_TESTING at 2026-10-25 10:09:33 UTC.**
+Released binary source:
+[`845c55bcb1085455e2166a1be14be89083462dc8`](https://github.com/Sasidaniel/AutoFit-ios/commit/845c55bcb1085455e2166a1be14be89083462dc8).
+[Successful native release run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40183328989).
+Apple build ID: `1d2287e4-0496-4c4c-8469-9c82716d8114`.
+External state: `READY_FOR_BETA_SUBMISSION`; no external submission was performed.
+The later request to remove an exercise from the current workout, preserve its
+logged performances and allow undo arrived after this run was dispatched. That
+follow-up is not included in the build 33 binary.
 
 - Exercise categories now have a sticky, clearly labeled top back arrow and a
   full-width all-categories button. Both are 48px tall; the top arrow respects
