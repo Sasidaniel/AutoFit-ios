@@ -9,6 +9,9 @@ import * as insights from './workout-insights.js';
 import * as voiceReports from './voice-reports.js';
 import { createTrainingUI, durationEstimateText } from './training-ui.js';
 import * as trainingTools from './training-tools.js';
+import * as legal from './legal.js';
+import { createPrivacyUI, consentFormHTML } from './privacy-ui.js';
+import { createCommerceUI } from './commerce-ui.js';
 
 const KG_TO_LBS = 2.20462;
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -45,6 +48,9 @@ let profile = db.getProfile();
 let activeSession = db.getActiveSession(); // { id, startedAt, accumulatedSec, running, entries: [...] }
 let workouts = db.getWorkouts();
 let trainingUI = null;
+let privacyUI = null;
+let commerceUI = null;
+let privacyErasing = false;
 // transient (not persisted) running hold-timers for hold-type exercises (e.g. plank), keyed by "exerciseId:setIdx"
 const holdTimers = new Map();
 let appInitialized = false;
@@ -60,14 +66,15 @@ const activityPreviewStartedAt = Date.now();
 let activityReadyEnabled = true;
 const healthSyncInFlight = new Set();
 let workoutGreetingTimer = null;
-let cloudBackupWarningShown = false;
 let announcementPlanQueued = false;
 let announcementPlanKey = '';
 let announcementPlanRevision = 0;
 let announcementPlanChain = Promise.resolve();
 
 const stopwatch = new Stopwatch((elapsed) => {
-  el('workoutTimerDisplay').textContent = formatHMS(elapsed);
+  const display = el('workoutTimerDisplay');
+  const text = formatHMS(elapsed);
+  if (display.textContent !== text) display.textContent = text;
 });
 let restDoneMessage = 'אפשר להמשיך לסט הבא';
 const restTimer = new RestTimer({
@@ -121,6 +128,13 @@ function buildBackgroundAnnouncementItems() {
         if (fireAtMillis > now) items.push({ fireAtMillis,
           text: cardioCompletionMessage(entry),
           announcementID: `cardio:${entry.exerciseId}:${entry.startedAt}` });
+        if (entry.intervals) {
+          for (const phase of trainingTools.ropeIntervalSchedule(entry.intervals)) {
+            const fireAtMillis = entry.startedAt + (phase.offsetSeconds - (entry.elapsedSec || 0)) * 1000;
+            if (fireAtMillis > now) items.push({ fireAtMillis, text: intervalPhaseText(phase),
+              announcementID: `rope:${entry.exerciseId}:${entry.startedAt}:${phase.index}` });
+          }
+        }
       });
     holdTimers.forEach((state, key) => {
       const exId = key.slice(0, key.lastIndexOf(':'));
@@ -505,11 +519,17 @@ function init() {
 
   registerServiceWorker();
   appInitialized = true;
+  if (!commerceUI) commerceUI = createCommerceUI({
+    getSettings: () => settings,
+    isReady: () => appInitialized && !privacyErasing,
+    openDocument: (kind) => privacyUI.openDocument(kind),
+  });
+  commerceUI.refresh();
   syncNativeAnnouncementPlan();
   syncWorkoutActivity();
   if (native.isNative()) {
     const pendingHealth = workouts.filter((workout) => workout.healthSyncPending === true);
-    if (pendingHealth.length) syncWorkoutToHealth(pendingHealth);
+    if (pendingHealth.length) syncWorkoutToHealth(pendingHealth, { requestAuthorization: false });
     native.consumeWorkoutActivityLink().then((requested) => {
       if (requested || pendingWorkoutNavigation) {
         pendingWorkoutNavigation = false;
@@ -608,7 +628,9 @@ function makeCardioEntry(kind, program = exercises) {
   const ex = program.find((e) => e.id === kind) || {};
   const name = ex.name || (kind === 'warmup' ? DEFAULT_WARMUP_NAME : DEFAULT_COOLDOWN_NAME);
   const minutes = ex.durationMinutes || 5;
-  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || 'treadmill', pace: ex.pace || DEFAULT_CARDIO_PACE };
+  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || 'treadmill', pace: ex.pace || DEFAULT_CARDIO_PACE,
+    ...(ex.intervals ? { intervals: JSON.parse(JSON.stringify(ex.intervals)),
+      exerciseSnapshot: { id: ex.id, name: ex.name, catalogId: ex.catalogId, inputType: 'cardio' } } : {}) };
 }
 
 function setsForWeek(ex, config = settings) {
@@ -967,7 +989,8 @@ function finishWorkout() {
         .map((e) => {
           if (e.type === 'cardio') {
             return e.completed
-              ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '' }
+              ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '',
+                ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}) }
               : null;
           }
           return insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
@@ -980,7 +1003,7 @@ function finishWorkout() {
     if (settings.voiceAnnouncements) speak('כל הכבוד על האימון');
     showCelebration(record);
     // Auto-sync to Apple Health on native — no manual "save to Health" tap needed.
-    if (native.isNative()) syncWorkoutToHealth([record]);
+    if (native.isNative()) syncWorkoutToHealth([record], { requestAuthorization: false });
   } else {
     showToast('האימון בוטל (לא הושלם אף סט)');
   }
@@ -1000,6 +1023,7 @@ function finishWorkout() {
 }
 
 function persistActiveSession() {
+  if (privacyErasing) return;
   db.saveActiveSession(activeSession);
   syncWorkoutActivity();
   syncNativeAnnouncementPlan();
@@ -1008,11 +1032,11 @@ function persistActiveSession() {
 function trainingAPI() {
   const remainingRest = () => activeSession.pausedRest?.remainingSec
     || (restTimer.endAt ? Math.max(0, (restTimer.endAt - Date.now()) / 1000) : 0);
-  const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'restSeconds', 'durationMinutes']
+  const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'restSeconds', 'durationMinutes', 'holdSeconds', 'pace', 'intervals']
     .map((key) => [key, exercise[key] ?? null]));
-  const sessionHasData = () => activeSession.running || activeSession.paused || activeSession.timeBudget || activeSession.substitutions?.length
-    || activeSession.entries.some((entry) => trainingTools.entryHasActivity(entry)
-      || (entry.type !== 'cardio' && entry.sets.some((set) => set.weightKg !== '' || set.reps !== '')));
+  const sessionHasData = () => activeSession.running || activeSession.paused || activeSession.startedAt || activeSession.accumulatedSec > 0
+    || activeSession.timeBudget || activeSession.substitutions?.length
+    || activeSession.entries.some((entry) => trainingTools.entryHasActivity(entry));
   const applyProgram = (nextExercises, nextSettings) => {
     const keepSession = sessionHasData();
     const nextSession = keepSession ? { ...activeSession, programPinned: true } : buildProgramDraft(nextExercises, nextSettings);
@@ -1028,10 +1052,10 @@ function trainingAPI() {
   return {
     uid: db.uid, dialog: openTrainingDialog, guide: openExerciseGuide,
     durationState: () => ({ session: activeSession, exercises, settings,
-      program: trainingTools.durationSession(exercises, (exercise) => setsForWeek(exercise)),
+      program: trainingTools.durationSession(myWorkoutExercises(), (exercise) => setsForWeek(exercise)),
       restSeconds: remainingRest() }),
     repTarget(set, exercise) { return voiceRepTarget(set, exercise); },
-    getState: () => ({ session: activeSession, exercises: trainingTools.planningCatalog(exercises), settings, history: db.getWorkouts(),
+    getState: () => ({ session: activeSession, exercises, settings, history: workouts,
       native: native.isNative(), voiceActive: voiceListeningActive && !voiceActivationPending, counting: voiceCountingState,
       busy: !!voiceCountingState || holdTimers.size > 0,
       restSeconds: remainingRest() }),
@@ -1056,6 +1080,22 @@ function trainingAPI() {
       syncWorkoutActivity();
     },
     saveSettings(next) { db.saveSettings(next); settings = next; },
+    canStartSavedPlan: () => !sessionHasData() && !voiceCountingState && holdTimers.size === 0,
+    startSavedPlan(plan, day) {
+      if (!this.canStartSavedPlan()) throw new Error('Finish or save the current workout before starting another');
+      primeSpeech();
+      this.activatePlan(plan, day);
+      const draft = { ...activeSession };
+      try { ensureWorkoutStarted(); }
+      catch (error) {
+        activeSession = draft;
+        renderWorkoutTab();
+        throw new Error('The plan was selected but the workout could not start', { cause: error });
+      }
+      switchTab('workout');
+      renderHomeTab();
+    },
+    openCurrentWorkout() { switchTab('workout'); },
     saveTarget(id, targetReps) {
       const next = exercises.map((exercise) => exercise.id === id ? { ...exercise, targetReps } : exercise);
       db.saveExercises(next);
@@ -1086,7 +1126,10 @@ function trainingAPI() {
       settings = nextSettings;
     },
     activatePlan(plan, day) {
-      const nextExercises = trainingTools.activatePlanExercises(trainingTools.planningCatalog(exercises), plan.sessions[day].exercises);
+      const proposed = plan.sessions[day].exercises;
+      const missing = trainingTools.planningCatalog(exercises).filter((candidate) =>
+        proposed.some((item) => item.id === candidate.id) && !exercises.some((item) => item.id === candidate.id));
+      const nextExercises = trainingTools.activatePlanExercises([...exercises, ...missing], proposed);
       const training = settings.training || {};
       const plans = [...(training.plans || []).filter((item) => item.id !== plan.id), plan];
       if (plans.length > 8) throw new Error('Remove a saved plan before activating another');
@@ -1098,7 +1141,8 @@ function trainingAPI() {
       if (!backup) throw new Error('No program backup');
       const nextExercises = exercises.map((exercise) => {
         const saved = backup.find((item) => item.id === exercise.id);
-        return saved ? { ...exercise, ...saved } : exercise.id.startsWith('planning:') ? { ...exercise, active: false } : exercise;
+        return saved ? { ...exercise, ...saved } : exercise.id.startsWith('planning:')
+          || exercise.id.startsWith('library:extended-') ? { ...exercise, active: false } : exercise;
       }).sort((a, b) => {
         const index = (id) => { const found = backup.findIndex((item) => item.id === id); return found < 0 ? backup.length : found; };
         return index(a.id) - index(b.id);
@@ -1281,7 +1325,6 @@ async function handleWorkoutActivityAction(request) {
 
 function renderWorkoutTab() {
   updateWorkoutPauseControls();
-  if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
   const list = el('exerciseList');
   list.innerHTML = '';
   const lastByExercise = getLastCompletedValuesByExercise();
@@ -1523,7 +1566,9 @@ function getWorkoutSetProgress() {
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
   const total = strengthEntries.reduce((a, e) => a + e.sets.length, 0);
   const done = strengthEntries.reduce((a, e) => a + e.sets.filter((s) => s.completed).length, 0);
-  return { total, done, percent: total ? Math.round((done / total) * 100) : 0 };
+  const cardio = activeSession.entries.filter((entry) => entry.type === 'cardio');
+  return { total, done, percent: total ? Math.round((done / total) * 100)
+    : cardio.length ? Math.round(cardio.filter((entry) => entry.completed).length / cardio.length * 100) : 0 };
 }
 
 function cardioCompletionMessage(entry) {
@@ -1533,14 +1578,16 @@ function cardioCompletionMessage(entry) {
 }
 
 function updateProgress() {
-  if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
+  if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
   const { total, done, percent: pct } = getWorkoutSetProgress();
-  el('setsProgressText').textContent = `${done} / ${total} סטים הושלמו (${pct}%)`;
+  const progressEntries = strengthEntries.length ? strengthEntries : activeSession.entries.filter((entry) => entry.type === 'cardio');
+  el('setsProgressText').textContent = total ? `${done} / ${total} סטים הושלמו (${pct}%)`
+    : i18n.text(`${progressEntries.filter((entry) => entry.completed).length} / ${progressEntries.length} מקטעי אירובי הושלמו (${pct}%)`);
   el('setsProgressFill').style.width = `${pct}%`;
 
-  const totalEx = strengthEntries.length;
-  const doneEx = strengthEntries.filter((e) => e.sets.length && e.sets.every((s) => s.completed)).length;
+  const totalEx = progressEntries.length;
+  const doneEx = progressEntries.filter((e) => e.type === 'cardio' ? e.completed : e.sets.length && e.sets.every((s) => s.completed)).length;
   const exPct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
   el('exProgressText').textContent = `${doneEx} / ${totalEx} תרגילים הושלמו (${exPct}%)`;
   el('exProgressFill').style.width = `${exPct}%`;
@@ -1578,14 +1625,21 @@ function refreshDifficultyFeedback() {
   });
 }
 
+function intervalPhaseText(phase) {
+  const label = i18n.text({ warmup: 'חימום בהליכה', work: 'קפיצה', recovery: 'התאוששות בהליכה או בעמידה', cooldown: 'שחרור בהליכה', done: 'האימון הושלם' }[phase.kind]);
+  return phase.round ? `${i18n.text('סבב')} ${phase.round} / ${phase.rounds} · ${label}` : label;
+}
+
 function renderCardioCard(entry, number) {
   const card = document.createElement('div');
   const ex = exercises.find((e) => e.id === entry.exerciseId) || {};
   const mediaExercise = entry.exerciseSnapshot || ex;
   const hasGuide = !!library.exerciseGuide(mediaExercise);
   card.className = 'exercise-card' + (entry.completed ? ' done' : '');
-  const minutes = Math.round(entry.durationSec / 60);
-  const fullDurationSec = (ex.durationMinutes || 5) * 60;
+  const minutes = Math.round(entry.durationSec / 6) / 10;
+  const fullDurationSec = entry.intervals ? trainingTools.ropeIntervalSchedule(entry.intervals).reduce((total, phase) => total + phase.seconds, 0)
+    : (ex.durationMinutes || 5) * 60;
+  const interval = entry.intervals && trainingTools.cardioIntervalPhase(entry, Date.now());
   card.innerHTML = `
     <div class="exercise-card-head">
       <div style="display:flex;gap:8px;align-items:flex-start;">
@@ -1601,6 +1655,8 @@ function renderCardioCard(entry, number) {
       </div>
     </div>
     <div class="cardio-body">
+      ${interval ? `<div class="rope-phase" role="status" data-no-translate><strong id="rope-phase-${entry.exerciseId}">${escapeHtml(intervalPhaseText(interval))}</strong>
+        <span id="rope-remaining-${entry.exerciseId}">${formatHMS(interval.remainingSeconds)}</span></div>` : ''}
       <div class="cardio-timer-display" id="cardio-remaining-${entry.exerciseId}">${formatHMS(Math.max(0, entry.durationSec - (entry.elapsedSec || 0) - (entry.startedAt ? (Date.now() - entry.startedAt) / 1000 : 0)))}</div>
       <div class="cardio-pace-row">
         <select class="select cardioLocation">
@@ -1643,6 +1699,7 @@ function renderCardioCard(entry, number) {
       el('restOverlay').classList.add('hidden');
       if (entry.completed) entry.elapsedSec = 0;
       entry.completed = false;
+      if ((entry.elapsedSec || 0) === 0) delete entry.intervalPhaseIndex;
       entry.startedAt = Date.now();
     }
     persistActiveSession();
@@ -1654,6 +1711,7 @@ function renderCardioCard(entry, number) {
     entry.elapsedSec = 0;
     entry.startedAt = null;
     entry.completed = false;
+    delete entry.intervalPhaseIndex;
     persistActiveSession();
     renderWorkoutTab();
   });
@@ -1680,6 +1738,23 @@ function tickCardioTimers() {
     if (entry.type !== 'cardio' || !entry.startedAt || entry.completed) return;
     const remaining = entry.durationSec - (entry.elapsedSec || 0) - (Date.now() - entry.startedAt) / 1000;
     const span = el(`cardio-remaining-${entry.exerciseId}`);
+    if (entry.intervals) {
+      const phase = trainingTools.cardioIntervalPhase(entry, Date.now());
+      const label = el(`rope-phase-${entry.exerciseId}`);
+      const display = el(`rope-remaining-${entry.exerciseId}`);
+      const text = intervalPhaseText(phase);
+      if (label && label.textContent !== text) label.textContent = text;
+      if (display) {
+        const time = formatHMS(phase.remainingSeconds);
+        if (display.textContent !== time) display.textContent = time;
+      }
+      if (phase.kind !== 'done' && phase.index !== entry.intervalPhaseIndex) {
+        entry.intervalPhaseIndex = phase.index;
+        persistActiveSession();
+        if (phase.index > 0) playBeep();
+        if (settings.voiceAnnouncements) speak(text, i18n.locale(), `rope:${entry.exerciseId}:${entry.startedAt}:${phase.index}`);
+      }
+    }
     if (remaining <= 0) {
       const announcementID = `cardio:${entry.exerciseId}:${entry.startedAt}`;
       entry.completed = true;
@@ -1705,7 +1780,8 @@ function tickCardioTimers() {
 function startHoldTicking(display, state, target, set, key) {
   return setInterval(() => {
     const elapsed = (Date.now() - state.startedAt) / 1000;
-    display.textContent = formatHMS(elapsed);
+    const text = formatHMS(elapsed);
+    if (display.textContent !== text) display.textContent = text;
     if (elapsed >= target && !state.announced) {
       state.announced = true;
       set.holdAnnounced = true;
@@ -2434,7 +2510,7 @@ async function updateVoiceListeningState() {
   voiceActivationPending = should;
   if (should) {
     const phrases = [...new Set([...voiceReports.voiceReportHints(i18n.getLanguage()), ...activeSession.entries.flatMap(voiceExerciseNames)])];
-    const result = await native.voiceStartListening(phrases, i18n.locale());
+    const result = await native.voiceStartListening(phrases, i18n.locale(), settings.voiceMicrophoneMode || 'automatic');
     if (revision !== voiceListeningRevision) return;
     voiceActivationPending = false;
     voiceListeningActive = result.listening;
@@ -2641,6 +2717,7 @@ function formatCardioExtra(entry) {
   else if (entry.location === 'outside') parts.push(`🌳 ${i18n.text('בחוץ')}`);
   else if (entry.location === 'home') parts.push(`🏠 ${i18n.text('בבית')}`);
   if (entry.pace) parts.push(entry.pace === DEFAULT_CARDIO_PACE ? i18n.text(entry.pace) : entry.pace);
+  if (entry.intervals) parts.push(`${entry.intervals.rounds} ${i18n.text('סבבים')} · ${entry.intervals.workSeconds} ${i18n.text('שניות קפיצה')} / ${entry.intervals.recoverySeconds} ${i18n.text('שניות התאוששות')}`);
   return parts.length ? ` — ${parts.join(' · ')}` : '';
 }
 
@@ -3005,7 +3082,8 @@ function sendWorkoutToHealthShortcut(workoutsArr) {
 
 // In the native app, write straight to HealthKit — no Shortcuts bridge needed.
 // Falls back to the Shortcuts flow automatically when running as a plain web/PWA.
-async function syncWorkoutToHealth(workoutsArr) {
+async function syncWorkoutToHealth(workoutsArr, { requestAuthorization = true } = {}) {
+  if (privacyErasing) return;
   const requested = [...new Map(workoutsArr.map((workout) =>
     [workout.id, workouts.find((record) => record.id === workout.id) || workout])).values()];
   if (!native.isNative()) {
@@ -3032,7 +3110,7 @@ async function syncWorkoutToHealth(workoutsArr) {
   }
   try {
     persistHealthDelivery(pending, 'pending');
-    const auth = await native.healthRequestAuthorization();
+    const auth = await (requestAuthorization ? native.healthRequestAuthorization() : native.healthAuthorizationStatus());
     if (!auth.granted) {
       persistHealthDelivery(pending, /unavailable|not-native|plugin missing|not available|requires iOS/i.test(auth.reason || '')
         ? 'unavailable' : 'unauthorized', auth.reason || '');
@@ -3041,6 +3119,7 @@ async function syncWorkoutToHealth(workoutsArr) {
     }
     let savedCount = 0;
     for (const w of pending) {
+      if (privacyErasing) break;
       const res = await native.healthSaveWorkout({
         workoutID: w.id, startMillis: new Date(w.dateISO).getTime(),
         durationSec: Math.round(w.durationSec), entries: w.entries,
@@ -3072,6 +3151,7 @@ async function syncWorkoutToHealth(workoutsArr) {
 }
 
 function persistHealthDelivery(records, status, reason = '', nativeId) {
+  if (privacyErasing) return;
   const updatedAt = new Date().toISOString();
   for (const record of records) {
     const current = workouts.find((workout) => workout.id === record.id);
@@ -3474,7 +3554,7 @@ function exerciseLibraryGroup(ex) {
   if (ex.inputType === 'cardio' || ex.id === 'warmup' || ex.id === 'cooldown') return 'warmup';
   if (ex.inputType === 'hold') return 'static';
   const category = String(ex.category || '').trim();
-  if (category.startsWith('רגליים')) return 'legs';
+  if (category.startsWith('רגליים') || ['ישבן', 'שוקיים'].includes(category)) return 'legs';
   if (category.startsWith('כתפיים')) return 'shoulders';
   if (category.startsWith('גב')) return 'back';
   if (category === 'מפרקי כף יד') return 'forearms';
@@ -3512,6 +3592,26 @@ function saveMyWorkoutOrder(ids) {
 }
 
 function setExerciseInMyWorkout(ex, included) {
+  const stored = exercises.find((exercise) => exercise.id === ex.id);
+  if (!stored) {
+    const next = [...exercises];
+    const cooldownIndex = next.findIndex((exercise) => exercise.id === 'cooldown');
+    next.splice(cooldownIndex < 0 ? next.length : cooldownIndex, 0,
+      { ...ex, active: included, images: [...(ex.images || [])] });
+    try {
+      db.saveExercises(next);
+    } catch (error) {
+      console.error('Catalog exercise installation failed', error);
+      showToast('התרגיל לא נשמר. בדוק את האחסון ונסה שוב.');
+      return;
+    }
+    exercises = next;
+    renderExercisesTab();
+    reorderActiveSessionToMatchExercises();
+    showToast(included ? `"${ex.name}" נוסף לאימון שלי` : `"${ex.name}" הוסר מהאימון שלי ונשאר בספרייה`);
+    return;
+  }
+  ex = stored;
   ex.active = included;
   if (included) {
     saveMyWorkoutOrder([...myWorkoutExercises().filter((item) => item.id !== ex.id).map((item) => item.id), ex.id]);
@@ -3524,6 +3624,18 @@ function setExerciseInMyWorkout(ex, included) {
 }
 
 function wireExercisesTab() {
+  el('btnExpandLibrary').addEventListener('click', () => {
+    try {
+      const expanded = library.expandedLibrary(exercises, { newOnly: true });
+      db.saveExercises(expanded);
+      exercises = expanded;
+      renderExercisesTab();
+      showToast('התרגילים נוספו לספרייה בלבד. האימון הקיים לא השתנה.');
+    } catch (error) {
+      console.error('Exercise library update failed', error);
+      showToast('הספרייה לא עודכנה. בדוק את האחסון ונסה שוב.');
+    }
+  });
   ['librarySearch', 'libraryType', 'libraryEquipment', 'libraryPlace', 'libraryLevel'].forEach((id) => {
     el(id).addEventListener(id === 'librarySearch' ? 'input' : 'change', renderExercisesTab);
   });
@@ -3586,6 +3698,12 @@ const DEFAULT_COOLDOWN_NAME = 'שחרור-הליכה';
 const DEFAULT_CARDIO_PACE = 'קצב 6 בהליכון';
 
 function renderExercisesTab() {
+  const totals = library.catalogStats(exercises, SEED_EXERCISES);
+  const catalog = library.browsableLibrary(exercises, SEED_EXERCISES);
+  el('catalogSummary').innerHTML = `<strong><span>מאגר האפליקציה</span>: ${totals.builtIn} <span>תרגילים</span></strong>
+    <p class="field-hint"><span>בקטגוריות</span>: ${catalog.length} · <span>בספרייה שלך</span>: ${totals.stored} · <span>באימון שלי</span>: ${totals.selected}</p>
+    <p class="field-hint">המאגר כולל וריאציות ציוד וסוגי מדידה. הקטגוריות והחיפוש מציגים את כל המאגר וגם את התרגילים האישיים שלך. צפייה אינה משנה את האימון; תרגיל מתווסף רק כשתבחר להוסיף או לשמור אותו.</p>`;
+  el('libraryUpdateCard').classList.toggle('hidden', library.expandedLibrary(exercises, { newOnly: true }).length === exercises.length);
   if (typeof trainingUI !== 'undefined') trainingUI?.refreshDuration();
   const selected = myWorkoutExercises();
   const isMyWorkout = exerciseLibraryCategory === 'my';
@@ -3607,7 +3725,7 @@ function renderExercisesTab() {
       <button class="exercise-category-button" data-category="${group.id}" aria-pressed="${exerciseLibraryCategory === group.id}">
         <span class="exercise-category-icon" aria-hidden="true">${group.icon.endsWith('.svg') ? `<img src="${group.icon}" alt="" width="32" height="32">` : group.icon}</span>
         <span class="exercise-category-label">${group.label}</span>
-        <span class="exercise-category-count">${exerciseLibraryCount(exercises.filter((ex) => exerciseLibraryGroup(ex) === group.id).length)}</span>
+        <span class="exercise-category-count">${exerciseLibraryCount(catalog.filter((ex) => exerciseLibraryGroup(ex) === group.id).length)}</span>
       </button>`).join('')}`;
   qsa('[data-category]', grid).forEach((button) => {
     button.addEventListener('click', () => {
@@ -3624,7 +3742,7 @@ function renderExercisesTab() {
     return;
   }
   const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
-  const visible = isMyWorkout ? selected : exercises.filter((ex) =>
+  const visible = isMyWorkout ? selected : catalog.filter((ex) =>
     (!exerciseLibraryCategory || exerciseLibraryGroup(ex) === exerciseLibraryCategory)
     && library.matchesLibraryFilters(ex, filters, i18n.searchText));
   el('exerciseLibraryTitle').textContent = isMyWorkout ? 'האימון שלי' : group?.label || 'תוצאות החיפוש';
@@ -3634,6 +3752,7 @@ function renderExercisesTab() {
     : 'הוסף תרגילים לאימון שלי, או צור תרגיל חדש בקטגוריה. הסרה מהאימון אינה מוחקת את התרגיל מהספרייה או את ההיסטוריה.';
   visible.forEach((ex, index) => {
     const isCardio = ex.inputType === 'cardio';
+    const installed = exercises.some((exercise) => exercise.id === ex.id);
     const fixedPosition = ex.id === 'warmup' || ex.id === 'cooldown';
     const item = document.createElement('div');
     item.className = 'exercise-manage-item' + (isMyWorkout ? ' sortable-item' : '');
@@ -3655,12 +3774,13 @@ function renderExercisesTab() {
           <div class="exercise-manage-copy">
             <b data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</b>
             <div class="exercise-meta">${metaLine}</div>
+            ${installed ? '' : '<div class="field-hint">מהמאגר — עדיין לא נשמר בספרייה שלך</div>'}
           </div>
         </div>
         <div class="exercise-manage-actions">
           ${ex.images?.length || library.exerciseGuide(ex) ? '<button class="btn-icon btnShowPhotoManage">📷</button>' : ''}
           <button class="btn-icon btnEditEx" aria-label="עריכת ${escapeAttr(ex.name)}">✏️</button>
-          ${fixedPosition || isMyWorkout ? '' : `<button class="btn-icon btnDeleteEx" aria-label="מחיקת ${escapeAttr(ex.name)} מהספרייה">🗑️</button>`}
+          ${fixedPosition || isMyWorkout || !installed ? '' : `<button class="btn-icon btnDeleteEx" aria-label="מחיקת ${escapeAttr(ex.name)} מהספרייה">🗑️</button>`}
         </div>
       </div>
       <button class="btn btn-secondary btn-small btnLibraryGuide">הדרכה</button>
@@ -3669,8 +3789,8 @@ function renderExercisesTab() {
       </button>
     `;
     qs('.btnLibraryGuide', item).addEventListener('click', () => openExerciseGuide(ex));
-    qs('.btnEditEx', item).addEventListener('click', () => openExerciseEditModal(ex));
-    if (!fixedPosition && !isMyWorkout) {
+    qs('.btnEditEx', item).addEventListener('click', () => openExerciseEditModal(ex, { isNew: !installed }));
+    if (!fixedPosition && !isMyWorkout && installed) {
       qs('.btnDeleteEx', item).addEventListener('click', () => {
         if (!confirm(i18n.text(`למחוק את "${ex.name}"? אימוני עבר יישמרו.`))) return;
         exercises = exercises.filter((e) => e.id !== ex.id);
@@ -3852,11 +3972,16 @@ function openExerciseEditModal(ex, options = {}) {
     ex.notes = i18n.inputValue(qs('#editExNotes', overlay)).trim();
     ex.active = qs('#editExActive', overlay).checked;
     ex.images = currentImages;
-    if (isNew) {
-      exercises.push(ex);
-      exerciseLibraryCategory = exerciseLibraryCategory === 'my' && ex.active ? 'my' : exerciseLibraryGroup(ex);
+    const next = isNew ? [...exercises, ex] : exercises;
+    try {
+      db.saveExercises(next);
+    } catch (error) {
+      console.error('Exercise edit persistence failed', error);
+      showToast('התרגיל לא נשמר. בדוק את האחסון ונסה שוב.');
+      return;
     }
-    db.saveExercises(exercises);
+    exercises = next;
+    if (isNew) exerciseLibraryCategory = exerciseLibraryCategory === 'my' && ex.active ? 'my' : exerciseLibraryGroup(ex);
     syncExerciseNameEverywhere(ex);
     renderExercisesTab();
     reorderActiveSessionToMatchExercises();
@@ -3908,11 +4033,16 @@ function openCardioEditModal(ex, options = {}) {
     ex.durationMinutes = Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5);
     ex.pace = i18n.inputValue(qs('#editCardioPace', overlay)).trim();
     ex.active = qs('#editCardioActive', overlay).checked;
-    if (isNew) {
-      exercises.push(ex);
-      exerciseLibraryCategory = 'warmup';
+    const next = isNew ? [...exercises, ex] : exercises;
+    try {
+      db.saveExercises(next);
+    } catch (error) {
+      console.error('Cardio edit persistence failed', error);
+      showToast('התרגיל לא נשמר. בדוק את האחסון ונסה שוב.');
+      return;
     }
-    db.saveExercises(exercises);
+    exercises = next;
+    if (isNew) exerciseLibraryCategory = 'warmup';
     syncExerciseNameEverywhere(ex);
     renderExercisesTab();
     reorderActiveSessionToMatchExercises();
@@ -4139,6 +4269,8 @@ function wireLanguageControls() {
       db.saveSettings(updated);
       settings = updated;
       i18n.setLanguage(settings.language);
+      privacyUI?.refresh();
+      commerceUI?.render();
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       announcementPlanKey = '';
       activitySnapshotKey = '';
@@ -4254,7 +4386,107 @@ function wireSettings() {
       updateVoiceListeningState();
     });
     el('btnEnableVoiceSettings').addEventListener('click', requestVoiceActivation);
+    el('settingVoiceMicrophone').addEventListener('change', async (event) => {
+      const mode = event.target.value;
+      if (!['automatic', 'headset'].includes(mode)) return;
+      try {
+        const next = { ...settings, voiceMicrophoneMode: mode };
+        db.saveSettings(next);
+        settings = next;
+        ++voiceListeningRevision;
+        voiceListeningActive = false;
+        voiceActivationPending = false;
+        voiceCountingState = null;
+        const stopped = await native.voiceStopListening();
+        if (!stopped) throw new Error('Cannot restart the microphone');
+        await updateVoiceListeningState();
+        if (currentTab === 'workout' && settings.voiceCommandsEnabled && !activeSession.paused && !voiceListeningActive) throw new Error(voiceListeningError || 'Microphone unavailable');
+        showToast('בחירת המיקרופון נשמרה. בדוק את שם המיקרופון במסך אימון.');
+      } catch (error) {
+        console.error('Microphone selection failed', error);
+        renderSettingsTab();
+        voiceListeningError = error.message;
+        updateVoiceBadgeForListeningState();
+        showToast('שינוי המיקרופון נכשל. נסה להפעיל אותו שוב במסך אימון.');
+      }
+    });
   }
+}
+
+function privacyAPI() {
+  return {
+    dialog: openTrainingDialog, toast: showToast, isNative: native.isNative,
+    getSettings: () => settings,
+    saveSettings(next) { db.saveSettings(next); settings = next; },
+    async exportData() {
+      const data = legal.exportPersonalData(localStorage);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const saved = await shareFile(blob, `AutoFit-personal-data-${data.exportedAt.slice(0, 10)}.json`, 'application/json');
+      if (!saved) throw new Error(i18n.text('ייצוא הנתונים לא הושלם.'));
+    },
+    async exportCloudData() {
+      if (!native.isNative()) throw new Error(i18n.text('גיבוי iCloud זמין באפליקציית האייפון בלבד.'));
+      if (!legal.hasCurrentConsent(settings)) throw new Error(i18n.text('נדרש אישור התנאים והפרטיות לפני קריאת גיבוי קודם.'));
+      const data = legal.exportLegacyCloudData(await native.cloudGetAll());
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      if (!await shareFile(blob, `AutoFit-legacy-iCloud-${data.exportedAt.slice(0, 10)}.json`, 'application/json')) {
+        throw new Error(i18n.text('ייצוא הנתונים לא הושלם.'));
+      }
+    },
+    async eraseData({ cloud }) {
+      if (typeof cloud !== 'boolean' || cloud && !native.isNative()) throw new Error('Invalid cloud deletion choice');
+      if (privacyErasing) throw new Error(i18n.text('מחיקה כבר מתבצעת.'));
+      const wasInitialized = appInitialized;
+      const next = { ...settings, privacyPreferences: { ...settings.privacyPreferences, cloudBackup: false } };
+      db.saveSettings(next);
+      settings = next;
+      if (wasInitialized && activeSession?.running) pauseWorkout();
+      if (native.isNative()) {
+        const stopped = await native.voiceStopListening();
+        if (!stopped && (voiceListeningActive || voiceActivationPending)) {
+          throw new Error(i18n.text('לא ניתן לעצור את המיקרופון. הפסק האזנה ונסה למחוק שוב.'));
+        }
+        native.bgCancelAnnouncements();
+        native.bgStopKeepAlive();
+        await native.eraseTemporaryShareFiles();
+      }
+      stopWorkoutTimers();
+      stopwatch.stop();
+      activityReadyEnabled = false;
+      voiceCountingState = null;
+      voiceListeningActive = false;
+      privacyErasing = true;
+      appInitialized = false;
+      if (native.isNative()) {
+        try {
+          await activitySyncChain;
+          await native.eraseWorkoutActivity();
+          if (cloud) await native.cloudEraseData();
+        } catch (error) {
+          privacyErasing = false;
+          appInitialized = wasInitialized;
+          throw error;
+        }
+      }
+      const resumeWrites = db.suspendWrites();
+      try {
+        legal.eraseLocalPersonalData(localStorage);
+      } catch (error) {
+        privacyErasing = false;
+        appInitialized = wasInitialized;
+        resumeWrites();
+        throw error;
+      }
+      appInitialized = false;
+      try {
+        sessionStorage.setItem('autofit-erasure-notice', cloud ? 'cloud-requested' : 'local');
+      } catch (error) {
+        console.error('Could not retain privacy deletion notice', error);
+        showToast('נתוני המכשיר נמחקו. לא ניתן לשמור הודעת סיום; מינוי, נתוני Health ועותקים חיצוניים לא נמחקו.');
+      }
+      location.replace(location.pathname);
+    },
+  };
 }
 
 function renderSettingsTab() {
@@ -4266,6 +4498,7 @@ function renderSettingsTab() {
   if (native.isNative()) {
     el('settingFaceId').checked = settings.faceIdEnabled !== false;
     el('settingVoiceCommands').checked = settings.voiceCommandsEnabled === true;
+    el('settingVoiceMicrophone').value = settings.voiceMicrophoneMode || 'automatic';
   }
 }
 
@@ -4318,7 +4551,6 @@ function wireProfileTab() {
   wireProfilePhoto('btnProfilePhoto', 'profilePhotoInput');
   el('btnSaveProfile').addEventListener('click', () => {
     const name = el('profileName').value.trim();
-    if (!name) { showToast('שם המתאמן הוא שדה חובה'); return; }
     profile.name = name;
     profile.age = el('profileAge').value;
     profile.heightCm = el('profileHeight').value;
@@ -4619,37 +4851,26 @@ async function unlockWithBiometrics() {
   });
 }
 
-// Native-only bootstrap: restore iCloud data (if any), gate behind Face ID for
-// returning users who enabled it, then either launch onboarding (first run)
-// or the main app.
+// Native-only bootstrap: sensitive iCloud recovery/export requires an explicit action.
+// Returning local users retain their existing Face ID gate.
 async function bootstrap() {
   i18n.start(settings.language || 'he');
   wireLanguageControls();
   if (native.isNative()) {
-    await restoreFromCloudIfEmpty();
-    // Cloud restore writes straight to localStorage — reload the in-memory
-    // copies so onboarding/Face ID checks below see the restored values.
     settings = db.getSettings();
     profile = db.getProfile();
     workouts = db.getWorkouts();
     activeSession = db.getActiveSession();
     i18n.setLanguage(settings.language || 'he');
 
-    if (settings.onboardingComplete && settings.faceIdEnabled !== false) {
+    if (settings.faceIdEnabled !== false && (settings.onboardingComplete
+      || localStorage.getItem('ft_profile_v1') || localStorage.getItem('ft_workouts_v1'))) {
       const bio = await native.biometricIsAvailable();
       if (bio.available) {
         await unlockWithBiometrics();
       }
     }
-    const reportBackupFailure = () => {
-      if (cloudBackupWarningShown) return;
-      cloudBackupWarningShown = true;
-      showToast('הנתונים נשמרו במכשיר, אך גיבוי iCloud נכשל. בדוק חיבור ושטח אחסון; אל תסיר את האפליקציה.');
-    };
-    db.setSyncHook((key, value) => {
-      native.cloudSetItem(key, JSON.stringify(value)).then((saved) => { if (!saved) reportBackupFailure(); });
-    });
-    native.onCloudError(reportBackupFailure);
+    db.setSyncHook(null);
     native.onCloudChanged(() => {
       console.info('iCloud backup changed; keeping the local workout intact instead of reloading.');
     });
@@ -4681,6 +4902,7 @@ async function bootstrap() {
     });
   }
 
+  privacyUI = createPrivacyUI(privacyAPI());
   await waitForSplashMinimum();
   hideSplash();
 
@@ -4715,11 +4937,12 @@ function hideSplash() {
   setTimeout(() => splash.classList.add('hidden'), 550);
 }
 
-// First-run flow: collect name/age/height/weight, then (native only) offer
-// HealthKit + Face ID permission toggles, before handing off to init().
+// Consent precedes personal details; each optional native permission is requested on its own action.
 function runOnboarding() {
   const screen = el('onboardingScreen');
   screen.classList.remove('hidden');
+  const appRegions = qsa('header.topbar, main#app, nav.tabbar');
+  appRegions.forEach((region) => { region.inert = true; });
 
   el('obName').value = profile.name || '';
   el('obAge').value = profile.age || '';
@@ -4728,59 +4951,117 @@ function runOnboarding() {
 
   const stepDetails = el('onboardingStepDetails');
   const stepPermissions = el('onboardingStepPermissions');
-  el('btnOnboardingLanguage').addEventListener('click', () => {
-    el('onboardingStepLanguage').classList.remove('active');
+  const stepLegal = el('onboardingStepLegal');
+  const legalForm = el('onboardingLegalForm');
+  legalForm.innerHTML = consentFormHTML();
+  privacyUI.bindConsentForm(legalForm.querySelector('form'), () => {
+    stepLegal.classList.remove('active');
     stepDetails.classList.add('active');
     el('obName').focus();
   });
+  el('btnOnboardingLanguage').addEventListener('click', () => {
+    el('onboardingStepLanguage').classList.remove('active');
+    stepLegal.classList.add('active');
+  });
+  const deletionNotice = sessionStorage.getItem('autofit-erasure-notice');
+  if (deletionNotice) {
+    sessionStorage.removeItem('autofit-erasure-notice');
+    showToast(deletionNotice === 'cloud-requested'
+      ? 'נתוני המכשיר נמחקו ובקשת מחיקת iCloud נשלחה. זו אינה הוכחת מחיקה מכל העותקים. מינוי ונתוני Health לא נמחקו.'
+      : 'נתוני AutoFit במכשיר נמחקו. גיבויים חיצוניים, מינוי ונתוני Health לא נמחקו.');
+  }
 
   function finishOnboarding() {
+    if (!legal.hasCurrentConsent(settings)) {
+      showToast('נדרש אישור התנאים והפרטיות לפני הזנת פרטים.');
+      return;
+    }
     settings.onboardingComplete = true;
     db.saveSettings(settings);
     screen.classList.add('hidden');
+    appRegions.forEach((region) => { region.inert = false; });
     init();
   }
 
-  // Automatically requests all native permissions in sequence (real iOS system dialogs),
-  // one after another — no in-app "tap to enable" buttons needed, matching how most
-  // iOS apps ask for permissions right after onboarding.
-  async function setupPermissionStep() {
-    const healthStatus = el('healthPermStatus');
-    const faceIdStatus = el('faceIdPermStatus');
-    const notifStatus = el('notifPermStatus');
-
-    healthStatus.textContent = '⏳';
-    const healthRes = await native.healthRequestAuthorization();
-    healthStatus.textContent = healthRes.granted ? '✓' : '✗';
-
-    const bio = await native.biometricIsAvailable();
-    if (!bio.available) {
-      faceIdStatus.closest('.onboarding-permission-card').classList.add('hidden');
-    } else {
-      faceIdStatus.textContent = '⏳';
-      const ok = await native.biometricVerify();
-      faceIdStatus.textContent = ok ? '✓' : '✗';
-      if (ok) {
-        settings.faceIdEnabled = true;
-        db.saveSettings(settings);
-      }
+  const permission = (buttonId, statusId, request, apply) => {
+    const button = el(buttonId);
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      const status = el(statusId);
+      status.textContent = '⏳';
+      try {
+        const result = await request();
+        if (apply) apply(result.granted);
+        status.textContent = result.granted ? '✓' : '✗';
+        if (!result.granted) showToast(result.reason || 'ההרשאה לא אושרה. אפשר להמשיך בהזנה ידנית.');
+      } catch (error) {
+        console.error('Optional onboarding permission failed', error);
+        status.textContent = '✗';
+        showToast('ההרשאה לא הושלמה. אפשר להמשיך בהזנה ידנית.');
+      } finally { button.disabled = false; }
+    });
+  };
+  permission('btnOnboardingHealth', 'healthPermStatus', native.healthRequestAuthorization);
+  permission('btnOnboardingNotifications', 'notifPermStatus', native.notificationsRequestPermission);
+  permission('btnOnboardingFaceId', 'faceIdPermStatus', async () => {
+    const available = await native.biometricIsAvailable();
+    return available.available ? { granted: await native.biometricVerify() } : { granted: false, reason: available.reason };
+  }, (granted) => {
+    const next = { ...settings, faceIdEnabled: granted };
+    db.saveSettings(next);
+    settings = next;
+  });
+  permission('btnOnboardingVoice', 'voicePermStatus', native.voiceRequestPermission, (granted) => {
+    const next = { ...settings, voiceCommandsEnabled: granted };
+    db.saveSettings(next);
+    settings = next;
+  });
+  if (native.isNative()) {
+    if (!localStorage.getItem('ft_exercises_v1') && !localStorage.getItem('ft_workouts_v1')) {
+      el('onboardingCloudRestore').classList.remove('hidden');
     }
-
-    notifStatus.textContent = '⏳';
-    const notifRes = await native.notificationsRequestPermission();
-    notifStatus.textContent = notifRes.granted ? '✓' : '✗';
-
-    const voiceStatus = el('voicePermStatus');
-    voiceStatus.textContent = '⏳';
-    const voiceRes = await native.voiceRequestPermission();
-    voiceStatus.textContent = voiceRes.granted ? '✓' : '✗';
-    settings.voiceCommandsEnabled = !!voiceRes.granted;
-    db.saveSettings(settings);
+    const button = el('btnOnboardingRestoreCloud');
+    button.addEventListener('click', async () => {
+      if (button.disabled || !legal.hasCurrentConsent(settings)) return;
+      button.disabled = true;
+      try {
+        const next = { ...settings, privacyPreferences: { ...settings.privacyPreferences, cloudBackup: false,
+          cloudRestore: true, cloudRestoreRequestedAt: new Date().toISOString() } };
+        db.saveSettings(next);
+        settings = next;
+        const result = await restoreFromCloudIfEmpty();
+        if (result?.erased) throw new Error(i18n.text('גיבוי קודם סומן למחיקה ולא ישוחזר.'));
+        settings = db.getSettings();
+        profile = db.getProfile();
+        workouts = db.getWorkouts();
+        activeSession = db.getActiveSession();
+        if (settings.faceIdEnabled !== false) {
+          const bio = await native.biometricIsAvailable();
+          if (bio.available) await unlockWithBiometrics();
+        }
+        for (const [id, value] of [['obName', profile.name], ['obAge', profile.age], ['obHeight', profile.heightCm], ['obWeight', profile.weightKg]]) {
+          el(id).value = value || '';
+        }
+        showToast(result?.records.length ? 'הגיבוי נטען. בדוק את הפרטים לפני המשך.' : 'לא נמצאו נתוני גיבוי לשחזור. אפשר להמשיך במכשיר הזה.');
+      } catch (error) {
+        console.error('User-requested iCloud restore failed', error);
+        const next = { ...settings, privacyPreferences: { ...settings.privacyPreferences, cloudBackup: false } };
+        db.saveSettings(next);
+        settings = next;
+        showToast(`${i18n.text('השחזור לא הושלם')}: ${error.message}`);
+      } finally { button.disabled = false; privacyUI.refresh(); }
+    });
   }
 
   el('btnOnboardingNext').addEventListener('click', () => {
     const name = el('obName').value.trim();
-    if (!name) { showToast('נא להזין שם'); return; }
+    if (!legal.hasCurrentConsent(settings)) { showToast('נדרש אישור התנאים והפרטיות לפני הזנת פרטים.'); return; }
+    const age = Number(el('obAge').value);
+    if (el('obAge').value && (!Number.isFinite(age) || age < 18 || age > 120)) {
+      showToast('הגיל הוא שדה רשות. בטיוטה זו ניתן להזין גיל בין 18 ל-120.');
+      return;
+    }
     profile.name = name;
     profile.age = el('obAge').value;
     profile.heightCm = el('obHeight').value;
@@ -4794,7 +5075,6 @@ function runOnboarding() {
     }
     stepDetails.classList.remove('active');
     stepPermissions.classList.add('active');
-    setupPermissionStep();
   });
 
   el('btnOnboardingFinish').addEventListener('click', finishOnboarding);
@@ -4805,12 +5085,20 @@ function runOnboarding() {
 async function restoreFromCloudIfEmpty() {
   const hasLocalData = localStorage.getItem('ft_exercises_v1') || localStorage.getItem('ft_workouts_v1');
   if (hasLocalData) return;
+  if (!legal.cloudRestoreAllowed(settings)) throw new Error('Explicit iCloud recovery consent is required');
+  const result = legal.restorableCloudData(await native.cloudGetAll(), settings);
+  if (result.erased) return result;
+  const previous = result.records.map(([key]) => [key, localStorage.getItem(key)]);
   try {
-    const all = await native.cloudGetAll();
-    Object.keys(all).forEach((key) => {
-      if (key.startsWith('ft_') && all[key]) {
-        localStorage.setItem(key, all[key]);
-      }
-    });
-  } catch (e) { /* no iCloud data yet — fine, fresh install */ }
+    for (const [key, value] of result.records) localStorage.setItem(key, value);
+  } catch (error) {
+    for (const [key, value] of previous) {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (rollbackError) { console.error('iCloud restore rollback failed', key, rollbackError); }
+    }
+    throw error;
+  }
+  return result;
 }

@@ -13,6 +13,7 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "HealthBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "authorizationStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveWorkout", returnType: CAPPluginReturnPromise)
     ]
@@ -21,6 +22,16 @@ public class HealthBridgePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         call.resolve(["available": HKHealthStore.isHealthDataAvailable()])
+    }
+
+    @objc func authorizationStatus(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.resolve(["granted": false, "reason": "Health data is unavailable"])
+            return
+        }
+        let granted = healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized
+        call.resolve(["granted": granted,
+                      "reason": granted ? "" : "Workout write access has not been granted in Apple Health"])
     }
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {

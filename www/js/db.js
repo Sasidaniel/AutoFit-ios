@@ -21,12 +21,22 @@ function read(key, fallback) {
   }
 }
 let syncHook = null;
-// Registered once at app startup (native iOS build only) so every local write
-// is mirrored to iCloud automatically, with no action needed from the user.
+let writesSuspended = false;
+// Optional transport hook. Personal health records are no longer mirrored to iCloud.
 export function setSyncHook(fn) {
   syncHook = fn;
 }
+export function suspendWrites() {
+  const previousHook = syncHook;
+  writesSuspended = true;
+  syncHook = null;
+  return () => { writesSuspended = false; syncHook = previousHook; };
+}
+function requireWritable() {
+  if (writesSuspended) throw new Error('Obsolete write blocked during personal-data deletion');
+}
 function write(key, value) {
+  requireWritable();
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
@@ -70,6 +80,7 @@ export function saveExercises(list) {
 }
 
 export function saveProgramState(exercises, settings, session) {
+  requireWritable();
   const changes = [[KEYS.exercises, exercises], [KEYS.settings, settings], [KEYS.activeSession, session]];
   const previous = changes.map(([key]) => [key, localStorage.getItem(key)]);
   try {
@@ -112,6 +123,7 @@ export function saveActiveSession(session) {
   write(KEYS.activeSession, session);
 }
 export function clearActiveSession() {
+  requireWritable();
   localStorage.removeItem(KEYS.activeSession);
   if (syncHook) syncHook(KEYS.activeSession, null);
 }

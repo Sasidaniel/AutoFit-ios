@@ -10,11 +10,12 @@ function load(file, names, values = {}) {
   vm.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
-const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'exerciseGuide']);
+const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
-  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'planCatalog', 'generatePlan', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
+  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'planCatalog', 'generatePlan',
+  'generateRopePlan', 'ropeIntervalSchedule', 'cardioIntervalPhase', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
 const insights = load('www/js/workout-insights.js', ['completedEntrySnapshot', 'progressRecommendation', 'compareEntries'], library);
 const catalog = plain(library.LIBRARY_EXERCISES);
 const find = (id) => plain(catalog.find((exercise) => exercise.catalogId === id));
@@ -26,6 +27,307 @@ function session(entries) { return { id: 'local-session', running: false, entrie
 function record(id, date, exercise = { ...find('chest'), targetReps: 12 }, sets = [set(20, 12, true, { difficulty: 'right' }), set(20, 12, true, { difficulty: 'easy' })]) {
   return { id, dateISO: date, entries: [insights.completedEntrySnapshot(entry(exercise, sets), exercise)] };
 }
+
+test('73 additional exercises have distinct trusted muscle, movement and real-equipment metadata', () => {
+  const additions = catalog.filter((exercise) => exercise.id.startsWith('library:extended-'));
+  assert.equal(additions.length, 73);
+  assert.equal(new Set(additions.map((exercise) => exercise.catalogId)).size, 73);
+  for (const exercise of additions) {
+    const metadata = tools.trainingMetadata(exercise);
+    assert.ok(metadata, exercise.name);
+    assert.equal(metadata.primary, library.exerciseGuide(exercise).muscles[0]);
+    assert.equal(exercise.active, false);
+  }
+  assert.equal(tools.trainingMetadata({ name: 'My TRX row', inputType: 'reps' }), null);
+});
+
+test('the PDF exercise variants are real distinct library choices with correct muscle and measurement identities', () => {
+  const required = ['barbellBench', 'inclineDumbbellPress', 'smithInclinePress', 'highCableFly',
+    'pullup', 'neutralPulldown', 'preacherCurlMachine', 'preacherHammerCurl', 'supportedKickback',
+    'hackSquatMachine', 'seatedLegCurl', 'lyingLegCurl', 'dumbbellCalfRaise', 'hipAdduction',
+    'walkingLunge', 'seatedOneArmLateral', 'abCrunchMachine', 'abWheelRollout'];
+  for (const id of required) {
+    const exercise = find(id);
+    assert.ok(exercise, id);
+    assert.equal(exercise.inputType, 'reps', id);
+    assert.ok(tools.trainingMetadata(exercise), id);
+  }
+  assert.equal(tools.trainingMetadata(find('ropePushdown')).primary, 'יד אחורית');
+  assert.ok(library.exerciseGuide(find('abWheelRollout')).equipment.includes('גלגל בטן'));
+  assert.ok(!catalog.some((exercise) => exercise.catalogId === 'rollup'));
+  assert.equal(find('highPlank').inputType, 'hold');
+  assert.equal(find('stationaryBike').inputType, 'cardio');
+  assert.equal(find('elliptical').inputType, 'cardio');
+});
+
+test('the built-in catalog counter is separate from installed custom exercises and selected workout membership', () => {
+  const seed = load('www/js/seed.js', ['SEED_EXERCISES']).SEED_EXERCISES;
+  const data = [{ id: 'mine:1', name: 'Custom', active: true }, { ...find('chairStand'), active: false }];
+  assert.deepEqual(plain(library.catalogStats(data, seed)), { builtIn: 130, stored: 2, selected: 1 });
+  assert.deepEqual(plain(library.catalogStats([], seed)), { builtIn: 130, stored: 0, selected: 0 });
+});
+
+test('all authored diagrams render and new equipment variants have appropriate distinct movement poses', () => {
+  for (const [id, guide] of Object.entries(library.EXERCISE_GUIDES)) {
+    const svg = library.exerciseIllustration(guide);
+    assert.match(svg, /^<svg /, id);
+    assert.doesNotMatch(svg, /NaN|Infinity|undefined/, id);
+  }
+  const expected = { smithInclinePress: 'inclinePress', inclineDumbbellPress: 'inclinePress',
+    chestSupportedRow: 'supportedRow', pullup: 'pullup', hackSquatMachine: 'hackSquat',
+    barbellSquat: 'backSquat', seatedOneArmLateral: 'seatedLateral', elliptical: 'elliptical' };
+  for (const [id, pose] of Object.entries(expected)) assert.equal(library.exerciseGuide(find(id)).pose, pose);
+  const smith = library.exerciseIllustration(library.exerciseGuide(find('smithInclinePress')));
+  assert.match(smith, /M12 4v134M144 4v134/, 'Smith illustration includes guide rails');
+});
+
+test('named workout snapshots preserve effective sets, explicit loads, holds, cardio and custom IDs without logging results', () => {
+  const custom = { id: 'native:custom:1', name: 'My private exercise', active: true, defaultSets: 3, defaultReps: '8',
+    restSeconds: 125, targetWeightKg: 17.5, notes: 'Private note', images: ['photo'] };
+  const hold = { ...find('highPlank'), active: true, holdSeconds: 27 };
+  const cardio = { ...find('stationaryBike'), active: true, durationMinutes: 12, pace: 'My easy pace' };
+  const exercises = [custom, hold, cardio, find('chest')];
+  const state = { exercises, program: tools.durationSession(exercises, () => 1), settings: { restSeconds: 100 } };
+  const before = JSON.stringify(state);
+  const first = tools.createSavedWorkout('  Upper day  ', state, 'plan:first');
+  const second = tools.createSavedWorkout('Lower day', state, 'plan:second');
+  assert.equal(first.name, 'Upper day');
+  assert.notEqual(first.id, second.id);
+  assert.equal(first.sessions[0].exercises.length, 3);
+  assert.equal(first.sessions[0].exercises[0].defaultSets, 1);
+  assert.equal(first.sessions[0].exercises[0].restSeconds, 125);
+  assert.equal(first.sessions[0].exercises[0].targetWeightKg, 17.5);
+  assert.equal(first.sessions[0].exercises[1].holdSeconds, 27);
+  assert.equal(first.sessions[0].exercises[1].restSeconds, 90);
+  assert.equal(first.sessions[0].exercises[2].durationMinutes, 12);
+  assert.equal(first.sessions[0].exercises[2].pace, 'My easy pace');
+  assert.ok(first.sessions[0].exercises.every((exercise) => !exercise.sets && !exercise.images && !exercise.completed));
+  assert.equal(JSON.stringify(state), before);
+  const reordered = tools.createSavedWorkout('Different order',
+    { ...state, program: { entries: [...state.program.entries].reverse() } }, 'plan:reordered');
+  assert.deepEqual(plain(reordered.sessions[0].exercises.map((exercise) => exercise.id)), [cardio.id, hold.id, custom.id]);
+  for (const invalid of ['', '   ', 'x'.repeat(81)]) assert.throws(() => tools.createSavedWorkout(invalid, state, 'bad'));
+  assert.throws(() => tools.createSavedWorkout('Empty', { ...state, exercises: [] }, 'bad'));
+  const later = exercises.map((exercise) => ({ ...exercise, targetWeightKg: 99, holdSeconds: 60, pace: 'Changed' }));
+  const activated = tools.activatePlanExercises(later, first.sessions[0].exercises);
+  assert.equal(activated[0].targetWeightKg, 17.5);
+  assert.equal(activated[0].name, custom.name);
+  assert.deepEqual(plain(activated[0].images), custom.images);
+  assert.equal(activated[1].holdSeconds, 27);
+  assert.equal(activated[1].targetWeightKg, null);
+  assert.equal(activated[2].pace, 'My easy pace');
+  assert.throws(() => tools.activatePlanExercises(later.filter((exercise) => exercise.id !== custom.id), first.sessions[0].exercises));
+  assert.throws(() => tools.activatePlanExercises(later.map((exercise) => exercise.id === custom.id
+    ? { ...exercise, inputType: 'hold' } : exercise), first.sessions[0].exercises));
+});
+
+const homePreferences = (patch = {}) => ({ goal: 'fitness', experience: 'beginner', days: 1, minutes: 30,
+  location: 'home', equipment: [], ...patch });
+const movements = (plan) => plan.sessions.flatMap((day) => day.exercises.map((exercise) => exercise.catalogId));
+
+test('requested incline chest and overhead cable triceps movements already exist as distinct guided variants', () => {
+  for (const id of ['inclineDumbbellPress', 'smithInclinePress', 'overheadCableTriceps']) {
+    assert.equal(catalog.filter((exercise) => exercise.catalogId === id).length, 1);
+    const exercise = find(id), guide = library.exerciseGuide(exercise);
+    assert.ok(guide.videos.length);
+    assert.equal(guide.steps.length, 3);
+    assert.equal(tools.trainingMetadata(exercise).primary, id === 'overheadCableTriceps' ? 'יד אחורית' : 'חזה');
+  }
+  assert.notDeepEqual(library.exerciseGuide(find('overheadCableTriceps')).equipment,
+    library.exerciseGuide(find('overhead')).equipment);
+});
+
+test('explicit full body keeps major push, pull and leg work in each generously budgeted day', () => {
+  const plan = tools.generatePlan(homePreferences({ split: 'full-body', days: 3, minutes: 60, equipment: ['מכונה'], location: 'gym' }), catalog);
+  for (const day of plan.sessions) {
+    const primary = day.exercises.map((exercise) => tools.trainingMetadata(exercise)?.primary);
+    for (const muscle of ['חזה', 'גב', 'רגליים']) assert.ok(primary.includes(muscle), `${day.label}: ${muscle}`);
+    assert.equal(new Set(day.exercises.map((exercise) => exercise.id)).size, day.exercises.length);
+  }
+});
+
+test('A/B repeats genuinely different upper and lower sessions without changing the catalog', () => {
+  const before = JSON.stringify(catalog);
+  const plan = tools.generatePlan(homePreferences({ split: 'ab', days: 4, minutes: 60, equipment: ['מכונה'], location: 'gym' }), catalog);
+  assert.deepEqual(plain(plan.sessions.map((day) => day.label)), ['A', 'B', 'A', 'B']);
+  assert.notDeepEqual(movements({ sessions: [plan.sessions[0]] }), movements({ sessions: [plan.sessions[1]] }));
+  for (const day of plan.sessions) for (const exercise of day.exercises) assert.ok(day.splitMuscles.includes(tools.trainingMetadata(exercise).primary));
+  assert.equal(JSON.stringify(catalog), before);
+  assert.throws(() => tools.generatePlan(homePreferences({ split: 'ab', days: 1 }), catalog), /preferences/);
+});
+
+test('a short explicit full-body strength budget retains available major muscle coverage instead of silently dropping it', () => {
+  const plan = tools.generatePlan(homePreferences({ split: 'full-body', goal: 'strength', experience: 'regular',
+    minutes: 20, equipment: ['מכונה'], location: 'gym' }), catalog);
+  const day = plan.sessions[0];
+  assert.deepEqual(plain(day.requiredMuscles), ['חזה', 'גב', 'רגליים']);
+  for (const muscle of day.requiredMuscles) assert.ok(day.exercises.some((exercise) => tools.trainingMetadata(exercise).primary === muscle));
+  assert.ok(tools.estimateWorkoutDuration(tools.durationSession(day.exercises)).highSeconds > 20 * 60);
+  assert.ok(day.exercises.every((exercise) => exercise.restSeconds === 150));
+});
+
+test('A/B/C produces six reviewed push, pull and leg sessions with appropriate selected-muscle coverage', () => {
+  const plan = tools.generatePlan(homePreferences({ split: 'abc', days: 6, minutes: 60,
+    equipment: ['מכונה'], location: 'gym', muscles: ['חזה', 'גב', 'רגליים'] }), catalog);
+  assert.deepEqual(plain(plan.sessions.map((day) => day.label)), ['A', 'B', 'C', 'A', 'B', 'C']);
+  assert.deepEqual(plain(plan.sessions.map((day) => day.requiredMuscles)), [['חזה'], ['גב'], ['רגליים'], ['חזה'], ['גב'], ['רגליים']]);
+  for (const day of plan.sessions) for (const exercise of day.exercises) assert.ok(day.requiredMuscles.includes(tools.trainingMetadata(exercise).primary));
+  assert.throws(() => tools.generatePlan(homePreferences({ split: 'abc', days: 2 }), catalog), /preferences/);
+  assert.throws(() => tools.generatePlan(homePreferences({ split: 'ab', days: 2, muscles: ['חזה'] }), catalog), /every split day/);
+  assert.throws(() => tools.generatePlan(homePreferences({ split: 'ab', days: 2, goal: 'walk' }), catalog), /preferences/);
+});
+
+test('all rope levels and time budgets include bounded distinct intervals, warmup, recovery and cooldown', () => {
+  const before = JSON.stringify(catalog), doses = [];
+  for (const level of ['beginner', 'intermediate', 'advanced']) for (const minutes of [10, 15, 20, 30]) {
+    const plan = tools.generateRopePlan(level, minutes, catalog, 'outside');
+    const exercise = plan.sessions[0].exercises[0];
+    const phases = tools.ropeIntervalSchedule(exercise.intervals);
+    assert.equal(phases[0].kind, 'warmup');
+    assert.equal(phases.at(-1).kind, 'cooldown');
+    assert.equal(phases[0].seconds, 120);
+    assert.equal(phases.at(-1).seconds, 120);
+    const seconds = phases.reduce((sum, phase) => sum + phase.seconds, 0);
+    assert.equal(exercise.durationMinutes * 60, seconds);
+    assert.ok(seconds <= minutes * 60 && seconds > minutes * 60 - exercise.intervals.workSeconds - exercise.intervals.recoverySeconds);
+    assert.equal(phases.length, 2 + 2 * exercise.intervals.rounds);
+    assert.equal(exercise.location, 'outside');
+    assert.equal(exercise.catalogId, 'jumpRope');
+    assert.deepEqual(plain(plan.options.equipment), ['חבל קפיצה']);
+    doses.push(`${exercise.intervals.workSeconds}/${exercise.intervals.recoverySeconds}`);
+  }
+  assert.equal(new Set(doses).size, 3);
+  assert.equal(JSON.stringify(catalog), before);
+  for (const level of ['toString', '__proto__', '', 'expert']) assert.throws(() => tools.generateRopePlan(level, 10, catalog));
+  assert.throws(() => tools.generateRopePlan('beginner', 1, catalog));
+  assert.throws(() => tools.generateRopePlan('beginner', 10, catalog, 'treadmill'));
+});
+
+test('rope phase boundaries remain exact across pause, reload, running elapsed time and completion', () => {
+  const exercise = tools.generateRopePlan('beginner', 10, catalog).sessions[0].exercises[0];
+  const state = { intervals: exercise.intervals, elapsedSec: 0, startedAt: null };
+  for (const [elapsedSec, kind, remaining] of [[0, 'warmup', 120], [119, 'warmup', 1], [120, 'work', 20],
+    [139.5, 'work', 1], [140, 'recovery', 40], [180, 'work', 20], [480, 'cooldown', 120], [600, 'done', 0]]) {
+    const paused = { ...state, elapsedSec };
+    assert.equal(tools.cardioIntervalPhase(plain(paused), 999999).kind, kind);
+    assert.equal(tools.cardioIntervalPhase(plain(paused), 999999).remainingSeconds, remaining);
+  }
+  assert.equal(tools.cardioIntervalPhase({ ...state, elapsedSec: 100, startedAt: 1000 }, 21000).kind, 'work');
+  assert.equal(tools.cardioIntervalPhase({ ...state, completed: true }).kind, 'done');
+  for (const patch of [{ rounds: 100000 }, { rounds: 0 }, { workSeconds: 0 }, { warmupSeconds: 0 },
+    { level: 'toString', workSeconds: undefined, recoverySeconds: undefined }]) {
+    assert.throws(() => tools.ropeIntervalSchedule({ ...exercise.intervals, ...patch }), /Invalid rope/);
+  }
+});
+
+test('rope prescriptions survive named snapshots, JSON and program activation without sharing mutable recipes', () => {
+  const exercise = { ...tools.generateRopePlan('intermediate', 15, catalog).sessions[0].exercises[0], active: true };
+  const program = tools.durationSession([exercise]);
+  const saved = tools.createSavedWorkout('Rope intervals', { exercises: [exercise], program, settings: {} }, 'rope-saved');
+  const prescription = plain(exercise.intervals);
+  exercise.intervals.rounds = 1;
+  assert.deepEqual(plain(saved.sessions[0].exercises[0].intervals), prescription);
+  const activated = tools.activatePlanExercises(catalog, plain(saved).sessions[0].exercises);
+  assert.deepEqual(plain(activated.find((item) => item.id === exercise.id).intervals), prescription);
+  const steady = tools.activatePlanExercises(activated, [{ ...find('jumpRope'), intervals: null }]);
+  assert.equal(steady[0].intervals, null, 'A later steady session must not retain an old interval prescription');
+});
+
+test('real rope cardio ticking updates only phase labels until completion and coalesces announcements', () => {
+  const source = read('www/js/app.js');
+  let now = 1000, rerenders = 0, saves = 0;
+  const exercise = tools.generateRopePlan('beginner', 10, catalog).sessions[0].exercises[0];
+  const item = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio',
+    intervals: exercise.intervals, durationSec: 600, startedAt: 1000 };
+  const nodes = new Map(), speech = [];
+  const context = vm.createContext({ trainingTools: tools, activeSession: { entries: [item] },
+    Date: { now: () => now }, i18n: { text: (value) => value, locale: () => 'he-IL' },
+    el: (id) => { if (!nodes.has(id)) nodes.set(id, { textContent: '' }); return nodes.get(id); },
+    settings: { voiceAnnouncements: true }, formatHMS: (seconds) => String(Math.ceil(seconds)),
+    persistActiveSession: () => saves++, speak: (...args) => speech.push(args), playBeep() {}, notify() {}, showToast() {},
+    cardioCompletionMessage: () => 'Complete', renderWorkoutTab: () => rerenders++,
+  });
+  vm.runInContext(source.slice(source.indexOf('function intervalPhaseText('), source.indexOf('function renderCardioCard(')), context);
+  vm.runInContext(source.slice(source.indexOf('function tickCardioTimers('), source.indexOf('/* ---- hold-type')), context);
+  context.tickCardioTimers();
+  context.tickCardioTimers();
+  assert.equal(saves, 1); assert.equal(speech.length, 1); assert.equal(rerenders, 0);
+  now += 120000;
+  context.tickCardioTimers();
+  assert.equal(nodes.get(`rope-phase-${exercise.id}`).textContent, 'סבב 1 / 6 · קפיצה');
+  assert.equal(speech.length, 2); assert.equal(rerenders, 0);
+  now = 601000;
+  context.tickCardioTimers();
+  assert.equal(item.completed, true); assert.equal(rerenders, 1);
+  context.tickCardioTimers();
+  assert.equal(rerenders, 1);
+});
+
+test('home planning without equipment uses honest floor/wall options, never imaginary back coverage', () => {
+  const before = JSON.stringify(catalog);
+  const plan = tools.generatePlan(homePreferences(), catalog);
+  assert.ok(movements(plan).includes('wallPushup'));
+  assert.ok(plan.omitted.includes('horizontal-pull'));
+  for (const exercise of plan.sessions[0].exercises) {
+    assert.ok(library.exerciseGuide(exercise).equipment.every((item) => ['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר'].includes(item)));
+  }
+  assert.equal(JSON.stringify(catalog), before);
+});
+
+test('a home chair is used for sitting and is never silently treated as a bench or suspension anchor', () => {
+  const plan = tools.generatePlan(homePreferences({ equipment: ['כיסא יציב'] }), catalog);
+  assert.ok(movements(plan).includes('chairStand'));
+  assert.ok(!movements(plan).includes('inclinePushup'));
+  assert.ok(!movements(plan).includes('trxRow'));
+  assert.ok(plan.omitted.includes('horizontal-pull'));
+});
+
+test('TRX requires an actual checked boolean and supplies primary back work only when explicitly selected', () => {
+  for (const value of [undefined, false, 'true', 1]) {
+    assert.throws(() => tools.generatePlan(homePreferences({ equipment: ['TRX'], trxAnchorChecked: value }), catalog), /TRX anchor/);
+  }
+  const plan = tools.generatePlan(homePreferences({ equipment: ['TRX'], trxAnchorChecked: true, muscles: ['גב'] }), catalog);
+  assert.equal(plan.sessions[0].exercises[0].catalogId, 'trxRow');
+  assert.ok(plan.sessions[0].exercises.every((exercise) => tools.trainingMetadata(exercise).primary === 'גב'));
+  assert.throws(() => tools.generatePlan(homePreferences({ muscles: ['גב'] }), catalog), /every selected muscle/);
+});
+
+test('home plans remain reviewable with an old stored library and activate new choices only explicitly', () => {
+  const stored = catalog.filter((exercise) => !exercise.id.startsWith('library:extended-'));
+  const before = JSON.stringify(stored);
+  const proposal = tools.generatePlan(homePreferences({ equipment: ['כיסא יציב'] }), stored);
+  const expanded = tools.planningCatalog(stored);
+  assert.equal(JSON.stringify(stored), before);
+  const activated = tools.activatePlanExercises(expanded, proposal.sessions[0].exercises);
+  assert.ok(activated.find((exercise) => exercise.catalogId === 'chairStand').active);
+  assert.equal(JSON.stringify(stored), before);
+  assert.equal(new Set(expanded.map((exercise) => exercise.id)).size, expanded.length);
+});
+
+test('home equipment and duration preferences are validated without truthy or duplicate equipment substitutions', () => {
+  for (const equipment of [['chair'], ['כיסא יציב', 'כיסא יציב'], ['secret machine'], null]) {
+    assert.throws(() => tools.generatePlan(homePreferences({ equipment }), catalog), /preferences/);
+  }
+  for (const minutes of [20, 30, 45, 60, 90]) {
+    const plan = tools.generatePlan(homePreferences({ minutes, equipment: ['גומייה'] }), catalog);
+    const estimate = tools.estimateWorkoutDuration(tools.durationSession(plan.sessions[0].exercises));
+    assert.ok(estimate.seconds > 0);
+    assert.ok(Number.isFinite(estimate.highSeconds));
+    assert.equal(plan.options.minutes, minutes);
+  }
+});
+
+test('expanded per-side exercises count both sides without doubling rests, transitions or saved set counts', () => {
+  for (const id of ['splitSquat', 'singleBridge', 'clamShell', 'singleCalf', 'alternatingCurl', 'concentrationCurl', 'heelTap', 'kneeSidePlank']) {
+    const exercise = find(id);
+    const value = { sets: [set('', 10)], targetReps: 10 };
+    const estimate = tools.estimateEntryDuration(value, exercise, 90, { remaining: false });
+    const expectedWork = exercise.inputType === 'hold' ? 20 : 50;
+    assert.equal(estimate.restSeconds, 90);
+    assert.equal(estimate.seconds, expectedWork + 90 + 22.5, id);
+    assert.equal(value.sets.length, 1);
+  }
+});
 
 test('one average estimate formats minute/hour boundaries through the real Hebrew and English translator', () => {
   const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: {} });
@@ -73,7 +375,7 @@ function pauseController(savedSession) {
       { exerciseId: 'native:hold', exerciseName: 'Hold', sets: [set('', '', false, { holdStartedAt: now - 10000 })] },
       { exerciseId: 'native:cardio', exerciseName: 'Walk', type: 'cardio', durationSec: 600, elapsedSec: 40, startedAt: now - 20000 },
     ] };
-  const context = vm.createContext({ ...timers, activeSession, formatHMS,
+  const context = vm.createContext({ ...timers, activeSession, formatHMS, privacyErasing: false,
     settings: { voiceAnnouncements: false, voiceCommandsEnabled: true }, workouts: [],
     exercises: [{ id: 'native:chest', name: 'Chest', inputType: 'reps', restSeconds: 90 },
       { id: 'native:hold', name: 'Hold', inputType: 'hold', holdSeconds: 30, restSeconds: 90 }],
@@ -980,6 +1282,49 @@ test('real app controller activates only after explicit invocation, backs up and
   assert.deepEqual(Array.from(context.exercises, (exercise) => exercise.id).filter((id) => !id.startsWith('planning:')), originalIds);
   assert.ok(context.exercises.filter((exercise) => exercise.id.startsWith('planning:')).every((exercise) => exercise.active === false));
   assert.equal(context.exercises.find((exercise) => exercise.id === changedId).notes, 'My changed notes');
+});
+
+test('live training state reuses in-memory history and exercises instead of cloning or rereading storage', () => {
+  const { context, api } = controllerContext();
+  context.db.getWorkouts = () => { throw new Error('Unexpected history storage read'); };
+  assert.equal(api.getState().history, context.workouts);
+  assert.equal(api.getState().exercises, context.exercises);
+  assert.equal(api.getState().session, context.activeSession);
+});
+
+test('real draft builder carries independent interval prescriptions and source identity into cardio entries', () => {
+  const exercise = { ...plain(tools.generateRopePlan('advanced', 15, catalog).sessions[0].exercises[0]), active: true };
+  const context = vm.createContext({ exercises: [exercise], settings: {}, db: { uid: () => 'rope-draft' },
+    getLastCompletedValuesByExercise: () => ({}) });
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  const draft = context.buildDraftSession(), item = draft.entries[0];
+  assert.equal(item.type, 'cardio');
+  assert.equal(item.durationSec, exercise.durationMinutes * 60);
+  assert.deepEqual(plain(item.intervals), exercise.intervals);
+  assert.equal(item.exerciseSnapshot.catalogId, 'jumpRope');
+  item.intervals.rounds--;
+  assert.notEqual(item.intervals.rounds, exercise.intervals.rounds);
+});
+
+test('rope background announcement deadlines use the same schedule after pause and resume', () => {
+  const exercise = tools.generateRopePlan('beginner', 10, catalog).sessions[0].exercises[0];
+  const item = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio', durationSec: 600,
+    intervals: exercise.intervals, startedAt: 1000000, elapsedSec: 130 };
+  const context = vm.createContext({ activeSession: { entries: [item] }, trainingTools: tools,
+    settings: { voiceAnnouncements: true }, Date: { now: () => 1000000 }, holdTimers: new Map(),
+    restTimer: { isRunning: () => false }, cardioCompletionMessage: () => 'Done',
+    i18n: { text: (value) => value, locale: () => 'he-IL' } });
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function intervalPhaseText('), source.indexOf('function renderCardioCard(')), context);
+  vm.runInContext(source.slice(source.indexOf('function buildBackgroundAnnouncementItems('), source.indexOf('function syncNativeAnnouncementPlan(')), context);
+  const announcements = context.buildBackgroundAnnouncementItems();
+  const next = announcements.filter((item) => item.announcementID.startsWith('rope:')).sort((a, b) => a.fireAtMillis - b.fireAtMillis);
+  assert.equal(next[0].fireAtMillis, 1010000, 'Recovery starts ten seconds after resuming at elapsed 130');
+  assert.match(next[0].text, /התאוששות/);
+  assert.ok(announcements.every((item) => item.fireAtMillis > 1000000 && item.language === 'he-IL'));
+  assert.equal(new Set(announcements.map((item) => item.announcementID)).size, announcements.length);
+  assert.equal(announcements.find((item) => item.announcementID.startsWith('cardio:')).fireAtMillis, 1470000);
 });
 
 test('real controller plan activation preserves running, typed, paused-cardio and temporary-selection sessions', () => {

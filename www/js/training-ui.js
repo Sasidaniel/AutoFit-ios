@@ -40,7 +40,9 @@ export function refreshDurationEstimates(api, doc = document) {
   write('trainingProgramDuration', `${i18n.text('זמן משוער לאימון שלי')}: ${durationEstimateText(program)}`);
   return { total, remaining, program };
 }
-const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ']];
+const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ'], ['rope', 'קפיצה על חבל']];
+const PLAN_SPLITS = [['full-body', 'פול בודי — כל הגוף בכל אימון'], ['ab', 'A/B — פלג גוף עליון / תחתון'], ['abc', 'A/B/C — דחיפה / משיכה / רגליים']];
+const ROPE_LEVELS = [['beginner', 'מתחילים'], ['intermediate', 'בינונית'], ['advanced', 'גבוהה']];
 const REASONS = {
   cardio: 'אירובי נמדד בזמן ובקצב; אין כאן המלצה לשינוי משקל.',
   hold: 'החזקות נמדדות בשניות; אין להסיק התקדמות ממשקל וחזרות.',
@@ -60,6 +62,15 @@ const MOVEMENTS = { squat: 'סקוואט', lunge: 'מכרע', hinge: 'תנועת
   'horizontal-push': 'דחיפה אופקית', 'horizontal-pull': 'משיכה אופקית', 'vertical-push': 'דחיפה מעל הראש',
   'hip-extension': 'פשיטת ירך', 'core-control': 'שליטה בגו', 'elbow-flexion': 'כפיפת מרפקים' };
 const ACTION_ERRORS = {
+  'Selected muscle groups do not cover every split day': 'קבוצות השרירים שנבחרו אינן מכסות כל חלק בחלוקה. בחר גם קבוצות מהחלקים האחרים, או בחר פול בודי.',
+  'Invalid plan preferences': 'בדוק שהחלוקה מתאימה למספר האימונים: A/B דורש לפחות שניים, ו-A/B/C לפחות שלושה.',
+  'Confirm a jump rope and clear space': 'יש לאשר שיש חבל תקין ומרחב פנוי לפני בניית האימון.',
+  'The plan was selected but the workout could not start': 'התוכנית נבחרה, אבל התחלת האימון נכשלה. פתח את מסך אימון כדי לבדוק ולנסות שוב.',
+  'Enter a workout name of 1–80 characters': 'יש להזין שם אימון באורך של עד 80 תווים.',
+  'Choose at least one exercise before saving': 'בחר לפחות תרגיל אחד באימון שלי לפני השמירה.',
+  'The selected program changed; reopen the save dialog': 'הבחירה השתנתה. פתח שוב את חלון השמירה.',
+  'Finish or save the current workout before starting another': 'יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו לפני התחלת אימון אחר.',
+  'Confirm a properly installed TRX anchor': 'לפני שילוב TRX יש לאשר עיגון תקין לפי הוראות היצרן. בלי עיגון מתאים, הסר את הבחירה; אין לאלתר חיבור לרהיטים.',
   'Choose an outdoor or gym location for jogging': 'לריצה בחר מיקום בחוץ או חדר כושר. להליכה בבית אפשר לבחור הליכה במקום.',
   'Choose distinct exercises in each session': 'בחר תרגילים שונים בכל אימון כדי לשמור על זהות נפרדת.',
   'Remove a saved plan before saving another': 'כבר נשמרו שמונה תוכניות. מחק תוכנית חלופית לפני הוספת תוכנית חדשה.',
@@ -78,7 +89,7 @@ export function createTrainingUI(api) {
   const home = document.createElement('section');
   home.className = 'card training-hub';
   home.innerHTML = `<h2>${t('כלים לאימון שלך')}</h2>${note('הצעות מקומיות בלבד. התוכנית וההיסטוריה נשארות שלך.')}
-    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnSavedPlans', 'תוכניות שמורות')}
+    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}${button('btnSaveCurrentWorkout', 'שמירת האימון שלי')}
     ${button('btnProgressAdvice', 'יעדים אישיים והמלצות')}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
     <p id="trainingPlanStatus" class="field-hint" data-no-translate></p><p id="monthlyGoalStatus" data-no-translate></p>`;
   document.querySelector('.home-workout-hero').after(home);
@@ -94,13 +105,19 @@ export function createTrainingUI(api) {
   programDuration.className = 'card training-duration';
   programDuration.innerHTML = `<strong id="trainingProgramDuration" data-no-translate></strong>
     ${note('לפי בחירת התרגילים, הסטים ושבוע התוכנית. אימון פעיל או מותאם עשוי להיות שונה.')}${durationDetails()}
-    <div class="training-actions">${button('btnExercisePersonalPlan', 'בניית תוכנית אישית')}${button('btnExerciseSavedPlans', 'תוכניות שמורות')}</div>`;
+    <div class="training-actions">${button('btnExercisePersonalPlan', 'בניית תוכנית אישית')}${button('btnExerciseHomePlan', 'בניית אימון ביתי')}${button('btnExerciseRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnExerciseSavedPlans', 'תוכניות שמורות')}${button('btnExerciseSaveCurrentWorkout', 'שמירת האימון שלי')}</div>`;
   document.getElementById('exerciseCategoryGrid').before(programDuration);
   const on = (id, handler) => document.getElementById(id).addEventListener('click', handler);
   on('btnPersonalPlan', () => planBuilder());
+  on('btnHomePlan', () => planBuilder({ homeOnly: true }));
+  on('btnRopePlan', ropeBuilder);
   on('btnSavedPlans', savedPlans);
+  on('btnSaveCurrentWorkout', saveCurrentWorkout);
   on('btnExercisePersonalPlan', () => planBuilder());
+  on('btnExerciseHomePlan', () => planBuilder({ homeOnly: true }));
+  on('btnExerciseRopePlan', ropeBuilder);
   on('btnExerciseSavedPlans', savedPlans);
+  on('btnExerciseSaveCurrentWorkout', saveCurrentWorkout);
   on('btnProgressAdvice', recommendations);
   on('btnWorkoutAdvice', recommendations);
   on('btnWeeklyWork', weeklyWork);
@@ -122,7 +139,7 @@ export function createTrainingUI(api) {
       const message = dialog.querySelector('.training-action-error') || document.createElement('p');
       message.className = 'training-action-error';
       message.setAttribute('role', 'alert');
-      message.textContent = t(ACTION_ERRORS[error.message] || (error instanceof RangeError ? 'בדוק את הטווחים והבחירה ונסה שוב.' : 'לא ניתן לבצע את השינוי. הנתונים נשמרו; בדוק את הבחירה או את האחסון ונסה שוב.'));
+      message.textContent = t(ACTION_ERRORS[error.message] || (error instanceof RangeError ? 'בדוק את הטווחים והבחירה ונסה שוב.' : 'לא ניתן לבצע את השינוי. בדוק את הבחירה או את האחסון ונסה שוב.'));
       dialog.querySelector('.training-dialog-body').prepend(message);
       return null;
     }
@@ -201,7 +218,7 @@ export function createTrainingUI(api) {
     const state = api.getState();
     const entry = state.session.entries.find((entry) => entry.exerciseId === exerciseId);
     const exercise = entry.exerciseSnapshot || state.exercises.find((exercise) => exercise.id === exerciseId);
-    const choices = tools.alternatives(exercise, state.exercises).filter((choice) => !state.session.entries.some((entry) => entry.exerciseId === choice.id));
+    const choices = tools.alternatives(exercise, tools.planningCatalog(state.exercises)).filter((choice) => !state.session.entries.some((entry) => entry.exerciseId === choice.id));
     const dialog = api.dialog(t('המכשיר תפוס'), `<p data-no-translate>${name(exercise)}</p>
       ${note('החלפה לתנועה ולאזור עבודה תואמים עם ציוד שונה, לא הבטחה לשקילות. בחר עומס חדש; המשקל אינו מועתק.')}
       ${choices.length ? field('בחר חלופה', `<select id="swapChoice" class="select" data-no-translate>${choices.map((choice) => `<option value="${esc(choice.id)}">${name(choice)}</option>`).join('')}</select>`)
@@ -211,7 +228,7 @@ export function createTrainingUI(api) {
     if (choices.length) {
       document.getElementById('btnSwapGuide').onclick = () => api.guide(choices.find((choice) => choice.id === document.getElementById('swapChoice').value));
       document.getElementById('btnConfirmSwap').onclick = () => changedSession(dialog, (session) =>
-        tools.swapExercise(session, exerciseId, choices.find((choice) => choice.id === document.getElementById('swapChoice').value), api.getState().exercises));
+        tools.swapExercise(session, exerciseId, choices.find((choice) => choice.id === document.getElementById('swapChoice').value), tools.planningCatalog(api.getState().exercises)));
     }
     sessionNotice(dialog);
   }
@@ -262,31 +279,74 @@ export function createTrainingUI(api) {
     }));
   }
 
-  function planBuilder() {
-    const dialog = api.dialog(t('בניית תוכנית אישית'), `<form id="personalPlanForm" class="training-form">
-      ${field('המטרה', `<select name="goal" class="select">${options(PLAN_GOALS, 'fitness')}</select>`)}
+  function ropeBuilder() {
+    const dialog = api.dialog(t('בניית אימון קפיצה על חבל'), `<form id="ropePlanForm" class="training-form">
+      ${field('רמת קפיצה על חבל', `<select class="select" name="ropeLevel">${options(ROPE_LEVELS, 'beginner')}</select>`)}
+      ${field('דקות זמינות', `<select class="select" name="minutes">${options([[10, '10'], [15, '15'], [20, '20'], [30, '30']], 10)}</select>`)}
+      ${field('מיקום', `<select class="select" name="location">${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], 'home')}</select>`)}
+      ${note('מתחילים: 20 שניות קפיצה / 40 התאוששות. בינונית: 40 / 40. גבוהה: 60 / 30. בכל רמה שתי דקות הליכה לחימום ושתי דקות לשחרור. מספר הסבבים מותאם לזמן; אין צורך לקפוץ מהר יותר.')}
+      ${note('בחר משטח יציב שאינו מחליק, נעליים מתאימות וחבל תקין. התחל במינון הקצר; אפשר לעצור או להאריך התאוששות. אם יש כאב, סחרחורת או קושי חריג, הפסק. קפיצה אינה מתאימה לכל אחד; זו אינה התאמה רפואית.')}
+      <label class="checkbox-row"><input type="checkbox" name="ropeReady" required><span>${t('יש ברשותי חבל תקין ומרחב פנוי מעל הראש ומסביב לגוף.')}</span></label>
+      <button class="btn btn-primary" type="submit">${t('יצירת הצעה לבדיקה')}</button></form>`);
+    document.getElementById('ropePlanForm').onsubmit = (event) => {
+      event.preventDefault();
+      safely(dialog, () => {
+        const data = new FormData(event.target);
+        if (data.get('ropeReady') !== 'on') throw new Error('Confirm a jump rope and clear space');
+        const plan = tools.generateRopePlan(data.get('ropeLevel'), Number(data.get('minutes')), api.getState().exercises, data.get('location'));
+        plan.id = api.uid();
+        dialog.close();
+        planPreview(plan);
+      });
+    };
+  }
+
+  function planBuilder({ homeOnly = false } = {}) {
+    const dialog = api.dialog(t(homeOnly ? 'בניית אימון ביתי' : 'בניית תוכנית אישית'), `<form id="personalPlanForm" class="training-form">
+      ${homeOnly ? note('בחר מה באמת נמצא בבית. כיסא מיועד לישיבה ותמיכה בלבד; TRX דורש עיגון תקין. ההצעה נבדקת ונשמרת לפני הפעלה, בלי להחליף את האימון הקיים.') : ''}
+      ${field('המטרה', `<select name="goal" class="select">${options(PLAN_GOALS.filter(([id]) => id !== 'rope' && (!homeOnly || id !== 'run')), 'fitness')}</select>`)}
       ${field('ניסיון', `<select name="experience" class="select">${options([['beginner', 'מתחילים'], ['regular', 'בעלי ניסיון']], 'beginner')}</select>`)}
-      ${field('מספר אימונים בתוכנית', `<select name="days" class="select">${options([[1, 'אימון יחיד'], [2, '2'], [3, '3'], [4, '4']], 1)}</select>`)}
+      ${field('מספר אימונים בתוכנית', `<select name="days" class="select">${options([[1, 'אימון יחיד'], [2, '2'], [3, '3'], [4, '4'], [5, '5'], [6, '6']], 1)}</select>`)}
+      ${field('חלוקת האימונים', `<select name="split" class="select">${options(PLAN_SPLITS, 'full-body')}</select>`)}
+      ${note('A/B חוזר לפי הסדר עליון / תחתון; A/B/C חוזר דחיפה / משיכה / רגליים. כל אימון מסומן באות שלו. בבחירת שרירים יש לכלול קבוצות מכל חלק בחלוקה; פול בודי מתאים גם לקבוצה בודדת.')}
       ${field('דקות לאימון', `<select name="minutes" class="select">${options([[20, '20'], [30, '30'], [45, '45'], [60, '60'], [90, '90']], 30)}</select>`)}
       <fieldset id="planMuscles"><legend>${t('קבוצות שרירים לאימון')}</legend>
-        ${note('אפשר לבחור קבוצה אחת או כמה. ללא בחירה תיבנה התוכנית הכללית הרגילה. הבחירה מיועדת לאימוני כוח, לא להליכה או ריצה.')}
+        ${note('אפשר לבחור קבוצה אחת או כמה. ללא בחירה תיבנה תוכנית כללית לפי החלוקה. בפול בודי כל קבוצה תופיע בכל אימון; בחלוקה היא תופיע בחלק המתאים. הבחירה מיועדת לאימוני כוח, לא להליכה או ריצה.')}
         <div class="training-equipment">${tools.PLAN_MUSCLES.map((muscle) =>
           `<label><input type="checkbox" name="muscles" value="${esc(muscle)}">${t(muscle)}</label>`).join('')}</div></fieldset>
-      ${field('מיקום', `<select name="location" class="select">${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], 'home')}</select>`)}
-      <fieldset><legend>${t('ציוד זמין בפועל')}</legend><div class="training-equipment">${['משקולות יד', 'גומייה', 'ספסל', 'מכונה'].map((item) =>
+      ${field('מיקום', `<select name="location" class="select" ${homeOnly ? 'disabled' : ''}>${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], 'home')}</select>`)}
+      <fieldset><legend>${t('ציוד זמין בפועל')}</legend><div class="training-equipment">${['כיסא יציב', 'TRX', 'משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן'].filter((item) => !homeOnly || item !== 'מכונה').map((item) =>
         `<label><input type="checkbox" name="equipment" value="${esc(item)}">${t(item)}</label>`).join('')}</div></fieldset>
+      ${note('ללא בחירת ציוד יוצעו רק תרגילי משקל גוף, רצפה וקיר. כיסא אינו ספסל אימון. בלי ציוד משיכה מתאים, ייתכן שלא יהיה כיסוי מאומת לגב.')}
+      <label class="checkbox-row plan-trx-confirm hidden"><input type="checkbox" name="trxAnchorChecked"><span>${t('הרצועות והעיגון מותקנים ונבדקו לפי הוראות היצרן. אבדוק אותם שוב לפני כל שימוש; אין עיגון מאולתר לרהיטים.')}</span></label>
       ${note('תוכנית כללים מקומית, ללא AI בתשלום. אין הבטחת ירידה נקודתית בשומן. התאם יכולת והפסק פעילות הגורמת לכאב.')}
       <button class="btn btn-primary" type="submit">${t('יצירת הצעה לבדיקה')}</button></form>`);
     const form = document.getElementById('personalPlanForm');
-    form.elements.goal.addEventListener('change', () => {
-      document.getElementById('planMuscles').disabled = ['walk', 'run'].includes(form.elements.goal.value);
+    const trx = form.querySelector('[name="equipment"][value="TRX"]');
+    trx.addEventListener('change', () => {
+      const confirmation = form.querySelector('.plan-trx-confirm');
+      confirmation.classList.toggle('hidden', !trx.checked);
+      if (!trx.checked) form.elements.trxAnchorChecked.checked = false;
     });
+    const updateSplit = () => {
+      const cardio = ['walk', 'run'].includes(form.elements.goal.value);
+      document.getElementById('planMuscles').disabled = cardio;
+      form.elements.split.disabled = cardio;
+      if (cardio) form.elements.split.value = 'full-body';
+      const minimum = form.elements.split.value === 'abc' ? 3 : form.elements.split.value === 'ab' ? 2 : 1;
+      for (const option of form.elements.days.options) option.disabled = Number(option.value) < minimum;
+      if (Number(form.elements.days.value) < minimum) form.elements.days.value = String(minimum);
+    };
+    form.elements.goal.addEventListener('change', updateSplit);
+    form.elements.split.addEventListener('change', updateSplit);
     document.getElementById('personalPlanForm').onsubmit = (event) => {
       event.preventDefault();
       safely(dialog, () => {
         const data = new FormData(event.target);
         const plan = tools.generatePlan({ goal: data.get('goal'), experience: data.get('experience'), days: Number(data.get('days')),
-          minutes: Number(data.get('minutes')), location: data.get('location'), equipment: data.getAll('equipment'),
+          minutes: Number(data.get('minutes')), location: homeOnly ? 'home' : data.get('location'), equipment: data.getAll('equipment'),
+          trxAnchorChecked: data.get('trxAnchorChecked') === 'on',
+          split: data.get('split') || 'full-body',
           muscles: data.getAll('muscles') }, api.getState().exercises);
         plan.id = api.uid();
         dialog.close();
@@ -297,23 +357,31 @@ export function createTrainingUI(api) {
 
   function planPreview(original, saved = false) {
     const plan = JSON.parse(JSON.stringify(original));
-    const available = tools.planCatalog(api.getState().exercises, plan.options.equipment, plan.options.location);
+    const available = tools.planCatalog(tools.planningCatalog(api.getState().exercises), plan.options.equipment, plan.options.location);
     const dialog = api.dialog(t('תוכנית מוצעת — בדיקה ועריכה'), `<p><span>${t(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || '')}</span>
       · ${plan.options.days} <span>${t('אימונים בתוכנית')}</span> · ${plan.options.minutes} <span>${t('דקות לאימון')}</span></p>
+      ${plan.options.goal === 'rope' ? `<p><span>${t('רמת קפיצה על חבל')}</span>: <span>${t(ROPE_LEVELS.find(([key]) => key === plan.options.ropeLevel)[1])}</span></p>` : ''}
+      ${PLAN_SPLITS.some(([key]) => key === plan.options.split) ? `<p>${t(PLAN_SPLITS.find(([key]) => key === plan.options.split)[1])}</p>` : ''}
       ${plan.options.muscles?.length ? `<p><span>${t('קבוצות שנבחרו')}</span>: ${plan.options.muscles.map((muscle) => `<span>${esc(t(muscle))}</span>`).join(' · ')}</p>
-        ${note('לפחות תרגיל עיקרי אחד לכל קבוצה שנבחרה. שרירים משניים עשויים להשתתף, אך אינם מחליפים כיסוי עיקרי. לא ממלאים זמן בתרגילים מיותרים.')}` : ''}
+        ${note('כל קבוצה שנבחרה נשמרת בחלק המתאים בתוכנית. שרירים משניים עשויים להשתתף, אך אינם מחליפים כיסוי עיקרי. לא ממלאים זמן בתרגילים מיותרים.')}` : ''}
       <p><span>${t('מיקום')}</span>: <span>${t({ home: 'בבית', gym: 'חדר כושר', outside: 'בחוץ' }[plan.options.location])}</span>
         · <span>${t('ציוד')}</span>: ${(plan.options.equipment.length ? plan.options.equipment : ['ללא ציוד']).map((item) => `<span>${t(item)}</span>`).join(' · ')}</p>
       ${note('השאר ימים קלים או מנוחה בין אימונים לפי התחושה. זמני התוכנית הם אומדן; אין חובה לסיים בזמן.')}${durationDetails()}
+      ${plan.options.equipment.includes('TRX') ? note('לפני כל שימוש ב-TRX בדוק שוב את הרצועות והעיגון לפי הוראות היצרן. ההצעה אינה מאשרת את בטיחות ההתקנה בפועל.') : ''}
       ${plan.options.goal === 'run' ? note('התחלה עדינה: הליכה נוחה ואחריה ריצה קצרה, ובסיום הליכה נוספת לפי הצורך. חזור על אותו מינון; רק כשהוא נוח בכמה אימונים שקול עוד דקה, לא העלאת קצב וזמן יחד.') : ''}
       ${plan.omitted.length ? note('חלק מדפוסי התנועה לא נכללו בגלל הציוד, הניסיון או הזמן. ההצעה אינה מבטיחה כיסוי מלא לכל הגוף.') +
         `<p><span>${t('לא נכללו')}</span>: ${plan.omitted.map((movement) => `<span>${t(MOVEMENTS[movement] || movement)}</span>`).join(' · ')}</p>` : ''}
-      ${plan.sessions.map((session, index) => `<section class="training-plan-day" data-day="${index}"><h4><span>${t('אימון')}</span> ${index + 1}</h4>
+      ${plan.options.goal === 'rope' ? note('הטיימר עובר אוטומטית מחימום לסבבי קפיצה והתאוששות ולשחרור. הפסקת האימון או עצירת הטיימר מקפיאות את המיקום ברצף. בדפדפן יש להשאיר את הדף פתוח; הכרזות ברקע באייפון דורשות בדיקת מכשיר.') : ''}
+      ${plan.sessions.map((session, index) => `<section class="training-plan-day" data-day="${index}"><h4><span>${t('אימון')}</span> ${index + 1}${/^[A-C]$/.test(session.label) ? ` · <bdi>${session.label}</bdi>` : ''}</h4>
+        ${session.splitMuscles ? `<p>${session.splitMuscles.map((muscle) => `<span>${t(muscle)}</span>`).join(' · ')}</p>` : ''}
         ${session.exercises.map((exercise, row) => `<div class="training-plan-row" data-row="${row}">
           <label><span class="sr-only">${t('בחירת תרגיל')}</span><select class="select plan-exercise" data-no-translate>${available.filter((candidate) => candidate.inputType === exercise.inputType)
+            .filter((candidate) => !exercise.intervals || candidate.catalogId === 'jumpRope')
+            .filter((candidate) => !session.splitMuscles || session.splitMuscles.includes(tools.trainingMetadata(candidate)?.primary))
             .filter((candidate) => !plan.options.muscles?.length || tools.trainingMetadata(candidate)?.primary === tools.trainingMetadata(exercise)?.primary).map((candidate) =>
             `<option value="${esc(candidate.id)}" ${candidate.id === exercise.id ? 'selected' : ''}>${name(candidate)}</option>`).join('')}</select></label>
-          ${exercise.inputType === 'cardio' ? field('דקות', `<input class="input plan-duration" type="number" min="1" max="60" value="${exercise.durationMinutes}">`) :
+          ${exercise.intervals ? `<p data-no-translate>${exercise.intervals.rounds} ${i18n.text('סבבים')} · ${exercise.intervals.workSeconds} ${i18n.text('שניות קפיצה')} / ${exercise.intervals.recoverySeconds} ${i18n.text('שניות התאוששות')}</p>` :
+            exercise.inputType === 'cardio' ? field('דקות', `<input class="input plan-duration" type="number" min="1" max="60" value="${exercise.durationMinutes}">`) :
             field('סטים', `<input class="input plan-sets" type="number" min="1" max="5" value="${exercise.defaultSets}">`) +
             field('יעד חזרות', `<input class="input plan-reps" type="number" min="1" max="30" value="${exercise.targetReps}">`)}
           <button class="btn btn-secondary btn-small plan-guide" type="button">${t('הדרכה')}</button></div>`).join('')}
@@ -330,7 +398,9 @@ export function createTrainingUI(api) {
         section.querySelectorAll('[data-row]').forEach((row) => {
           const exercise = available.find((item) => item.id === row.querySelector('select').value);
           const original = plan.sessions[Number(section.dataset.day)].exercises[Number(row.dataset.row)];
-          if (exercise.inputType === 'cardio') {
+          if (original.intervals) {
+            edited.push(original);
+          } else if (exercise.inputType === 'cardio') {
             const minutes = Number(row.querySelector('.plan-duration').value);
             valid = valid && minutes > 0;
             edited.push({ ...exercise, active: true, durationMinutes: minutes });
@@ -344,7 +414,7 @@ export function createTrainingUI(api) {
         const estimate = tools.estimateWorkoutDuration(tools.durationSession(edited), [], api.durationState().settings.restSeconds, { remaining: false });
         section.querySelector('.plan-estimate').textContent = valid
           ? `${durationEstimateText(estimate)}${estimate.highSeconds > plan.options.minutes * 60 ? ` · ${i18n.text('האומדן עשוי לעבור את התקציב')}` : ''}` : '—';
-        section.querySelector('.plan-budget-warning').textContent = valid && plan.options.muscles?.length
+        section.querySelector('.plan-budget-warning').textContent = valid && (plan.options.muscles?.length || plan.options.split === 'full-body')
           && (estimate.lowSeconds + estimate.highSeconds) / 2 > plan.options.minutes * 60
           ? i18n.text('כדי לשמור על כל קבוצות השרירים שנבחרו, ההצעה ארוכה מהזמן שבחרת. אפשר לבחור זמן נוסף או פחות קבוצות; הסטים והמנוחות לא קוצרו.') : '';
       });
@@ -363,7 +433,11 @@ export function createTrainingUI(api) {
           day.exercises[index] = { ...tools.planExercise(selected), restSeconds: existing.restSeconds,
             defaultSets: existing.defaultSets, defaultReps: existing.defaultReps, targetReps: existing.targetReps };
           const next = day.exercises[index];
-          if (next.inputType === 'cardio') {
+          if (existing.intervals) {
+            next.intervals = existing.intervals;
+            next.durationMinutes = existing.durationMinutes;
+            next.location = existing.location || plan.options.location;
+          } else if (next.inputType === 'cardio') {
             const duration = Number(row.querySelector('.plan-duration').value);
             if (!Number.isInteger(duration) || duration < 1 || duration > 60) throw new RangeError('Invalid duration');
             next.durationMinutes = duration;
@@ -376,9 +450,11 @@ export function createTrainingUI(api) {
           }
         });
         if (new Set(day.exercises.map((exercise) => exercise.id)).size !== day.exercises.length) throw new Error('Choose distinct exercises in each session');
-        if (plan.options.muscles?.length && (plan.options.muscles.some((muscle) =>
+        const required = day.requiredMuscles || plan.options.muscles || [];
+        if (day.splitMuscles && day.exercises.some((exercise) => !day.splitMuscles.includes(tools.trainingMetadata(exercise)?.primary))) throw new Error('Selected muscle groups do not cover every split day');
+        if (required.length && (required.some((muscle) =>
           !day.exercises.some((exercise) => tools.trainingMetadata(exercise)?.primary === muscle))
-          || day.exercises.some((exercise) => !plan.options.muscles.includes(tools.trainingMetadata(exercise)?.primary)))) {
+          || plan.options.muscles?.length && day.exercises.some((exercise) => !plan.options.muscles.includes(tools.trainingMetadata(exercise)?.primary)))) {
           throw new Error('Keep every selected muscle group in the plan');
         }
       });
@@ -409,19 +485,83 @@ export function createTrainingUI(api) {
     }));
   }
 
+  function workoutTitle(plan) {
+    if (plan.name) return plan.name;
+    if (plan.options.goal === 'rope') return `${i18n.text('קפיצה על חבל')} · ${i18n.text(ROPE_LEVELS.find(([key]) => key === plan.options.ropeLevel)?.[1] || '')} · ${plan.options.minutes} ${i18n.text('דקות')}`;
+    return i18n.text(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || 'אימון שמור');
+  }
+  function saveCurrentWorkout() {
+    const dialog = api.dialog(t('שמירת האימון שלי'), `${field('שם האימון', '<input class="input" id="savedWorkoutName" maxlength="80" data-no-translate>')}
+      ${note('נשמרים בחירת התרגילים, הסדר והיעדים של האימון שלי, לא ביצועים או קיצור זמני של אימון פעיל. שמירה אינה מתחילה או מחליפה אימון.')}
+      ${button('btnConfirmSaveWorkout', 'שמירה כאימון נוסף', true)}`);
+    document.getElementById('btnConfirmSaveWorkout').onclick = () => safely(dialog, () => {
+      const plans = trainingSettings().plans || [];
+      if (plans.length >= 8) throw new Error('Remove a saved plan before saving another');
+      const plan = tools.createSavedWorkout(document.getElementById('savedWorkoutName').value, api.durationState(), api.uid());
+      saveTraining({ plans: [...plans, plan] });
+      dialog.close();
+      savedPlans();
+    });
+  }
+  function renameWorkout(plan) {
+    const dialog = api.dialog(t('שינוי שם האימון'), `${field('שם האימון', `<input class="input" id="renameWorkoutName" maxlength="80" value="${esc(workoutTitle(plan))}" data-no-translate>`)}
+      ${button('btnConfirmWorkoutName', 'שמירת השם', true)}`);
+    document.getElementById('btnConfirmWorkoutName').onclick = () => safely(dialog, () => {
+      const name = document.getElementById('renameWorkoutName').value.trim();
+      if (!name || name.length > 80) throw new Error('Enter a workout name of 1–80 characters');
+      saveTraining({ plans: trainingSettings().plans.map((item) => item.id === plan.id ? { ...item, name } : item) });
+      dialog.close();
+      savedPlans();
+    });
+  }
+  function savedWorkoutPreview(plan) {
+    const day = plan.sessions[0];
+    const estimate = tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false });
+    const dialog = api.dialog(workoutTitle(plan), `<ul data-no-translate>${day.exercises.map((exercise) =>
+      `<li>${name(exercise)} · ${exercise.inputType === 'cardio' ? `${exercise.durationMinutes} ${i18n.text('דקות')}` :
+        `${exercise.defaultSets} ${i18n.text('סטים')} · ${exercise.inputType === 'hold' ? `${exercise.holdSeconds || 15} ${i18n.text('שניות')}` : esc(exercise.targetReps || exercise.defaultReps || '—')}`}</li>`).join('')}</ul>
+      <p data-no-translate>${i18n.text('זמן האימון המשוער')}: ${durationEstimateText(estimate)}</p>
+      ${note('הבחירה והיעדים נשמרו. שמות אישיים ותמונות נלקחים מהספרייה הנוכחית; ההיסטוריה אינה משתנה.')}
+      ${button('btnSelectSavedWorkout', 'בחירה לאימון הבא ללא התחלה', true)}`);
+    document.getElementById('btnSelectSavedWorkout').onclick = () => safely(dialog, () => {
+      api.activatePlan(plan, 0);
+      dialog.close();
+      refresh();
+    });
+  }
   function savedPlans() {
     const plans = trainingSettings().plans || [];
-    const dialog = api.dialog(t('תוכניות שמורות'), `${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong><span>${t(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || '')}</span>
-      · ${plan.options.days} <span>${t('אימונים בתוכנית')}</span> · ${plan.options.minutes} <span>${t('דקות לאימון')}</span></strong>
+    const canStart = api.canStartSavedPlan();
+    const dialog = api.dialog(t('תוכניות שמורות'), `${!canStart ? note('יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו, או בטל אותו במפורש במסך אימון, לפני התחלת אימון אחר. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
+      ${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong data-no-translate>${esc(workoutTitle(plan))}</strong>
+      <p>${plan.sessions.length} <span>${t('אימונים בתוכנית')}</span></p>
       ${plan.options.muscles?.length ? `<p>${plan.options.muscles.map((muscle) => `<span>${esc(t(muscle))}</span>`).join(' · ')}</p>` : ''}
-      <div class="training-actions"><button class="btn btn-secondary btn-small" data-preview="${index}">${t('בדיקה ועריכה')}</button>
+      ${plan.sessions.map((day, dayIndex) => `<p data-no-translate>${plan.sessions.length > 1 ? `${i18n.text('אימון')} ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''} · ` : ''}${day.exercises.length} ${i18n.text('תרגילים')} · ${durationEstimateText(tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false }))}</p>
+        <button class="btn btn-primary btn-small" data-start-plan="${index}" data-plan-day="${dayIndex}" ${canStart ? '' : 'disabled'}>${t('בחירה והתחלת אימון')}${plan.sessions.length > 1 ? ` ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''}` : ''}</button>`).join('')}
+      <div class="training-actions"><button class="btn btn-secondary btn-small" data-preview="${index}">${t(plan.kind === 'saved-workout' ? 'בדיקת האימון השמור' : 'בדיקה ועריכה')}</button>
+      <button class="btn btn-secondary btn-small" data-rename-plan="${index}">${t('שינוי שם האימון')}</button>
       <button class="btn btn-secondary btn-small" data-delete-plan="${index}">${t('מחיקת התוכנית החלופית')}</button></div></section>`).join('') : note('עדיין אין תוכניות חלופיות שמורות.')}
       ${note('לשמירת תוכנית, פתח בניית תוכנית אישית, צור הצעה ולחץ בתחתית ההצעה על שמירה כתוכנית חלופית. שמירה אינה הפעלה.')}
+      ${button('btnSaveWorkoutFromPlans', 'שמירת האימון שלי')}
       ${button('btnCreateSavedPlan', 'יצירת תוכנית חדשה')}
       ${note('עד שמונה תוכניות חלופיות במכשיר. מחיקה כאן לא משנה אימון פעיל או את האימון שלי.')}
       ${trainingSettings().programBackup ? button('btnRestoreProgram', 'שחזור הבחירה שלפני התוכנית', true) : ''}`);
     document.getElementById('btnCreateSavedPlan').onclick = () => { dialog.close(); planBuilder(); };
-    dialog.querySelectorAll('[data-preview]').forEach((btn) => btn.onclick = () => { dialog.close(); planPreview(plans[Number(btn.dataset.preview)], true); });
+    document.getElementById('btnSaveWorkoutFromPlans').onclick = () => { dialog.close(); saveCurrentWorkout(); };
+    const openCurrent = document.getElementById('btnOpenCurrentWorkout');
+    if (openCurrent) openCurrent.onclick = () => { dialog.close(); api.openCurrentWorkout(); };
+    dialog.querySelectorAll('[data-start-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
+      api.startSavedPlan(plans[Number(btn.dataset.startPlan)], Number(btn.dataset.planDay));
+      dialog.close();
+      refresh();
+    }));
+    dialog.querySelectorAll('[data-rename-plan]').forEach((btn) => btn.onclick = () => { dialog.close(); renameWorkout(plans[Number(btn.dataset.renamePlan)]); });
+    dialog.querySelectorAll('[data-preview]').forEach((btn) => btn.onclick = () => {
+      const plan = plans[Number(btn.dataset.preview)];
+      dialog.close();
+      if (plan.kind === 'saved-workout') savedWorkoutPreview(plan);
+      else planPreview(plan, true);
+    });
     dialog.querySelectorAll('[data-delete-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       saveTraining({ plans: plans.filter((_, index) => index !== Number(btn.dataset.deletePlan)) });
       dialog.close();
@@ -463,8 +603,9 @@ export function createTrainingUI(api) {
     document.getElementById('btnRemoveMonthlyGoal').onclick = () => safely(dialog, () => { saveTraining({ monthlyGoal: null }); dialog.close(); });
   }
 
-  function refresh() {
-    refreshDurationEstimates(api);
+  let liveTicks = 0;
+  function refresh({ live = false } = {}) {
+    if (!live || ++liveTicks % 5 === 0) refreshDurationEstimates(api);
     const t = i18n.text;
     const state = api.getState();
     if (!state.session) return;
@@ -479,6 +620,7 @@ export function createTrainingUI(api) {
         : '');
     write('trainingListening', `${state.session.paused ? t('האימון בהפסקה — הטיימרים והספירה נעצרו') : !state.native ? t('דפדפן: רישום ידני בלבד, המיקרופון אינו מקשיב')
       : state.voiceActive ? t(state.counting ? 'ספירה קולית פעילה' : 'המיקרופון מקשיב') : t('המיקרופון אינו זמין או אינו פעיל')}${state.restSeconds > 0 ? ` · ${t('מנוחה')}: ${Math.ceil(state.restSeconds)} ${t('שניות')}` : ''}`);
+    if (live) return;
     write('trainingSessionStatus', state.session.timeBudget ? t('בחירת זמן פעילה באימון הזה בלבד — ניתן לשחזר את האימון המלא')
       : state.session.substitutions?.length ? t('החלפת ציוד פעילה באימון הזה בלבד — ניתן לשחזר בכרטיס התרגיל') : '');
     for (const [id, minutes] of [['btnTimeBudget', 30], ['btnTimeBudget60', 60], ['btnTimeBudget90', 90], ['btnFullWorkout', null]]) {
@@ -492,8 +634,12 @@ export function createTrainingUI(api) {
       if (!entry || entry.type === 'cardio') return;
       const existingActions = card.querySelector('.training-equipment-actions');
       if (existingActions) {
-        existingActions.querySelector('button').textContent = t(state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId)
+        existingActions.classList.toggle('hidden', entry.sets.every((set) => set.completed)
+          && !state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId));
+        const label = t(state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId)
           ? 'שחזור התרגיל המקורי' : 'המכשיר תפוס');
+        const button = existingActions.querySelector('button');
+        if (button.textContent !== label) button.textContent = label;
         return;
       }
       if (entry.sets.every((set) => set.completed) && !state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId)) return;
@@ -513,10 +659,12 @@ export function createTrainingUI(api) {
         sessionNotice(dialog);
       };
       actions.appendChild(swap);
-      card.appendChild(actions);
+      card.querySelector('.exercise-head-right').prepend(actions);
     });
   }
-  const interval = setInterval(refresh, 1000);
+  const interval = setInterval(() => {
+    if (document.visibilityState === 'visible' && document.getElementById('tab-workout').classList.contains('active')) refresh({ live: true });
+  }, 1000);
   const refreshDuration = () => refreshDurationEstimates(api);
   document.addEventListener('input', refreshDuration);
   document.addEventListener('change', refreshDuration);

@@ -10,7 +10,8 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "sync", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumeWorkoutLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumeWorkoutAction", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "acknowledgeWorkoutAction", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "acknowledgeWorkoutAction", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "eraseState", returnType: CAPPluginReturnPromise)
     ]
 
     static var pendingWorkoutLink = false
@@ -125,6 +126,7 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("Missing workout running state")
                     return
                 }
+
                 let preview = call.getBool("preview") ?? false
                 let paused = call.getBool("paused") ?? false
                 if !running && !preview && !paused {
@@ -195,6 +197,24 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                 } catch {
                     call.reject("Live Activity failed: \(error.localizedDescription)")
                 }
+            }
+        }
+    }
+
+    @objc func eraseState(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let previous = self.pendingOperation
+            self.pendingOperation = Task { @MainActor in
+                await previous?.value
+                self.activityObserver?.cancel()
+                for activity in Activity<WorkoutActivityAttributes>.activities {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+                UserDefaults.standard.removeObject(forKey: WorkoutActivityAction.storageKey)
+                UserDefaults.standard.removeObject(forKey: WorkoutActivityAction.acknowledgedKey)
+                UserDefaults.standard.removeObject(forKey: "AutoFitDismissedActivitySession")
+                Self.pendingWorkoutLink = false
+                call.resolve(["cleared": true])
             }
         }
     }

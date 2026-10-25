@@ -17,7 +17,11 @@ private class WorkoutShareItem: NSObject, UIActivityItemSource {
 
     func activityViewController(_ activityViewController: UIActivityViewController,
                                 dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
-        return url.pathExtension.lowercased() == "pdf" ? UTType.pdf.identifier : UTType.png.identifier
+        switch url.pathExtension.lowercased() {
+        case "pdf": return UTType.pdf.identifier
+        case "json": return UTType.json.identifier
+        default: return UTType.png.identifier
+        }
     }
 }
 
@@ -27,7 +31,8 @@ public class ShareBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "ShareBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "shareFile", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "shareFiles", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "shareFiles", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "eraseTemporaryFiles", returnType: CAPPluginReturnPromise)
     ]
 
     @objc func shareFile(_ call: CAPPluginCall) {
@@ -49,7 +54,7 @@ public class ShareBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         for item in items {
             guard let filename = item["filename"] as? String,
                   filename == (filename as NSString).lastPathComponent,
-                  ["pdf", "png"].contains((filename as NSString).pathExtension.lowercased()),
+                  ["pdf", "png", "json"].contains((filename as NSString).pathExtension.lowercased()),
                   filenames.insert(filename).inserted,
                   let base64 = item["base64"] as? String,
                   let data = Data(base64Encoded: base64), !data.isEmpty else {
@@ -109,9 +114,22 @@ public class ShareBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                    Date().timeIntervalSince(created) > 86400 {
                     removeTemporaryDirectory(directory)
                 }
+
             }
         } catch {
             CAPLog.print("AutoFit: expired share cleanup failed: \(error.localizedDescription)")
+        }
+    }
+
+    @objc func eraseTemporaryFiles(_ call: CAPPluginCall) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("AutoFitShare", isDirectory: true)
+        do {
+            if FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
+            call.resolve(["cleared": true])
+        } catch {
+            call.reject("Temporary export deletion failed: \(error.localizedDescription)")
         }
     }
 

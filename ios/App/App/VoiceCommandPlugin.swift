@@ -173,6 +173,14 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Unsupported recognition language")
                 return
             }
+            let microphoneMode = call.getString("microphoneMode") ?? "automatic"
+            guard ["automatic", "headset"].contains(microphoneMode) else {
+                call.reject("Unsupported microphone mode")
+                return
+            }
+            let preferHeadset = microphoneMode == "headset"
+            if WorkoutAudioSession.preferHeadsetMicrophone != preferHeadset { self.end() }
+            WorkoutAudioSession.preferHeadsetMicrophone = preferHeadset
             if language != self.recognitionLanguage {
                 self.endRecognition()
                 self.recognizer = nil

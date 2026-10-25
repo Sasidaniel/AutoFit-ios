@@ -42,12 +42,22 @@
     </div>
     <button id="btnOnboardingLanguage" class="btn btn-primary onboarding-btn">המשך</button>
   </div>
+  <div class="onboarding-step" id="onboardingStepLegal">
+    <img src="icons/icon-192.png" alt="AutoFit" class="onboarding-logo">
+    <h1 class="onboarding-title">תנאים, פרטיות ובחירה</h1>
+    <div id="onboardingLegalForm"></div>
+  </div>
   <div class="onboarding-step" id="onboardingStepDetails">
+    <p class="field-hint">אפשר להמשיך ללא חשבון. חיבור Apple או Google/Gmail עדיין לא הוגדר; לא נוצר חשבון מקוון ולא מתבצע סנכרון דרך ספק חיצוני.</p>
     <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
     <h1 class="onboarding-title">ברוכים הבאים ל-AutoFit</h1>
-    <p class="onboarding-subtitle">כמה פרטים כדי שנתחיל</p>
+    <p class="onboarding-subtitle">אפשר להשתמש בכינוי. גיל, מדדי גוף ותמונה אינם חובה.</p>
+    <div id="onboardingCloudRestore" class="hidden">
+      <p class="field-hint">שחזור גיבוי קודם הוא אופציונלי ובקריאה בלבד. פרטים שטרם נשמרו בטופס יוחלפו; לא יופעל גיבוי רגיש חדש ל-iCloud.</p>
+      <button id="btnOnboardingRestoreCloud" type="button" class="btn btn-secondary">שחזור גיבוי קודם מ-iCloud</button>
+    </div>
     <div class="onboarding-form">
-      <label class="field-label">שם המתאמן <span class="required-mark">*</span></label>
+      <label class="field-label">שם או כינוי (לא חובה)</label>
       <input class="input" id="obName">
       <label class="field-label">גיל</label>
       <input type="number" min="1" class="input" id="obAge">
@@ -62,14 +72,15 @@
   <div class="onboarding-step" id="onboardingStepPermissions">
     <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
     <h1 class="onboarding-title">הרשאות</h1>
-    <p class="onboarding-subtitle">מבקשים כעת את ההרשאות הדרושות לחוויה המלאה</p>
+    <p class="onboarding-subtitle">כל הרשאה היא בחירה. אפשר לדלג ולהמשיך בהזנה ידנית.</p>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">❤️</div>
       <div class="onboarding-permission-text">
         <div class="onboarding-permission-title">חיבור ל-Apple Health</div>
         <div class="onboarding-permission-desc">שמירת אימונים ישירות באפליקציית הבריאות</div>
       </div>
-      <span id="healthPermStatus" class="onboarding-permission-status">⏳</span>
+      <button type="button" id="btnOnboardingHealth" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="healthPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
     </div>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">🔒</div>
@@ -77,7 +88,8 @@
         <div class="onboarding-permission-title">נעילת Face ID</div>
         <div class="onboarding-permission-desc">הגנה על הנתונים האישיים שלך</div>
       </div>
-      <span id="faceIdPermStatus" class="onboarding-permission-status">⏳</span>
+      <button type="button" id="btnOnboardingFaceId" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="faceIdPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
     </div>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">🔔</div>
@@ -85,7 +97,8 @@
         <div class="onboarding-permission-title">התראות</div>
         <div class="onboarding-permission-desc">קבלת הכרזות וטיימרים גם כשהאפליקציה ברקע</div>
       </div>
-      <span id="notifPermStatus" class="onboarding-permission-status">⏳</span>
+      <button type="button" id="btnOnboardingNotifications" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="notifPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
     </div>
     <div class="onboarding-permission-card">
       <div class="onboarding-permission-icon">🎙️</div>
@@ -93,7 +106,8 @@
         <div class="onboarding-permission-title">מיקרופון ופקודות קוליות</div>
         <div class="onboarding-permission-desc">שימוש בפקודות קוליות באימון (לדוגמה: "סט הושלם") במקום להזין הכל ידנית</div>
       </div>
-      <span id="voicePermStatus" class="onboarding-permission-status">⏳</span>
+      <button type="button" id="btnOnboardingVoice" class="btn btn-secondary btn-small">אפשר</button>
+      <span id="voicePermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
     </div>
     <button id="btnOnboardingFinish" class="btn btn-primary onboarding-btn">סיום והתחלה</button>
   </div>
@@ -252,7 +266,12 @@
   <!-- EXERCISES TAB -->
   <section id="tab-exercises" class="tab-panel">
     <h2 class="section-title">ספריית תרגילים</h2>
+    <div class="card" id="catalogSummary" aria-live="polite"></div>
     <p class="about-desc">בחר קטגוריה, מצא תרגילים והוסף אותם לאימון שלך.</p>
+    <div id="libraryUpdateCard" class="card hidden">
+      <p class="field-hint">כל המאגר כבר זמין בקטגוריות. אפשר גם לשמור את התרגילים החדשים בספרייה שלך בלי לשנות את האימון הקיים.</p>
+      <button id="btnExpandLibrary" type="button" class="btn btn-secondary">הוסף תרגילים חדשים לספרייה</button>
+    </div>
     <div id="exerciseLibraryFilters" class="library-filters">
       <label class="library-search">
         <span class="field-label">חיפוש בספרייה</span>
@@ -265,7 +284,10 @@
       <label><span class="field-label">ציוד</span><select id="libraryEquipment" class="select">
         <option value="">כל הציוד</option><option value="משקל גוף">משקל גוף</option><option value="משקולות יד">משקולות יד</option>
         <option value="מכונה">מכונה</option><option value="גומייה">גומייה</option><option value="ספסל">ספסל</option><option value="מזרן">מזרן</option>
-        <option value="מתח">מתח</option><option value="מקבילים">מקבילים</option><option value="קיר">קיר</option><option value="ללא ציוד">ללא ציוד</option>
+        <option value="כיסא יציב">כיסא יציב</option><option value="TRX">TRX</option>
+        <option value="מוט">מוט</option><option value="ספסל כומר">ספסל כומר</option>
+        <option value="מדרגת אימון">מדרגת אימון</option><option value="גלגל בטן">גלגל בטן</option>
+        <option value="מתח">מתח</option><option value="מקבילים">מקבילים</option><option value="קיר">קיר</option><option value="חבל קפיצה">חבל קפיצה</option><option value="ללא ציוד">ללא ציוד</option>
       </select></label>
       <label><span class="field-label">מקום אימון</span><select id="libraryPlace" class="select">
         <option value="">בכל מקום</option><option value="home">בית</option><option value="gym">חדר כושר</option><option value="outside">בחוץ</option>
@@ -292,6 +314,12 @@
   <section id="tab-profile" class="tab-panel">
     <h2 class="section-title">אזור אישי</h2>
     <div class="card">
+      <h3>חשבון וחיבור</h3>
+      <p>אפשר להמשיך ללא חשבון. חיבור Apple או Google/Gmail עדיין לא הוגדר; לא נוצר חשבון מקוון ולא מתבצע סנכרון דרך ספק חיצוני.</p>
+      <p class="field-hint">Face ID נועל את הנתונים במכשיר ואינו חשבון Apple או Google. חיבור אמיתי דורש הגדרות ספק, שרת אימות ומסלול מחיקת חשבון; לא מוצגים כפתורי כניסה מדומים.</p>
+    </div>
+    <section class="card" id="subscriptionCard"></section>
+    <div class="card">
       <div class="profile-photo-panel">
         <img id="profilePhoto" src="icons/icon-192.png" alt="תמונת הפרופיל שנבחרה" class="profile-photo">
         <div>
@@ -300,7 +328,7 @@
         </div>
         <input type="file" id="profilePhotoInput" accept="image/*" class="hidden">
       </div>
-      <label class="field-label">שם המתאמן <span class="required-mark">*</span></label>
+      <label class="field-label">שם או כינוי (לא חובה)</label>
       <input class="input" id="profileName">
 
       <label class="field-label">גיל</label>
@@ -334,6 +362,23 @@
       </div>
       <p class="field-hint">עברית היא שפת ברירת המחדל. הבחירה שלך נשמרת גם לפתיחה הבאה.</p>
     </div>
+    <div class="card" id="privacySettingsCard">
+      <h2 class="section-title">תנאים, פרטיות והנתונים שלי</h2>
+      <p class="privacy-consent-status field-hint" role="status"></p>
+      <div class="training-actions">
+        <button type="button" class="btn btn-secondary" data-legal-doc="terms">תנאי שימוש</button>
+        <button type="button" class="btn btn-secondary" data-legal-doc="privacy">מדיניות פרטיות</button>
+        <button type="button" class="btn btn-secondary privacy-review">בדיקה ואישור הטיוטה</button>
+      </div>
+      <p class="field-hint">טיוטה לבדיקה בלבד. השקה מסחרית דורשת השלמת פרטי עסק ואישור משפטי.</p>
+      <p class="privacy-cloud-status field-hint" role="status"></p>
+      <div class="training-actions">
+        <button type="button" class="btn btn-secondary privacy-cloud-export">ייצוא גיבוי קודם מ-iCloud</button>
+        <button type="button" class="btn btn-secondary privacy-export">ייצוא כל הנתונים שלי (JSON)</button>
+        <button type="button" class="btn btn-danger privacy-delete">מחיקת נתוני AutoFit</button>
+      </div>
+      <p class="field-hint">קובץ הייצוא מכיל פרטים אישיים, תמונות, תוכניות והיסטוריה. שמור אותו במקום מהימן.</p>
+    </div>
     <h2 class="section-title">הגדרות</h2>
     <div class="card">
       <label class="field-label">טיימר מנוחה ברירת מחדל (שניות)</label>
@@ -361,6 +406,12 @@
       <div id="voiceCommandsSettingRow" class="hidden">
         <label class="checkbox-row"><input type="checkbox" id="settingVoiceCommands"> פקודות קוליות באימון (מיקרופון)</label>
         <div class="field-hint">כשמופעל, אפשר להגיד "סט הושלם", "דלג על מנוחה" ועוד במקום ללחוץ — ראה רשימה מלאה בכרטיס "פקודות קוליות" למטה. זו דרך נוספת, לא תחליף להזנה ידנית.</div>
+        <label class="field-label" for="settingVoiceMicrophone">מיקרופון לפקודות קוליות</label>
+        <select class="select" id="settingVoiceMicrophone">
+          <option value="automatic">אוטומטי — עדיפות לאיכות מוזיקה</option>
+          <option value="headset">מיקרופון האוזניות — גם במצב שיחה</option>
+        </select>
+        <div class="field-hint">במצב אוטומטי ייתכן שנעשה שימוש במיקרופון האייפון; שמור אותו קרוב וגלוי. בחירה במיקרופון האוזניות עשויה להוריד את איכות המוזיקה בזמן ההקשבה, בהתאם לאוזניות ולמערכת. המיקרופון הפעיל מוצג במסך האימון. פקודות קוליות פועלות כשהאפליקציה פתוחה במסך אימון.</div>
       </div>
     </div>
 
@@ -424,6 +475,8 @@
     <div class="card">
       <div class="card-title">📝 שליחת פנייה</div>
       <form id="contactForm" action="https://formspree.io/f/xljgvvyb" method="post">
+        <p class="field-hint">הפרטים בטופס נשלחים ל-Formspree רק בלחיצה על שליחה. אין לשלוח סיסמאות, פרטי תשלום או מידע רפואי.</p>
+        <button type="button" class="btn btn-secondary btn-small" data-open-privacy>קריאת מדיניות הפרטיות</button>
         <label for="contactName" class="field-label">שם מלא <span class="required-mark" aria-hidden="true">*</span></label>
         <input id="contactName" name="name" class="input" autocomplete="name" maxlength="100" pattern=".*\S.*" title="יש להזין שם מלא." required>
         <label for="contactEmail" class="field-label">כתובת אימייל <span class="required-mark" aria-hidden="true">*</span></label>

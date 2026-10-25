@@ -11,6 +11,18 @@ struct WorkoutAudioPolicyTests {
                 }
             }
         }
+        for prefer in [false, true] {
+            for available in [false, true] {
+                precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: false,
+                    highQualityBluetooth: false, preferHeadset: prefer, headsetAvailable: available)
+                    == (prefer && available ? .headset : .builtIn))
+                precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: false,
+                    highQualityBluetooth: true, preferHeadset: prefer, headsetAvailable: available)
+                    == (prefer && available ? .headset : .highQualityBluetooth))
+                precondition(WorkoutAudioPolicy.input(bluetoothOutput: true, wiredInput: true,
+                    highQualityBluetooth: true, preferHeadset: prefer, headsetAvailable: available) == .wired)
+            }
+        }
         for engine in [false, true] {
             for player in [false, true] {
                 for configuration in [false, true] {

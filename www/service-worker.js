@@ -1,5 +1,5 @@
 // service-worker.js — app shell caching for offline + installability
-const CACHE_NAME = 'autofit-v58';
+const CACHE_NAME = 'autofit-v63';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -11,6 +11,12 @@ const PRECACHE_URLS = [
   './js/workout-insights.js',
   './js/training-tools.js',
   './js/training-ui.js',
+  './js/commercial-config.js',
+  './js/legal.js',
+  './js/privacy-ui.js',
+  './js/commerce-ui.js',
+  './js/legal-page.js',
+  './legal.html',
   './js/voice-reports.js',
   './js/timer.js',
   './js/native-bridge.js',
@@ -43,7 +49,8 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS.map((url) =>
+      new Request(new URL(url, self.location.href), { cache: 'reload' })))).then(() => self.skipWaiting())
   );
 });
 
@@ -65,7 +72,7 @@ self.addEventListener('fetch', (event) => {
     // Network-first for the app shell (HTML/JS/CSS) so code/UI updates are picked
     // up on the very next load instead of only after a background refresh.
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-cache' })
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const clone = networkResponse.clone();
@@ -73,9 +80,16 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(async () => (await caches.match(event.request))
-          || (event.request.mode === 'navigate' ? await caches.match('./index.html') : null)
-          || Response.error())
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          if (event.request.mode === 'navigate') {
+            const page = url.origin === self.location.origin && url.pathname.endsWith('/legal.html')
+              ? './legal.html' : './index.html';
+            return await caches.match(page) || Response.error();
+          }
+          return Response.error();
+        })
     );
     return;
   }

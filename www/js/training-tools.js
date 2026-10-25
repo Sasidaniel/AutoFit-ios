@@ -1,4 +1,4 @@
-import { PLANNING_EXERCISES, exerciseGuide } from './exercise-library.js';
+import { LIBRARY_EXERCISES, PLANNING_EXERCISES, exerciseGuide } from './exercise-library.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export const PLAN_MUSCLES = ['חזה', 'גב', 'רגליים', 'כתפיים', 'יד קדמית', 'יד אחורית', 'בטן', 'ישבן', 'שוקיים'];
@@ -29,25 +29,68 @@ const META = {
   jog: ['jog', 'רגליים', [], false],
   legPress: ['squat', 'רגליים', ['ישבן'], true],
   legCurl: ['knee-flexion', 'רגליים', [], false],
+  chairStand: ['squat', 'רגליים', ['ישבן'], true],
+  wallPushup: ['horizontal-push', 'חזה', ['יד אחורית', 'כתפיים'], true],
+  kneePushup: ['horizontal-push', 'חזה', ['יד אחורית', 'כתפיים'], true],
+  inclinePushup: ['horizontal-push', 'חזה', ['יד אחורית', 'כתפיים'], true],
+  trxRow: ['horizontal-pull', 'גב', ['יד קדמית'], true],
+  bentRow: ['horizontal-pull', 'גב', ['יד קדמית'], true],
+  bandBentRow: ['horizontal-pull', 'גב', ['יד קדמית'], true],
+  splitSquat: ['lunge', 'רגליים', ['ישבן'], true],
+  sumoSquat: ['squat', 'רגליים', ['ישבן'], true],
+  singleBridge: ['hip-extension', 'ישבן', ['רגליים'], false],
+  clamShell: ['hip-abduction', 'ישבן', [], false],
+  singleCalf: ['calf', 'שוקיים', [], false],
+  standingPress: ['vertical-push', 'כתפיים', ['יד אחורית'], true],
+  rearFly: ['shoulder-horizontal-abduction', 'כתפיים', ['גב'], false],
+  alternatingCurl: ['elbow-flexion', 'יד קדמית', [], false],
+  concentrationCurl: ['elbow-flexion', 'יד קדמית', [], false],
+  kickback: ['elbow-extension', 'יד אחורית', [], false],
+  closePushup: ['horizontal-push', 'יד אחורית', ['חזה', 'כתפיים'], true],
+  lyingTriceps: ['elbow-extension', 'יד אחורית', [], false],
+  heelTap: ['core-control', 'בטן', [], false],
+  reverseCrunch: ['core-flexion', 'בטן', [], false],
+  kneeSidePlank: ['lateral-core-hold', 'בטן', [], false],
+  reverseCurl: ['elbow-flexion', 'אמות', ['יד קדמית'], false],
+  stepTouch: ['walk', 'רגליים', [], false],
 };
 
 export function planningCatalog(catalog) {
-  return [...catalog, ...PLANNING_EXERCISES.filter((candidate) =>
+  const proposals = [...PLANNING_EXERCISES, ...LIBRARY_EXERCISES.filter((exercise) => exercise.id.startsWith('library:extended-'))];
+  return [...catalog, ...proposals.filter((candidate) =>
     !catalog.some((exercise) => exercise.id === candidate.id
       || exercise.catalogId === candidate.catalogId && exercise.name === candidate.name)).map(copy)];
 }
 
 export function planExercise(exercise) {
   return Object.fromEntries(['id', 'catalogId', 'name', 'category', 'inputType', 'defaultSets', 'defaultReps',
-    'targetReps', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location']
-    .filter((key) => exercise[key] !== undefined).map((key) => [key, exercise[key]]));
+    'targetReps', 'targetWeightKg', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals']
+    .filter((key) => exercise[key] !== undefined).map((key) => [key, key === 'intervals' ? copy(exercise[key]) : exercise[key]]));
+}
+
+export function createSavedWorkout(name, state, id) {
+  const title = String(name || '').trim();
+  if (!title || title.length > 80) throw new Error('Enter a workout name of 1–80 characters');
+  const selected = state.exercises.filter((exercise) => exercise.active !== false);
+  if (!selected.length) throw new Error('Choose at least one exercise before saving');
+  const exercises = selected.sort((a, b) => state.program.entries.findIndex((entry) => entry.exerciseId === a.id)
+    - state.program.entries.findIndex((entry) => entry.exerciseId === b.id)).map((exercise) => {
+    const entry = state.program.entries.find((item) => item.exerciseId === exercise.id);
+    if (!entry) throw new Error('The selected program changed; reopen the save dialog');
+    return { ...planExercise(exercise), targetWeightKg: exercise.targetWeightKg ?? null,
+      ...(exercise.inputType !== 'cardio' ? { defaultSets: entry.sets.length,
+        restSeconds: Number(exercise.restSeconds) > 0 ? Number(exercise.restSeconds) : state.settings.restSeconds || 90 } : {}) };
+  });
+  return { id, name: title, kind: 'saved-workout', options: { goal: 'custom', days: 1 },
+    sessions: [{ exercises }], omitted: [] };
 }
 
 export function trainingMetadata(exercise) {
   // A generic seed guide is not evidence of the equipment variant actually performed.
   const key = exercise?.catalogId;
   const info = key && exerciseGuide(exercise);
-  const meta = key && Object.hasOwn(META, key) ? META[key] : null;
+  const meta = key && Object.hasOwn(META, key) ? META[key] : info?.movement
+    ? [info.movement, info.muscles[0], info.muscles.slice(1), info.compound === true] : null;
   return info && meta ? { movement: meta[0], primary: meta[1], secondary: meta[2], compound: meta[3], equipment: info.equipment } : null;
 }
 
@@ -103,7 +146,8 @@ export function estimateEntryDuration(entry, exercise, defaultRest = 90, { remai
   const sets = (entry.sets || []).filter((set) => !remaining || !set.completed);
   if (!sets.length) return result;
   const rest = Number(exercise?.restSeconds) > 0 ? Number(exercise.restSeconds) : Number(defaultRest) > 0 ? Number(defaultRest) : 90;
-  const sides = ['oneRow', 'lunge', 'birdDog', 'sidePlank'].includes(exercise?.catalogId) ? 2 : 1;
+  const sides = exerciseGuide(exercise || {})?.sides
+    || (['oneRow', 'lunge', 'birdDog', 'deadbug', 'sidePlank'].includes(exercise?.catalogId) ? 2 : 1);
   for (const set of sets) {
     if (exercise?.inputType === 'hold') {
       const target = Math.max(0, Number(set.reps) || Number(exercise.holdSeconds) || 15);
@@ -321,14 +365,28 @@ export function planCatalog(catalog, equipment, location) {
 
 export function generatePlan(options, catalog) {
   const { goal, experience, days, minutes, equipment, location } = options;
+  const split = options.split || 'auto';
   const muscles = options.muscles === undefined ? [] : options.muscles;
   if (!['strength', 'muscle', 'fitness', 'walk', 'run'].includes(goal)
-    || !['beginner', 'regular'].includes(experience) || ![1, 2, 3, 4].includes(days)
+    || !['beginner', 'regular'].includes(experience) || ![1, 2, 3, 4, 5, 6].includes(days)
     || ![20, 30, 45, 60, 90].includes(minutes) || !['home', 'gym', 'outside'].includes(location)
-    || !Array.isArray(equipment) || !Array.isArray(muscles)
+    || !Array.isArray(equipment) || new Set(equipment).size !== equipment.length
+    || equipment.some((item) => !['משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'כיסא יציב', 'TRX', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן'].includes(item))
+    || !['auto', 'full-body', 'ab', 'abc'].includes(split)
+    || split === 'ab' && days < 2 || split === 'abc' && days < 3
+    || ['walk', 'run'].includes(goal) && !['auto', 'full-body'].includes(split)
+    || !Array.isArray(muscles)
     || new Set(muscles).size !== muscles.length || muscles.some((muscle) => !PLAN_MUSCLES.includes(muscle))
     || (muscles.length && ['walk', 'run'].includes(goal))) throw new Error('Invalid plan preferences');
+  if (equipment.includes('TRX') && options.trxAnchorChecked !== true) throw new Error('Confirm a properly installed TRX anchor');
   const pool = planCatalog(planningCatalog(catalog), equipment, location);
+  const preference = (exercise) => {
+    const info = exerciseGuide(exercise);
+    const selectedEquipment = info.equipment.filter((item) => equipment.includes(item)).length * 10;
+    const easier = experience === 'beginner' && ['chairStand', 'wallPushup', 'heelTap'].includes(exercise.catalogId) ? 5 : 0;
+    return selectedEquipment + easier;
+  };
+  pool.sort((a, b) => preference(b) - preference(a));
   const find = (...ids) => ids.map((id) => pool.find((exercise) => exercise.catalogId === id)).find(Boolean);
   const cardio = goal === 'walk' || goal === 'run';
   const walking = find('walk', 'march');
@@ -347,13 +405,29 @@ export function generatePlan(options, catalog) {
     if (!candidates.length) throw new Error('No suitable exercises for every selected muscle group');
     return candidates;
   });
-  const patterns = days === 4 && !cardio
+  const splitGroups = split === 'ab'
+    ? [['חזה', 'גב', 'כתפיים', 'יד קדמית', 'יד אחורית'], ['רגליים', 'ישבן', 'שוקיים', 'בטן']]
+    : split === 'abc' ? [['חזה', 'כתפיים', 'יד אחורית'], ['גב', 'יד קדמית'], ['רגליים', 'ישבן', 'שוקיים', 'בטן']] : null;
+  const patterns = split === 'ab'
+    ? [['horizontal-push', 'horizontal-pull', 'vertical-push', 'elbow-flexion', 'elbow-extension'],
+      ['squat', 'hinge', 'hip-extension', 'calf', 'core-control']]
+    : split === 'abc'
+      ? [['horizontal-push', 'vertical-push', 'elbow-extension'],
+        ['horizontal-pull', 'vertical-pull', 'elbow-flexion'],
+        ['squat', 'hinge', 'calf', 'core-control']]
+    : split === 'full-body'
+      ? [['squat', 'horizontal-push', 'horizontal-pull', 'hinge', 'core-control'],
+        ['lunge', 'horizontal-push', 'vertical-pull', 'hip-extension', 'core-control']]
+    : days === 4 && !cardio
     ? [['horizontal-push', 'horizontal-pull', 'vertical-push', 'elbow-flexion'],
       ['squat', 'hinge', 'hip-extension', 'core-control']]
     : [['squat', 'horizontal-push', 'horizontal-pull', 'hip-extension', 'core-control'],
       ['lunge', 'vertical-push', 'horizontal-pull', 'hinge', 'core-control']];
   const skipped = new Set();
   const sessions = Array.from({ length: days }, (_, day) => {
+    const splitMuscles = splitGroups?.[day % splitGroups.length];
+    const requiredMuscles = muscles.filter((muscle) => !splitMuscles || splitMuscles.includes(muscle));
+    if (muscles.length && !requiredMuscles.length) throw new Error('Selected muscle groups do not cover every split day');
     let entries;
     if (cardio) {
       entries = [{ ...planExercise(walking), location: location === 'gym' ? 'treadmill' : location,
@@ -361,10 +435,11 @@ export function generatePlan(options, catalog) {
       if (goal === 'run') entries.push({ ...planExercise(jogging), location: location === 'gym' ? 'treadmill' : location,
         durationMinutes: experience === 'beginner' ? 1 : 3 });
     } else if (muscles.length) {
-      entries = targeted.map((candidates) => dose(candidates[0]));
+      const dayTargets = targeted.filter((candidates) => requiredMuscles.includes(trainingMetadata(candidates[0]).primary));
+      entries = dayTargets.map((candidates) => dose(candidates[0]));
       const limit = experience === 'beginner' ? 2 : 3;
       for (let round = 1; round < limit; round++) {
-        for (const candidates of targeted) {
+        for (const candidates of dayTargets) {
           if (entries.length >= Math.max(muscles.length, 8)) break;
           const used = entries.map((exercise) => exercise.id);
           const movements = entries.map((exercise) => trainingMetadata(exercise).movement);
@@ -379,37 +454,95 @@ export function generatePlan(options, catalog) {
       }
     } else {
       entries = patterns[day % patterns.length].map((movement) => {
-        const candidates = pool.filter((exercise) => exercise.inputType === 'reps' && trainingMetadata(exercise).movement === movement);
+        let candidates = pool.filter((exercise) => exercise.inputType === 'reps' && trainingMetadata(exercise).movement === movement);
+        if (!candidates.length && movement === 'vertical-pull') candidates = pool.filter((exercise) =>
+          exercise.inputType === 'reps' && trainingMetadata(exercise).movement === 'horizontal-pull');
         const appropriate = candidates.filter((item) => experience !== 'beginner' || exerciseGuide(item).level !== 'בינוניים');
         const exercise = appropriate.find((item) => equipment.includes('מכונה') && trainingMetadata(item).equipment.includes('מכונה')) || appropriate[0];
         if (!exercise) { skipped.add(movement); return null; }
         return dose(exercise);
       }).filter(Boolean);
+      entries = entries.filter((exercise, index) => entries.findIndex((item) => item.id === exercise.id) === index);
       let total = 0;
       entries = entries.filter((exercise) => {
         const seconds = estimateEntrySeconds({ sets: Array.from({ length: sets }, () => ({ completed: false })) }, exercise);
-        if (total + seconds > minutes * 60) { skipped.add(trainingMetadata(exercise).movement); return false; }
+        const required = split !== 'auto' && ['חזה', 'גב', 'רגליים'].includes(trainingMetadata(exercise).primary);
+        if (total + seconds > minutes * 60 && !required) { skipped.add(trainingMetadata(exercise).movement); return false; }
         total += seconds;
         return true;
       });
-      if (goal === 'fitness' && walking && total + estimateEntrySeconds({ type: 'cardio', durationSec: 300 }, walking) <= minutes * 60) entries.push({ ...planExercise(walking),
+      if (goal === 'fitness' && walking && (!splitMuscles || splitMuscles.includes('רגליים'))
+        && total + estimateEntrySeconds({ type: 'cardio', durationSec: 300 }, walking) <= minutes * 60) entries.push({ ...planExercise(walking),
         location: location === 'gym' ? 'treadmill' : location, durationMinutes: 5 });
     }
-    return { label: String(day + 1), exercises: entries };
+    const coverage = muscles.length ? requiredMuscles : split !== 'auto' && !cardio
+      ? ['חזה', 'גב', 'רגליים'].filter((muscle) => entries.some((exercise) => exercise.inputType !== 'cardio' && trainingMetadata(exercise).primary === muscle)) : [];
+    return { label: splitGroups ? String.fromCharCode(65 + day % splitGroups.length) : String(day + 1),
+      ...(splitMuscles ? { splitMuscles } : {}), ...(coverage.length ? { requiredMuscles: coverage } : {}), exercises: entries };
   });
   if (sessions.some((session) => !session.exercises.length)) throw new Error('No suitable exercises for these preferences');
   return { options: copy(options), sessions, omitted: [...skipped] };
 }
 
+const ROPE_LEVELS = {
+  beginner: { workSeconds: 20, recoverySeconds: 40 },
+  intermediate: { workSeconds: 40, recoverySeconds: 40 },
+  advanced: { workSeconds: 60, recoverySeconds: 30 },
+};
+
+export function ropeIntervalSchedule(intervals) {
+  const dose = Object.hasOwn(ROPE_LEVELS, intervals?.level) && ROPE_LEVELS[intervals.level];
+  if (!dose || intervals.version !== 1 || !Number.isInteger(intervals.rounds) || intervals.rounds < 1 || intervals.rounds > 30
+    || intervals.workSeconds !== dose.workSeconds || intervals.recoverySeconds !== dose.recoverySeconds
+    || intervals.warmupSeconds !== 120 || intervals.cooldownSeconds !== 120) throw new Error('Invalid rope intervals');
+  const phases = [{ kind: 'warmup', seconds: intervals.warmupSeconds }];
+  for (let round = 1; round <= intervals.rounds; round++) {
+    phases.push({ kind: 'work', seconds: dose.workSeconds, round, rounds: intervals.rounds },
+      { kind: 'recovery', seconds: dose.recoverySeconds, round, rounds: intervals.rounds });
+  }
+  phases.push({ kind: 'cooldown', seconds: intervals.cooldownSeconds });
+  let offsetSeconds = 0;
+  return phases.map((phase, index) => {
+    const result = { ...phase, index, offsetSeconds };
+    offsetSeconds += phase.seconds;
+    return result;
+  });
+}
+
+export function cardioIntervalPhase(entry, now = Date.now()) {
+  if (!entry.intervals) return null;
+  const elapsed = Math.max(0, Number(entry.elapsedSec) || 0)
+    + (entry.startedAt ? Math.max(0, (now - entry.startedAt) / 1000) : 0);
+  const phases = ropeIntervalSchedule(entry.intervals);
+  const phase = !entry.completed && phases.find((phase) => elapsed < phase.offsetSeconds + phase.seconds);
+  return phase ? { ...phase, remainingSeconds: Math.ceil(phase.offsetSeconds + phase.seconds - elapsed) }
+    : { kind: 'done', index: phases.length, remainingSeconds: 0 };
+}
+
+export function generateRopePlan(level, minutes, catalog, location = 'home') {
+  const dose = Object.hasOwn(ROPE_LEVELS, level) && ROPE_LEVELS[level];
+  if (!dose || ![10, 15, 20, 30].includes(minutes) || !['home', 'gym', 'outside'].includes(location)) throw new Error('Invalid rope preferences');
+  const exercise = planningCatalog(catalog).find((item) => item.catalogId === 'jumpRope');
+  if (!exercise) throw new Error('Jump rope guide is unavailable');
+  const intervals = { version: 1, level, ...dose, warmupSeconds: 120, cooldownSeconds: 120,
+    rounds: Math.floor((minutes * 60 - 240) / (dose.workSeconds + dose.recoverySeconds)) };
+  const seconds = ropeIntervalSchedule(intervals).reduce((total, phase) => total + phase.seconds, 0);
+  return { options: { goal: 'rope', days: 1, minutes, equipment: ['חבל קפיצה'], location, ropeLevel: level },
+    sessions: [{ label: '1', exercises: [{ ...planExercise(exercise), location, intervals, durationMinutes: seconds / 60 }] }], omitted: [] };
+}
+
 export function activatePlanExercises(catalog, proposed) {
   if (!proposed.length || new Set(proposed.map((item) => item.id)).size !== proposed.length) throw new Error('Invalid plan exercises');
-  if (proposed.some((item) => !catalog.some((exercise) => exercise.id === item.id && exercise.catalogId === item.catalogId))) {
+  if (proposed.some((item) => !catalog.some((exercise) => exercise.id === item.id && exercise.catalogId === item.catalogId
+    && (exercise.inputType || 'reps') === (item.inputType || 'reps')))) {
     throw new Error('A plan exercise is no longer in the library');
   }
   const selected = new Set(proposed.map((item) => item.id));
   // Preserve canonical names, custom notes, images and every unselected library entry.
   return [...proposed.map((item) => ({ ...copy(catalog.find((exercise) => exercise.id === item.id)), active: true,
     defaultSets: item.defaultSets, defaultReps: item.defaultReps, targetReps: item.targetReps,
+    ...Object.fromEntries(['targetWeightKg', 'holdSeconds', 'pace'].filter((key) => Object.hasOwn(item, key)).map((key) => [key, item[key]])),
+    ...(item.inputType === 'cardio' ? { intervals: item.intervals ? copy(item.intervals) : null } : {}),
     restSeconds: item.restSeconds, ...(item.inputType === 'cardio' ? { durationMinutes: item.durationMinutes,
       ...(item.location ? { location: item.location } : {}) } : {}) })),
   ...catalog.filter((exercise) => !selected.has(exercise.id)).map((exercise) => ({ ...copy(exercise), active: false }))];

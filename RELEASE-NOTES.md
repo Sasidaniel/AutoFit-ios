@@ -1,5 +1,279 @@
 # AutoFit release notes
 
+## 1.0 (32) - Approved internal TestFlight release candidate (2026-10-25)
+
+The owner explicitly approved publishing the code and Markdown documentation and
+releasing this update to internal TestFlight. This candidate includes the
+commercial-readiness review, saved workouts, catalog/media expansion, home and
+split planning, jump-rope intervals, workout usability and full catalog browsing
+documented below. Local validation: **464 passing regressions**, 17 ES module
+syntax checks and bilingual browser acceptance. App shell: `autofit-v63`.
+
+**Delivery is pending native CI and Apple verification.** A workflow dispatch or
+successful upload alone is not proof that the build is available in TestFlight.
+The verified source, run and Apple build outcome will be recorded after delivery.
+The previous available internal build is 1.0 (31).
+
+This approval does not launch paid subscriptions, activate identity providers,
+certify the draft legal documents or submit the app to the public App Store.
+Purchases remain disabled. Real-device audio, touch, background timer and workout
+data-preservation acceptance remain for the owner's iPhone testing.
+
+## Build 32: Full catalog visibility in exercise categories
+
+Fixed the mismatch between the 130-definition database heading and category
+counts that previously covered only the user's 51 installed exercises. Categories
+and search now browse the full built-in catalog, including planning variants,
+alongside personal exercises, without installing or activating anything merely
+by browsing. Category counts and displayed rows use the same source. Glute/calf
+strength exercises are grouped under legs rather than general.
+
+Uninstalled entries have a clear status, working offline guides, search and
+equipment filters. Explicitly adding one installs only that exercise. Editing
+and saving one can install it inactive; cancelling or a failed storage write does
+not install it. Existing IDs, names, photos, selected order and recorded work are
+preserved. Deleting an installed built-in removes the personal library copy, not
+its read-only availability in the built-in catalog. Counts distinguish built-in,
+available-in-categories, saved-library and selected-workout entries; equipment and
+measurement variants remain separate definitions.
+
+All **464 regressions passed**, plus 17 module syntax checks. Real browser checks
+from a 51-entry library found exactly 130 distinct IDs across all categories,
+matching each displayed category count, with no storage changes from browsing.
+Explicit add/remove, inactive strength/cardio editing, cancellation and simulated
+storage failures were checked. Hebrew RTL and English LTR at 316px retained
+matching totals, working search/equipment filtering and no horizontal overflow.
+Offline shell: `autofit-v63`. Browsing does not migrate the owner's saved records.
+
+## Build 32: Workout usability, splits and jump-rope intervals
+
+This follow-up was reviewed locally before release approval. The review preview
+remains at `http://127.0.0.1:8941/?previewSkip=1`; its existing program and records
+are preserved.
+
+- **Workout scrolling:** live updates use the existing in-memory exercise/history
+  state rather than rereading history and cloning the planning catalog every
+  second. Unchanged stopwatch/hold text and header buttons are not rewritten;
+  structural actions are refreshed after actual changes. Duration estimates
+  refresh less frequently during an active workout, and set tables no longer
+  introduce an unnecessary nested horizontal scroller. This reduces avoidable
+  browser work; physical iPhone scrolling still needs device review.
+- **Equipment busy:** replacement/restoration is now in the exercise header,
+  rather than below the set table. Completed work remains attached to its original
+  exercise; replacement sets do not inherit the original load or repetitions.
+- **Voice with music/headphones:** Settings offers an explicit native-only
+  microphone choice. Automatic mode retains the released music-quality policy
+  and may use the iPhone microphone. Opt-in headphone microphone mode permits
+  Bluetooth call routing and warns that music quality can decrease. An unavailable
+  headphone microphone produces an error, not a silent phone-microphone fallback.
+  This is a route-selection option, not a verified fix for every headset.
+  Swift compilation, recognition with playing music, interruptions and actual
+  headphone routing remain unverified on this Windows development host.
+- **Jump-rope builder:** Home and Exercises offer beginner, intermediate and
+  advanced workouts with 10/15/20/30-minute budgets, location and an explicit
+  equipment/clear-space acknowledgment. Presets use 20/40, 40/40 and 60/30-second
+  work/recovery intervals, respectively, with two-minute walking warmup/cooldown.
+  Whole rounds fit the budget; shorter resulting durations are shown honestly.
+  Phase/countdown, pause/resume, reload, saved plans, completed history and sharing
+  retain the interval prescription. Phase announcements use the existing native
+  scheduling/coalescing mechanism; browser timers require the page to stay open.
+- **Requested exercise variants:** incline dumbbell/Smith chest presses and
+  overhead cable triceps extensions already exist with instructions and videos;
+  they were checked rather than duplicated. Jump rope adds one new inactive
+  definition with bilingual instructions, an original offline diagram and a
+  selected Crossrope tutorial link verified on 2026-10-25. Current catalog totals
+  are **130 built-in definitions** (25 seed, 99 library, 6 planning) and
+  **116 authored guides**, including **73 extended additions** across this local
+  phase. Updating does not automatically add jump rope to the user's workout.
+- **Plan splits:** explicit full-body, A/B upper/lower and A/B/C push/pull/legs
+  choices support one to six sessions, subject to the split's minimum days.
+  Previews and saved-plan start buttons identify A/B/C sessions. Editing retains
+  the session's muscle/movement coverage; incompatible selections and insufficient
+  equipment are explained rather than producing empty workouts. Tight budgets
+  disclose overruns without silently shortening rests or dropping required work.
+  Existing saved plans without a split retain their previous generation behavior.
+
+### Follow-up verification
+
+All **460 JavaScript regressions passed**, including the actual microphone-settings
+callback's successful restart and storage/stop/capture failure paths; all 17 ES
+modules passed UTF-8 syntax checks. The coherent offline shell is `autofit-v62`.
+
+Isolated browser acceptance exercised a 25-exercise/69-set running workout:
+over 6.2 seconds there were no history-storage reads, no header-button mutations,
+no replaced exercise-card nodes and no scroll displacement. Actual forms saved
+full-body, A/B, A/B/C and all three rope levels without changing the original
+program. Actual controls preserved a completed set through equipment replacement
+and restoration while leaving replacement loads blank.
+
+Accelerated, isolated-clock acceptance covered rope warmup/work/recovery,
+pause/resume, paused reload, completion and retained interval history. Original
+25-exercise program restoration preserved the six saved alternatives and completed
+history. Rope builders, six-day previews, saved plans, workout headers and the new
+guide had no horizontal overflow at 316px in Hebrew RTL and English LTR. These
+browser checks do not substitute for native microphone, background or touch tests.
+The protected review preview was refreshed to this shell with its five-key
+program/history/settings/session/profile storage hash unchanged.
+The commercial/legal/provider blockers documented below remain unchanged.
+
+## Build 32: Commercial-readiness review
+
+This work was developed in `sasi-daniel-sndk-personal-training-upgrade`, based on
+published build 31 (`bff5d7aa8a6906544b9905bd803a0bd364a54ac2`), and is now approved
+for internal TestFlight review. It is **not an approved commercial launch**.
+App Store submission, provider provisioning, purchases and charges remain
+outside this release approval.
+
+### Implemented review flows
+
+- **First use / Settings > Terms and privacy:** bilingual, versioned offline
+  draft documents, four separate initially unchecked confirmations and a draft
+  consent receipt. Profile measurements, photo and name are optional; system
+  permissions are separate choices. Existing records do not imply consent.
+  Export and deletion are accessible without accepting the draft. A standalone
+  `legal.html?doc=privacy&lang=en` or `doc=terms&lang=he` also works offline.
+- **Settings > Privacy and data:** JSON export of profile/photos, exercises,
+  history, current work, saved plans and settings; deliberately confirmed local
+  deletion; and explicit native-only read-only export/recovery or requested
+  erasure of legacy iCloud copies. Deletion stops ongoing local activity and
+  prevents delayed callbacks from recreating local records. Health records,
+  shared files, system backups and other devices are not silently erased.
+  A JSON import interface is not included.
+- **Exercises > Add new exercises:** explicitly install 72 additional inactive
+  exercises without replacing the user's program, names, photos or records,
+  or reinstating deleted older library entries. The combined seed/planning
+  catalog now has **129 definitions** (25 seed, 98 library and 6 planning),
+  with **115 authored instructional guides**. This phase adds 72 definitions:
+  the initial 24 plus **48 more** in response to the larger-database request.
+  The top of Exercises distinguishes the built-in total from the installed
+  library and selected-workout counts. Equipment/measurement variants count as
+  separate definitions; custom entries do not inflate the built-in total.
+  All new guides have Hebrew/English instructions and original local diagrams;
+  all **72 new guides now have selected instructional video links**, completing
+  video coverage across **all 115 authored guides / 129 built-in definitions**.
+  Publisher pages and YouTube publisher/title metadata were checked on
+  2026-10-22. Floor/bench, supported/unsupported, bodyweight/weighted, grip and
+  hold variants retain separate appropriate demonstrations. Links open only
+  on request at the source; no third-party media or thumbnails are bundled or
+  preloaded. Videos generally require internet and are in English; authored
+  instructions and diagrams remain bilingual and offline. Original video
+  coverage is preserved. The supplied three-page full-body PDF was reviewed for movement
+  identification, not copied: its rollout is a kneeling ab-wheel movement,
+  its machine squat is a hack squat, and its supported triceps movement is a
+  dumbbell kickback. Cable pushdown is correctly mapped to triceps rather than
+  the PDF's biceps label. No third-party graphics or workout schedule were copied.
+  New diagrams distinguish inclined/Smith pressing, supported rowing, hack
+  squats, back squats, seated unilateral raises and machine cardio. They remain
+  schematic, not manufacturer-specific setup instructions.
+- **Home / Exercises / Saved plans > Save My Workout:** save up to eight named
+  alternatives, rename/review them and select/start a particular workout with
+  one button. Existing generated multi-day plans also offer direct start per
+  session. Saving captures the full selected program's actual order/effective
+  sets, rest and configured load/hold/cardio targets, not logged performances
+  or temporary time-budget omissions. Custom IDs, names, photos and history
+  remain intact. Populated, paused/running, timed, counting and adjusted current
+  work cannot be overwritten by direct start. Untouched auto-filled suggestions
+  do not masquerade as logged work; unsnapshotted legacy measurements remain
+  protected. If the final start write fails, the selected plan stays idle and
+  the UI explains that selection succeeded but start did not. Original program
+  restoration also restores hold duration and cardio pace.
+- **Home / Exercises > Build a home workout:** select actual equipment,
+  experience, goal, muscles, days and duration; review and edit the proposal,
+  save an alternative, explicitly activate it and restore the previous program.
+  Chair, TRX, dumbbell, band and no-equipment choices differ. A chair is not
+  treated as a bench or anchor; TRX requires manufacturer-approved installation
+  acknowledgment. Missing pulling coverage is disclosed rather than invented.
+  Activation adds only missing chosen catalog entries. Populated/running work
+  remains pinned, with the new program applying to the next workout. Shared
+  duration estimates account for authored per-side movements and unchanged rests.
+- **Personal > Subscriptions:** a disabled-by-default StoreKit 2 foundation,
+  native product/transaction verification, actual Apple prices and introductory
+  eligibility, explicit restore/management and pending/cancelled states.
+  Browser use cannot buy or verify a subscription. The proposed one-week trial,
+  ILS 10-15 monthly and ILS 100-150 yearly remain **planning ranges**, not
+  configured products or a promised offer. Existing local features remain free
+  and accessible; no subscription gate or trial countdown was activated.
+
+### Deliberate blockers before commercialization
+
+**Legal publication is not complete.** These documents do not certify compliance
+in Israel or worldwide. The operator's legal identity, business/privacy contact,
+address, age policy, distribution territories, lawful processing grounds,
+provider/transfer arrangements, retention and incident procedures, consumer
+cancellation/refund rights and final legal review must be confirmed. The proposed
+commercial flow is adult-only; a minors' commercial flow is not implemented.
+
+**Real Apple/Google accounts are not implemented.** Onboarding and Personal
+explain guest/local use rather than exposing fake login buttons. Gmail is a
+Google identity. Genuine accounts need owner-controlled provider configuration,
+Apple entitlements/client IDs, token-verifying backend, secure sessions,
+revocation/disconnection, in-app account deletion and a defined data/sync model.
+Face ID is a device lock, not an AutoFit online account.
+
+**Health data must not be newly backed up to iCloud.** Apple Review 5.1.3(ii)
+prohibits storing personal health information in iCloud, even with consent.
+New sensitive KVS writes and automatic legacy-cloud restoration are therefore
+disabled locally. Existing copies are retained unless explicitly erased.
+Legacy reads may be cached and do not prove the latest server state; requested
+cloud erasure is not confirmed global erasure. Sensitive WebKit/local-storage
+exclusion from system/iCloud backups, native legacy-recovery availability and a
+permitted future backup architecture still require device-level work and review.
+The already-released build-31 behavior has not been changed remotely.
+
+**Billing is not launch-ready.** Both public and native configurations disable
+purchases and contain no live product IDs. No App Store products, subscription
+group, real price or introductory offer were created. A published policy, owner
+approval, Apple agreements/banking/tax details, privacy labels, storefront and
+localization review, sandbox/device verification and a clear paid-feature policy
+are required before enabling billing. Native StoreKit changes have not been
+compiled on this Windows host; no sandbox purchase has been attempted.
+
+Before accepting revenue, obtain Israeli accounting/legal advice on the
+appropriate business/VAT registration and classification, income tax, National
+Insurance, receipts/bookkeeping and foreign/App Store revenue. Do not assume
+Apple's collection arrangements satisfy the operator's own obligations or that
+every activity is eligible for exempt-dealer treatment. No current tax threshold
+is asserted here. The official Israeli business-registration page could not be
+retrieved in this environment (HTTP 403). EU distribution additionally requires
+appropriate DSA trader declarations/contact details and territory-specific review.
+
+### Evidence and acceptance
+
+The local JavaScript suites pass **442 regressions**, including draft consent,
+exports/deletion failures, deferred writes, real commerce-controller state,
+home equipment/primary coverage, reviewed-plan activation/restoration, per-side
+duration, named-workout snapshots and guarded real-controller start/write
+failure, PDF variant identity, all 115 SVG renderers, accurate catalog counts
+and legal-page offline routing/precache installation. Browser review
+uses a separate synthetic origin, never reset user data on port 8941.
+It covers saving distinct 25- and 6-exercise programs, rename/reload/direct start,
+paused-work protection, targeted deletion, explicit installation of 72 inactive
+entries without touching existing work/history, and narrow 316px RTL/LTR layouts
+including an 80-character workout name. Counts and saved-workout previews were
+checked in Hebrew and English. Twelve source diagrams were additionally rendered
+locally for visual inspection after browser screenshot requests timed out.
+The final media pass opened all 129 actual exercise-guide dialogs in Hebrew and
+English, including every dialog at a 316px RTL/LTR viewport: offline diagrams,
+steps and selected source links were present, with no horizontal overflow or
+third-party media requests. External links retain new-tab, no-referrer and
+noopener protections. The isolated review origin was cleared afterward.
+The service-worker cache is `autofit-v61`, with fresh/revalidated module loads.
+The protected port-8941 preview was refreshed only while idle; its exercise,
+history, settings, current-workout and profile storage stayed byte-for-byte
+unchanged. It displays 129 built-in, 51 installed and 25 selected exercises.
+Native compilation, permission/device acceptance, legacy iCloud recovery and
+StoreKit sandbox/real-store acceptance remain unverified.
+
+Reference material (reviewed 2026-10-22; not a substitute for professional advice):
+
+- [Apple App Review Guidelines: privacy, accounts, payments and Health](https://developer.apple.com/app-store/review/guidelines/)
+- [Apple account-deletion requirements](https://developer.apple.com/help/app-review/guideline-reference/5-1-1-account-deletion)
+- [Google Sign-In for iOS setup](https://developers.google.com/identity/sign-in/ios/start-integrating)
+- [Apple StoreKit purchase and restoration](https://developer.apple.com/documentation/storekit/offering-completing-and-restoring-in-app-purchases)
+- [EU DSA trader requirements in App Store Connect](https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements/)
+- [European Commission: individual data-protection rights](https://commission.europa.eu/law/law-topic/data-protection/information-individuals_en)
+- [Israeli Tax Authority: opening an exempt-dealer file](https://www.gov.il/he/service/request-opening-exempt-dealer-via-internet)
+
 ## Version 1.0 (31): Personal training tools
 
 This phase is based on the completed build-30 release, including `9e035c7`.

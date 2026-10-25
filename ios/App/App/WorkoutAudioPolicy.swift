@@ -2,11 +2,14 @@ enum WorkoutAudioPolicy {
     enum Input: Equatable {
         case wired
         case highQualityBluetooth
+        case headset
         case builtIn
     }
 
-    static func input(bluetoothOutput: Bool, wiredInput: Bool, highQualityBluetooth: Bool) -> Input {
+    static func input(bluetoothOutput: Bool, wiredInput: Bool, highQualityBluetooth: Bool,
+                      preferHeadset: Bool = false, headsetAvailable: Bool = false) -> Input {
         if wiredInput { return .wired }
+        if preferHeadset && headsetAvailable { return .headset }
         if bluetoothOutput && highQualityBluetooth { return .highQualityBluetooth }
         return .builtIn
     }

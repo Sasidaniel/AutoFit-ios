@@ -15,7 +15,34 @@ function unavailableReason(name) {
   return isNative() ? `Native plugin missing: ${name}. Update the app build.` : 'not-native';
 }
 
+/* ---------------- StoreKit subscriptions ---------------- */
+function commerce() {
+  const bridge = plugin('CommerceBridge');
+  if (!bridge) throw new Error(unavailableReason('CommerceBridge'));
+  return bridge;
+}
+export async function commerceStatus() { return commerce().status(); }
+export async function commercePurchase(options) { return commerce().purchase(options); }
+export async function commerceRestore() { return commerce().restore(); }
+export async function commerceManage() { return commerce().manage(); }
+export function onCommerceChanged(callback) {
+  const bridge = plugin('CommerceBridge');
+  if (!bridge?.addListener) return;
+  bridge.addListener('entitlementsChanged', callback).catch((error) => console.error('Subscription observer unavailable', error));
+  bridge.addListener('commerceError', callback).catch((error) => console.error('Subscription error observer unavailable', error));
+}
+
 /* ---------------- HealthKit ---------------- */
+export async function healthAuthorizationStatus() {
+  const health = plugin('HealthBridge');
+  if (!health) return { granted: false, reason: unavailableReason('HealthBridge') };
+  try {
+    return await health.authorizationStatus();
+  } catch (error) {
+    return { granted: false, reason: String(error) };
+  }
+}
+
 export async function healthRequestAuthorization() {
   const HealthBridge = plugin('HealthBridge');
   if (!HealthBridge) return { granted: false, reason: unavailableReason('HealthBridge') };
@@ -68,13 +95,18 @@ export async function cloudGetItem(key) {
 
 export async function cloudGetAll() {
   const CloudBridge = plugin('CloudBridge');
-  if (!CloudBridge) return {};
-  try {
-    const res = await CloudBridge.getAll();
-    return res.values || {};
-  } catch (e) {
-    return {};
-  }
+  if (!CloudBridge) throw new Error(unavailableReason('CloudBridge'));
+  const res = await CloudBridge.getAll();
+  if (!res.values || typeof res.values !== 'object' || Array.isArray(res.values)) throw new Error('Invalid iCloud response');
+  return res.values;
+}
+
+export async function cloudEraseData() {
+  const cloud = plugin('CloudBridge');
+  if (!cloud) throw new Error(unavailableReason('CloudBridge'));
+  const result = await cloud.eraseData();
+  if (result.requested !== true) throw new Error('iCloud did not accept the deletion request');
+  return result;
 }
 
 export function onCloudChanged(callback) {
@@ -228,11 +260,11 @@ export async function voiceRequestPermission() {
   }
 }
 
-export async function voiceStartListening(contextualStrings = [], language = 'he-IL') {
+export async function voiceStartListening(contextualStrings = [], language = 'he-IL', microphoneMode = 'automatic') {
   const V = plugin('VoiceCommand');
   if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
   try {
-    const result = await V.startListening({ contextualStrings, language });
+    const result = await V.startListening({ contextualStrings, language, microphoneMode });
     return { listening: true, inputName: result?.inputName || '' };
   } catch (e) {
     return { listening: false, reason: String(e) };
@@ -318,6 +350,20 @@ export async function consumeWorkoutActivityLink() {
 }
 
 /* ---------------- Native file sharing ---------------- */
+export async function eraseTemporaryShareFiles() {
+  const share = plugin('ShareBridge');
+  if (!share) throw new Error(unavailableReason('ShareBridge'));
+  const result = await share.eraseTemporaryFiles();
+  if (result.cleared !== true) throw new Error('Temporary app exports were not erased');
+}
+
+export async function eraseWorkoutActivity() {
+  const activity = plugin('LiveActivityBridge');
+  if (!activity) throw new Error(unavailableReason('LiveActivityBridge'));
+  const result = await activity.eraseState();
+  if (result.cleared !== true) throw new Error('Workout Live Activity data was not erased');
+}
+
 export async function shareFile(blob, filename) {
   return shareFiles([{ blob, filename }]);
 }

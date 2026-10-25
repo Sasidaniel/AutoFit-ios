@@ -8,18 +8,20 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
-function loadPhaseOneModule(file, exports) {
-  const context = nodeVM.createContext(file.endsWith('workout-insights.js') ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES } : {});
+function loadPhaseOneModule(file, exports, values = {}) {
+  const context = nodeVM.createContext({ ...(file.endsWith('workout-insights.js') ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES } : {}), ...values });
   nodeVM.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return nodeVM.runInContext(`({ ${exports.join(', ')} })`, context);
 }
 const library = loadPhaseOneModule('www/js/exercise-library.js', [
-  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration',
+  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'browsableLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration', 'catalogStats',
 ]);
 const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
+const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData'],
+  loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
   const context = nodeVM.createContext(extras);
   nodeVM.runInContext(read('www/js/exercise-library.js').replace(/^export /gm, ''), context);
@@ -33,7 +35,7 @@ const vm = {
   createContext(values = {}) {
     const i18n = localizationContext();
     return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
-      lastAutoCountCompletion: null, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
+      lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, ...values });
   },
 };
@@ -139,9 +141,9 @@ test('internal delivery refuses an inconsistent non-exempt encryption declaratio
   assert.ok(result.messages.some((message) => message.includes('encryption declaration differs')));
 });
 
-test('phase-one catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
-  assert.equal(library.LIBRARY_EXERCISES.length, 26);
-  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 26);
+test('expanded catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
+  assert.equal(library.LIBRARY_EXERCISES.length, 99);
+  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 99);
   const translation = localizationContext();
   translation.setLanguage('en');
   for (const exercise of library.LIBRARY_EXERCISES) {
@@ -168,12 +170,13 @@ test('phase-one catalog is inactive, uniquely identified, bilingual and illustra
   }
 });
 
-test('every built-in and planning exercise has an offline illustration and reviewed instructional video', () => {
+test('every authored exercise has an offline illustration and selected instructional video; released media is preserved', () => {
   const translation = localizationContext();
   const seeds = nodeVM.runInContext('SEED_EXERCISES', translation);
   const exercises = [...seeds, ...library.LIBRARY_EXERCISES, ...library.PLANNING_EXERCISES];
-  assert.equal(exercises.length, 57);
-  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 43);
+  assert.equal(exercises.length, 130);
+  assert.equal(exercises.filter((exercise) => !(exercise.id || '').startsWith('library:extended-')).length, 57);
+  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 116);
   for (const exercise of exercises) {
     const guide = library.exerciseGuide(exercise);
     assert.ok(guide, exercise.name);
@@ -183,7 +186,8 @@ test('every built-in and planning exercise has an offline illustration and revie
       assert.equal(url.protocol, 'https:');
       assert.ok(['www.youtube.com', 'www.muscleandstrength.com', 'us.physitrack.com'].includes(url.hostname));
       assert.ok(video.publisher && video.title);
-      assert.equal(video.reviewedOn, '2026-10-21');
+      assert.equal(video.reviewedOn, exercise.catalogId === 'jumpRope' ? '2026-10-25'
+        : (exercise.id || '').startsWith('library:extended-') ? '2026-10-22' : '2026-10-21');
       assert.doesNotMatch(video.href, /search|results|undefined/);
     }
     const svg = library.exerciseIllustration(guide, exercise.inputType === 'hold');
@@ -191,6 +195,41 @@ test('every built-in and planning exercise has an offline illustration and revie
     assert.doesNotMatch(svg, /<image|https?:|undefined|NaN/);
     assert.equal((svg.match(/translate\(210 10\)/g) || []).length, exercise.inputType === 'hold' ? 0 : 1);
   }
+});
+
+test('new instructional videos retain floor, support, grip, equipment and stationary-hold distinctions', () => {
+  const guides = library.EXERCISE_GUIDES;
+  const selected = {
+    lyingTriceps: /watch\?v=2XDPNh7a8p8$/,
+    benchSkullcrusher: /lying-dumbbell-extension\.html$/,
+    supportedKickback: /\/tricep-kickback\.html$/,
+    seatedOneArmLateral: /\/seated-one-arm-dumbbell-lateral-raise\.html$/,
+    singleCalf: /\/one-leg-standing-calf-raise\.html$/,
+    neutralPulldown: /\/v-bar-pull-down$/,
+    hackSquatMachine: /\/hack-squat\.html$/,
+    splitSquat: /\/split-squat$/,
+    dumbbellSplitSquat: /\/dumbbell-split-squat$/,
+    trxRow: /watch\?v=nXfYNAwB_Lo$/,
+    bandBentRow: /watch\?v=Y3H17rshgZE$/,
+    heelTap: /watch\?v=Xxv-9mA3qLc$/,
+    kneeSidePlank: /watch\?v=vYb54dQL-xU$/,
+    abWheelRollout: /watch\?v=2Uw8oDIF2AY$/,
+    highPlank: /watch\?v=l8EbzIr2foA$/,
+  };
+  for (const [id, guide] of Object.entries(guides)) assert.ok(guide.videos.length > 0, id);
+  for (const [id, href] of Object.entries(selected)) assert.match(guides[id].videos[0].href, href, id);
+  for (const [left, right] of [
+    ['lyingTriceps', 'benchSkullcrusher'], ['kickback', 'supportedKickback'],
+    ['row', 'bandBentRow'], ['bandRow', 'bandBentRow'],
+    ['singleCalf', 'dumbbellCalfRaise'], ['neutralPulldown', 'pulldown'],
+    ['splitSquat', 'dumbbellSplitSquat'], ['sumoSquat', 'dumbbellSumoDeadlift'],
+    ['highPlank', 'pushup'], ['kneeSidePlank', 'sidePlank'],
+    ['hackSquatMachine', 'barbellSquat'], ['barbellBench', 'smithInclinePress'],
+    ['chestSupportedRow', 'bentRow'], ['seatedOneArmLateral', 'lateral'],
+  ]) assert.notEqual(guides[left].videos[0].href, guides[right].videos[0].href, `${left} / ${right}`);
+  assert.match(guides.highPlank.videos[0].title, /straight arm plank/i);
+  assert.match(guides.sumoSquat.videos[0].title, /bodyweight/i);
+  assert.match(guides.lyingTriceps.videos[0].title, /floor/i);
 });
 
 test('instructional media preserves equipment, wrist directions and stationary-hold distinctions', () => {
@@ -252,7 +291,11 @@ test('actual photo and guide controllers cover every authored exercise without e
     fixture.qs('.btnPhotoGuide', photo).listeners.click();
     assert.equal(photo.removed, true);
     const guide = fixture.dialogs.at(-1).innerHTML;
-    assert.match(guide, /class="btn btn-secondary guide-video"/);
+    if (library.exerciseGuide(exercise).videos.length) assert.match(guide, /class="btn btn-secondary guide-video"/);
+    else {
+      assert.doesNotMatch(guide, /class="btn btn-secondary guide-video"/);
+      assert.match(guide, /עדיין אין סרטון נבחר/);
+    }
     assert.doesNotMatch(guide, /<iframe|<video|<img|undefined|NaN/);
     for (const video of library.exerciseGuide(exercise).videos) assert.ok(guide.includes(video.href), exercise.name);
   }
@@ -335,7 +378,7 @@ test('library expansion preserves originals and skips existing IDs and authored 
   const expanded = library.expandedLibrary(originals);
   assert.equal(expanded[0], originals[0]);
   assert.equal(expanded[1], originals[1]);
-  assert.equal(expanded.length, 26);
+  assert.equal(expanded.length, 99);
   assert.equal(JSON.stringify(originals), before);
   assert.equal(JSON.stringify(library.expandedLibrary(expanded)), JSON.stringify(expanded));
   assert.ok(expanded.slice(originals.length).every((exercise) => exercise.active === false));
@@ -347,7 +390,7 @@ test('library migration does not select additions, replace IDs or resurrect dele
   const selected = context.exercises.filter((exercise) => exercise.active !== false).map((exercise) => exercise.id);
   assert.equal(selected.length, 25);
   const added = context.exercises.filter((exercise) => exercise.id.startsWith('library:'));
-  assert.equal(added.length, 26);
+  assert.equal(added.length, 99);
   const removedId = added[0].id;
   added[1].name = 'My edited library exercise';
   added[1].notes = 'Leave this alone';
@@ -367,6 +410,20 @@ test('failed library persistence does not mark its migration complete', () => {
   context.db.saveExercises = () => { throw Error('quota'); };
   assert.throws(() => context.init(), /quota/);
   assert.equal(context.settings.libraryExpansionV1Applied, false);
+});
+
+test('explicit additional-catalog installation preserves deleted legacy choices and is idempotent', () => {
+  const originals = [
+    { id: 'native:custom', name: 'My personal exercise', active: true, defaultSets: 4, restSeconds: 123, notes: 'keep', images: ['personal-photo'] },
+    { ...library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === 'goblet'), name: 'My renamed goblet', active: false },
+  ];
+  const before = JSON.stringify(originals);
+  const expanded = library.expandedLibrary(originals, { newOnly: true });
+  assert.equal(expanded.length, 75);
+  assert.equal(JSON.stringify(expanded.slice(0, 2)), before);
+  assert.ok(expanded.slice(2).every((exercise) => exercise.id.startsWith('library:extended-') && !exercise.active));
+  assert.ok(!expanded.some((exercise) => exercise.id === 'library:pushup'));
+  assert.equal(JSON.stringify(library.expandedLibrary(expanded, { newOnly: true })), JSON.stringify(expanded));
 });
 
 test('library filters match both languages, combine constraints and preserve custom names', () => {
@@ -399,6 +456,48 @@ test('library filters match both languages, combine constraints and preserve cus
   assert.ok(library.matchesLibraryFilters({ name: 'משיכה לפנים בפולי עליון' }, { search: 'back machine' }, context.searchText));
   assert.match(read('www/index.html'), /value="משקולות יד">משקולות יד<\/option>/);
   assert.match(read('www/index.html'), /value="מתחילים">מתחילים<\/option>/);
+});
+
+test('all 130 catalog definitions are browsable from a 51-entry library without installation or selection', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const stored = [
+    ...Array.from(seeds, (exercise, index) => ({ ...exercise, id: exercise.id || `original:${index}`, active: true })),
+    ...library.LIBRARY_EXERCISES.filter((exercise) => !exercise.id.startsWith('library:extended-')),
+  ];
+  assert.equal(stored.length, 51);
+  const before = JSON.stringify(stored);
+  const catalog = library.browsableLibrary(stored, seeds);
+  assert.equal(catalog.length, 130);
+  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, 130);
+  assert.equal(JSON.stringify(stored), before);
+  stored.forEach((exercise, index) => assert.equal(catalog[index], exercise));
+  assert.equal(catalog.filter((exercise) => exercise.active !== false).length, 25);
+  assert.ok(catalog.slice(stored.length).every((exercise) => exercise.active === false));
+  assert.ok(catalog.every((exercise) => library.exerciseGuide(exercise)));
+  const { context } = exerciseLibraryContext(stored);
+  const categories = vm.runInContext('EXERCISE_LIBRARY_CATEGORIES', context);
+  const counts = categories.map((group) => catalog.filter((exercise) => context.exerciseLibraryGroup(exercise) === group.id).length);
+  assert.equal(counts.reduce((sum, count) => sum + count, 0), 130);
+  assert.equal(context.exerciseLibraryGroup({ category: 'ישבן' }), 'legs');
+  assert.equal(context.exerciseLibraryGroup({ category: 'שוקיים' }), 'legs');
+});
+
+test('catalog browsing preserves renamed/custom records and deleted definitions remain read-only until chosen', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const renamed = { ...library.LIBRARY_EXERCISES[0], name: 'My renamed movement', notes: 'keep', images: ['personal'] };
+  const custom = { id: 'custom', name: 'My own movement', active: true, defaultSets: 7 };
+  const records = [renamed, custom], before = JSON.stringify(records);
+  const catalog = library.browsableLibrary(records, seeds);
+  assert.equal(catalog.length, 131);
+  assert.equal(catalog.find((exercise) => exercise.id === renamed.id), renamed);
+  assert.equal(catalog.find((exercise) => exercise.id === custom.id), custom);
+  assert.equal(JSON.stringify(records), before);
+  assert.equal(JSON.stringify(library.browsableLibrary(catalog, seeds)), JSON.stringify(catalog));
+  const rope = catalog.find((exercise) => exercise.catalogId === 'jumpRope');
+  assert.equal(rope.active, false);
+  assert.ok(library.matchesLibraryFilters(rope, { search: 'jump rope', type: 'cardio' }));
+  assert.ok(library.matchesLibraryFilters(rope, { search: 'חבל', place: 'home' }));
+  assert.equal(library.browsableLibrary(records, seeds).find((exercise) => exercise.catalogId === 'jumpRope').active, false);
 });
 
 function insightRecord(id, day, sets, exercise = { id: 'bench', name: 'Bench', notes: 'Same variation' }) {
@@ -1182,6 +1281,44 @@ test('adding from the library appends to my workout; removing keeps the library 
   assert.equal(context.exercises.length, 4);
   assert.equal(context.exercises.find((ex) => ex.id === 'new'), records[1]);
   assert.deepEqual(Array.from(context.buildDraftSession().entries, (entry) => entry.exerciseId), ['warmup', 'existing', 'cooldown']);
+});
+
+test('choosing an uninstalled catalog exercise installs just that exercise and preserves current work', () => {
+  const records = [{ id: 'warmup', inputType: 'cardio' }, { id: 'bench', defaultSets: 3 },
+    { id: 'cooldown', inputType: 'cardio' }];
+  const session = { running: true, entries: [{ exerciseId: 'bench',
+    sets: [{ completed: true, weightKg: 27.5, reps: 12 }] }] };
+  const entryBefore = JSON.stringify(session.entries[0]);
+  const { context, saved } = exerciseLibraryContext(records, session);
+  const candidate = { ...library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === 'goblet'), images: ['diagram'] };
+  context.setExerciseInMyWorkout(candidate, true);
+  assert.equal(saved.length, 1);
+  assert.equal(context.exercises.length, 4);
+  assert.equal(candidate.active, false);
+  assert.equal(context.exercises.find((exercise) => exercise.id === candidate.id).active, true);
+  assert.notEqual(context.exercises.find((exercise) => exercise.id === candidate.id).images, candidate.images);
+  assert.deepEqual(Array.from(context.myWorkoutExercises(), (exercise) => exercise.id), ['warmup', 'bench', candidate.id, 'cooldown']);
+  assert.equal(JSON.stringify(session.entries.find((entry) => entry.exerciseId === 'bench')), entryBefore);
+  assert.equal(session.running, true);
+  assert.ok(!session.entries.some((entry) => entry.exerciseId === candidate.id));
+  context.setExerciseInMyWorkout(candidate, true);
+  assert.equal(context.exercises.length, 4);
+});
+
+test('failed catalog installation preserves library and session and reports the storage error', () => {
+  const records = [{ id: 'bench', defaultSets: 3 }];
+  const session = { running: true, entries: [{ exerciseId: 'bench', sets: [{ completed: true, reps: 12 }] }] };
+  const before = JSON.stringify({ records, session });
+  const { context, messages } = exerciseLibraryContext(records, session);
+  const errors = [];
+  context.console = { error: (...args) => errors.push(args) };
+  context.db.saveExercises = () => { throw new Error('Quota exceeded'); };
+  const candidate = library.LIBRARY_EXERCISES[0];
+  context.setExerciseInMyWorkout(candidate, true);
+  assert.equal(JSON.stringify({ records: context.exercises, session: context.activeSession }), before);
+  assert.equal(candidate.active, false);
+  assert.equal(errors.length, 1);
+  assert.match(messages[0], /לא נשמר/);
 });
 
 test('changing my workout never discards already recorded sets or running timer progress', () => {
@@ -2954,9 +3091,11 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.doesNotMatch(announcer + voice, /setCategory\(/);
 });
 
-test('music routing never opts into HFP or voice-chat mode and capability-gates microphone enhancements', () => {
+test('music routing keeps HFP opt-in only and capability-gates microphone enhancements', () => {
   const swift = read('ios/App/App/AppDelegate.swift');
-  assert.doesNotMatch(swift, /\.voiceChat|\.allowBluetooth\b|overrideOutputAudioPort/);
+  assert.doesNotMatch(swift, /\.voiceChat|overrideOutputAudioPort/);
+  assert.match(swift, /static var preferHeadsetMicrophone = false/);
+  assert.match(swift, /if preferHeadsetMicrophone \{ options.insert\(\.allowBluetooth\) \}/);
   assert.match(swift, /setCategory\(category, mode: .default/);
   assert.match(swift, /#available\(iOS 26.0, \*\).*bluetoothHighQualityRecording/);
   assert.match(swift, /highQualityRecording.isSupported == true/);
@@ -3041,6 +3180,97 @@ test('actual microphone name survives the bridge and route-change events', async
   assert.match(app, /voiceInputName = result.inputName \|\| ''/);
 });
 
+test('headphone microphone mode reaches native capture only when explicitly selected', async () => {
+  const calls = [];
+  const context = bridgeContext({ VoiceCommand: {
+    startListening: async (options) => { calls.push(options); return { inputName: 'Headset' }; },
+  } });
+  assert.equal((await context.voiceStartListening()).listening, true);
+  assert.equal(calls[0].microphoneMode, 'automatic');
+  await context.voiceStartListening(['Bench'], 'en-US', 'headset');
+  assert.equal(calls[1].microphoneMode, 'headset');
+  assert.equal(calls[1].language, 'en-US');
+  assert.deepEqual(Array.from(calls[1].contextualStrings), ['Bench']);
+  const plugin = read('ios/App/App/VoiceCommandPlugin.swift');
+  assert.match(plugin, /\["automatic", "headset"\].contains\(microphoneMode\)/);
+  assert.match(plugin, /preferHeadsetMicrophone != preferHeadset \{ self.end\(\) \}/);
+  assert.match(read('ios/App/App/AppDelegate.swift'), /preferHeadsetMicrophone && choice == .builtIn/);
+});
+
+for (const scenario of [
+  { name: 'restarts capture after persisting the explicit choice' },
+  { name: 'reports storage failure without changing the current preference', saveFails: true },
+  { name: 'reports stop failure without claiming capture restarted', stopFails: true },
+  { name: 'reports capture failure with a visible recovery message', captureFails: true },
+]) {
+  test(`microphone settings ${scenario.name}`, async () => {
+    const calls = [], messages = [], errors = [];
+    let change;
+    const context = vm.createContext({
+      settings: { voiceCommandsEnabled: true, voiceMicrophoneMode: 'automatic' },
+      currentTab: 'workout', activeSession: { paused: false },
+      voiceListeningRevision: 0, voiceListeningActive: true,
+      voiceActivationPending: true, voiceListeningError: '',
+      db: { saveSettings(next) {
+        calls.push('save');
+        assert.equal(next.voiceMicrophoneMode, 'headset');
+        if (scenario.saveFails) throw new Error('Storage unavailable');
+      } },
+      el: (id) => {
+        assert.equal(id, 'settingVoiceMicrophone');
+        return { addEventListener: (event, callback) => {
+          assert.equal(event, 'change');
+          change = callback;
+        } };
+      },
+      native: { voiceStopListening: async () => {
+        calls.push('stop');
+        return !scenario.stopFails;
+      } },
+      updateVoiceListeningState: async () => {
+        calls.push('start');
+        context.voiceListeningActive = !scenario.captureFails;
+        if (scenario.captureFails) context.voiceListeningError = 'Capture unavailable';
+      },
+      renderSettingsTab: () => calls.push('render'),
+      updateVoiceBadgeForListeningState: () => calls.push('badge'),
+      showToast: (message) => messages.push(message),
+      console: { error: (...args) => errors.push(args) },
+    });
+    vm.runInContext(section("    el('settingVoiceMicrophone').addEventListener(",
+      '\n    });') + '\n    });', context);
+    await change({ target: { value: 'headset' } });
+    assert.equal(context.settings.voiceMicrophoneMode, scenario.saveFails ? 'automatic' : 'headset');
+    assert.equal(context.voiceListeningRevision, scenario.saveFails ? 0 : 1);
+    assert.equal(messages.length, 1);
+    if (scenario.saveFails || scenario.stopFails || scenario.captureFails) {
+      assert.match(messages[0], /נכשל/);
+      assert.equal(errors.length, 1);
+      assert.ok(context.voiceListeningError);
+      assert.deepEqual(calls, scenario.saveFails ? ['save', 'render', 'badge'] :
+        scenario.stopFails ? ['save', 'stop', 'render', 'badge'] : ['save', 'stop', 'start', 'render', 'badge']);
+    } else {
+      assert.match(messages[0], /נשמרה/);
+      assert.equal(errors.length, 0);
+      assert.equal(context.voiceListeningActive, true);
+      assert.equal(context.voiceActivationPending, false);
+      assert.deepEqual(calls, ['save', 'stop', 'start']);
+    }
+  });
+}
+
+test('workout stopwatch paints once per displayed second rather than on every high-frequency tick', () => {
+  let tick, writes = 0, value = '';
+  const display = { get textContent() { return value; }, set textContent(next) { value = next; writes++; } };
+  const context = vm.createContext({ el: () => display, formatHMS: (seconds) => String(Math.floor(seconds)),
+    Stopwatch: class { constructor(callback) { tick = callback; } } });
+  vm.runInContext(section('const stopwatch = new Stopwatch(', 'let restDoneMessage'), context);
+  for (const time of [0, 0.25, 0.5, 0.75]) tick(time);
+  assert.equal(writes, 1);
+  tick(1);
+  assert.equal(writes, 2);
+});
+
 test('listening badge identifies the actual microphone alongside the selected exercise', () => {
   const badge = { classList: { add() {}, remove() {}, toggle() {} }, textContent: '' };
   const context = vm.createContext({
@@ -3093,7 +3323,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3102,7 +3332,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -3113,6 +3343,164 @@ test('every offline-precache asset exists in the bundled app', () => {
   const worker = read('www/service-worker.js');
   const assets = [...worker.matchAll(/'(\.\/[^']*)'/g)].map((match) => match[1]);
   for (const asset of assets) assert.ok(fs.existsSync(path.join(root, 'www', asset)), asset);
+});
+
+test('offline legal queries show the legal page, never the workout application or an invented document', async () => {
+  for (const present of [true, false]) {
+    const handlers = {}, legalPage = new Response('legal document'), appPage = new Response('workout app');
+    const context = nodeVM.createContext({
+      self: { location: { origin: 'https://example.test' }, addEventListener: (name, fn) => { handlers[name] = fn; } },
+      URL, Response, fetch: async () => { throw Error('offline'); },
+      caches: { match: async (request) => request === './legal.html' && present ? legalPage
+        : request === './index.html' ? appPage : undefined },
+    });
+    nodeVM.runInContext(read('www/service-worker.js'), context);
+    let response;
+    handlers.fetch({ request: { method: 'GET', mode: 'navigate',
+      url: 'https://example.test/legal.html?doc=privacy&lang=en' }, respondWith: (value) => { response = value; } });
+    const result = await response;
+    if (present) assert.equal(await result.text(), 'legal document');
+    else assert.equal(result.type, 'error');
+  }
+});
+
+test('offline installation reloads every shell asset including legal and commerce instead of caching old modules', async () => {
+  const handlers = {};
+  let requests, skipped = false, installation;
+  const context = nodeVM.createContext({
+    self: { location: { href: 'https://example.test/service-worker.js' },
+      addEventListener: (name, fn) => { handlers[name] = fn; }, skipWaiting: () => { skipped = true; } },
+    URL, Request,
+    caches: { open: async () => ({ addAll: async (values) => { requests = values; } }) },
+  });
+  nodeVM.runInContext(read('www/service-worker.js'), context);
+  handlers.install({ waitUntil: (promise) => { installation = promise; } });
+  await installation;
+  assert.ok(skipped);
+  assert.ok(requests.every((request) => request.cache === 'reload'));
+  for (const file of ['legal.html', 'js/legal-page.js', 'js/legal.js', 'js/privacy-ui.js',
+    'js/commercial-config.js', 'js/commerce-ui.js']) {
+    assert.ok(requests.some((request) => request.url === `https://example.test/${file}`), file);
+  }
+});
+
+test('reviewed home-plan activation adds only chosen catalog entries and restores the program without touching populated work', () => {
+  const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity'], { ...library, ...insights });
+  const originals = [
+    { id: 'native:bench', catalogId: 'bench', name: 'My personal bench', active: true, defaultSets: 3,
+      defaultReps: '8', restSeconds: 120, images: ['personal-photo'], notes: 'keep this' },
+    { id: 'custom:other', name: 'My custom exercise', active: false, defaultSets: 1 },
+    { id: 'native:hold', catalogId: 'highPlank', name: 'My hold', inputType: 'hold',
+      active: true, defaultSets: 2, holdSeconds: 27 },
+    { id: 'native:bike', catalogId: 'stationaryBike', name: 'My cardio', inputType: 'cardio',
+      active: true, durationMinutes: 12, pace: 'My easy pace' },
+  ];
+  const entries = [{ exerciseId: 'native:bench', exerciseName: 'My personal bench',
+    sets: [{ weightKg: '27.5', reps: '8', completed: true, notes: 'keep note', difficulty: 'hard' }] }];
+  let persisted;
+  const context = vm.createContext({
+    trainingTools, exercises: structuredClone(originals), settings: {},
+    activeSession: { id: 'unfinished', running: false, entries: structuredClone(entries) },
+    db: { uid: () => 'test-id', saveProgramState: (...values) => { persisted = values; } },
+    openTrainingDialog() {}, openExerciseGuide() {}, renderExercisesTab() {}, renderWorkoutTab() {}, renderHomeTab() {}, showToast() {},
+    buildProgramDraft: () => { throw Error('Populated session must not be replaced'); },
+  });
+  vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState()'), context);
+  const proposed = ['chairStand', 'wallPushup'].map((id) => ({
+    ...library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === id),
+    defaultSets: 2, targetReps: 8, restSeconds: 75,
+  }));
+  proposed.push({ ...originals[2], holdSeconds: 60 }, { ...originals[3], durationMinutes: 3, pace: 'Changed pace' });
+  const api = context.trainingAPI();
+  api.activatePlan({ id: 'home-plan', sessions: [{ exercises: proposed }] }, 0);
+  assert.equal(context.exercises.length, originals.length + 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.activeSession.entries)), entries);
+  assert.equal(context.activeSession.programPinned, true);
+  assert.equal(persisted[0], context.exercises);
+  api.restoreProgram();
+  assert.deepEqual(JSON.parse(JSON.stringify(context.activeSession.entries)), entries);
+  for (const original of originals) {
+    const restored = context.exercises.find((exercise) => exercise.id === original.id);
+    for (const key of Object.keys(original)) {
+      assert.deepEqual(JSON.parse(JSON.stringify(restored[key])), original[key], key);
+    }
+  }
+  assert.ok(context.exercises.filter((exercise) => !originals.some((item) => item.id === exercise.id))
+    .every((exercise) => exercise.active === false));
+});
+
+test('one-click saved-plan start uses the real workout controller, blocks logged work and remains idle on a failed start write', () => {
+  const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity'], { ...library, ...insights });
+  for (const failure of [false, true]) {
+    let starts = 0, persisted, failStart = failure;
+    const definition = { ...library.LIBRARY_EXERCISES.find((item) => item.catalogId === 'chairStand'), active: true };
+    const newDraft = () => ({ id: 'draft:next', running: false, startedAt: null,
+      entries: [{ exerciseId: definition.id, exerciseSnapshot: { catalogId: 'chairStand' },
+        sets: [{ weightKg: 12, reps: 8, completed: false }] }] });
+    const context = vm.createContext({
+      trainingTools, exercises: [definition], settings: { voiceAnnouncements: false }, activeSession: newDraft(),
+      voiceCountingState: null, holdTimers: new Map(),
+      db: { uid: () => 'test-id',
+        saveProgramState: (exercises, settings, session) => { persisted = JSON.parse(JSON.stringify(session)); },
+        saveActiveSession: (session) => { if (failStart) throw Error('storage full'); persisted = JSON.parse(JSON.stringify(session)); } },
+      openTrainingDialog() {}, openExerciseGuide() {}, renderExercisesTab() {}, renderWorkoutTab() {}, renderHomeTab() {}, showToast() {},
+      buildProgramDraft: newDraft, primeSpeech() {}, switchTab: () => {},
+      stopwatch: { start: () => { starts++; } }, requestWakeLock() {}, cancelWorkoutGreeting() {},
+      el: () => ({ classList: { add() {}, remove() {} } }), native: { isNative: () => false },
+      syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {},
+    });
+    vm.runInContext(section('function trainingAPI()', 'function persistRestTimerState()'), context);
+    vm.runInContext(section('function persistActiveSession()', 'function trainingAPI()'), context);
+    vm.runInContext(section('function ensureWorkoutStarted()', 'function cancelWorkoutGreeting()'), context);
+    const api = context.trainingAPI();
+    const plan = { id: 'chosen:plan', sessions: [{ exercises: [definition] }] };
+    assert.equal(api.canStartSavedPlan(), true, 'autofilled values are not newly entered records');
+    if (failure) {
+      assert.throws(() => api.startSavedPlan(plan, 0),
+        (error) => /plan was selected/.test(error.message) && error.cause?.message === 'storage full');
+      assert.equal(context.activeSession.running, false);
+      assert.equal(persisted.running, false);
+      assert.equal(starts, 0);
+      failStart = false;
+    }
+    api.startSavedPlan(plan, 0);
+    assert.equal(context.activeSession.running, true);
+    assert.equal(persisted.running, true);
+    assert.equal(context.settings.training.activePlan.id, plan.id);
+    assert.equal(starts, 1);
+    const before = JSON.stringify(context.activeSession);
+    assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+    assert.equal(JSON.stringify(context.activeSession), before);
+    context.activeSession = newDraft();
+    context.activeSession.entries[0].userEdited = true;
+    assert.equal(api.canStartSavedPlan(), false);
+    assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+    const protectedDrafts = [
+      (draft) => { draft.paused = true; },
+      (draft) => { draft.startedAt = '2026-10-22T10:00:00.000Z'; },
+      (draft) => { draft.accumulatedSec = 35; },
+      (draft) => { draft.timeBudget = { minutes: 30, deferred: [] }; },
+      (draft) => { draft.entries[0].sets[0].completed = true; },
+      (draft) => { draft.entries[0].sets[0].notes = 'keep my note'; },
+      (draft) => { draft.entries[0].sets[0].holdElapsedSec = 8; },
+    ];
+    for (const protect of protectedDrafts) {
+      context.activeSession = newDraft();
+      protect(context.activeSession);
+      const before = JSON.stringify(context.activeSession);
+      assert.equal(api.canStartSavedPlan(), false);
+      assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+      assert.equal(JSON.stringify(context.activeSession), before);
+    }
+    context.activeSession = newDraft();
+    context.voiceCountingState = {};
+    assert.equal(api.canStartSavedPlan(), false);
+    context.voiceCountingState = null;
+    context.holdTimers.set('exercise:set', {});
+    assert.equal(api.canStartSavedPlan(), false);
+  }
 });
 
 test('pausing and resuming cardio banks elapsed time without shortening the history duration', () => {
@@ -3147,28 +3535,33 @@ test('pausing and resuming cardio banks elapsed time without shortening the hist
   assert.equal(entry.completed, false);
 });
 
-test('cloud-restored history and active weights enter memory before initialization, without destructive reloads', async () => {
+test('explicitly recovered legacy iCloud history enters memory without background reads or destructive reloads', async () => {
   const data = {
     ft_settings_v1: JSON.stringify({ onboardingComplete: true, faceIdEnabled: false }),
     ft_profile_v1: JSON.stringify({ name: 'Restored' }),
     ft_workouts_v1: JSON.stringify([{ id: 'old', entries: [] }]),
     ft_active_session_v1: JSON.stringify({ id: 'unfinished', entries: [{ sets: [{ weightKg: 27.5 }] }] }),
   };
-  const stored = new Map();
-  let cloudChanged, observed;
+  const confirmed = legal.acceptLegalConsent({ onboardingComplete: true, faceIdEnabled: false,
+    privacyPreferences: { cloudRestore: true, cloudBackup: false } }, {
+    termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true, adultConfirmed: true,
+  }, 'he');
+  const stored = new Map([['ft_settings_v1', JSON.stringify(confirmed)]]);
+  let cloudChanged, observed, reads = 0;
   const context = vm.createContext({
-    settings: {}, profile: {}, workouts: [], activeSession: null, console,
-    native: { isNative: () => true, cloudGetAll: async () => data,
+    settings: confirmed, profile: {}, workouts: [], activeSession: null, console, legal,
+    createPrivacyUI: () => ({ refresh() {} }), privacyAPI: () => ({}),
+    native: { isNative: () => true, cloudGetAll: async () => { reads++; return data; },
       onCloudChanged: (callback) => { cloudChanged = callback; },
       onCloudError() {}, onVoiceTranscript() {}, onVoiceError() {}, onVoiceInputChanged() {}, onWorkoutActivityOpen() {},
       onWorkoutActivityAvailable() {}, onAnnouncementError() {} },
-    localStorage: { getItem: (key) => stored.get(key), setItem: (key, value) => stored.set(key, value) },
+    localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) },
     db: {
       getSettings: () => JSON.parse(stored.get('ft_settings_v1')),
       getProfile: () => JSON.parse(stored.get('ft_profile_v1')),
       getWorkouts: () => JSON.parse(stored.get('ft_workouts_v1')),
       getActiveSession: () => JSON.parse(stored.get('ft_active_session_v1')),
-      setSyncHook() {},
+      setSyncHook: (hook) => assert.equal(hook, null),
     },
     waitForSplashMinimum: async () => {}, hideSplash() {}, URLSearchParams,
     location: { search: '', reload: () => assert.fail('A cloud update must not reload an active workout') },
@@ -3176,10 +3569,13 @@ test('cloud-restored history and active weights enter memory before initializati
   });
   vm.runInContext(section('async function restoreFromCloudIfEmpty()', '\n}') + '\n}', context);
   vm.runInContext(section('async function bootstrap()', 'function waitForSplashMinimum('), context);
+  await context.restoreFromCloudIfEmpty();
   await context.bootstrap();
+  assert.equal(reads, 1, 'bootstrap must not automatically read private iCloud records');
   assert.equal(observed.workouts[0].id, 'old');
   assert.equal(observed.activeSession.entries[0].sets[0].weightKg, 27.5);
   cloudChanged();
+  assert.equal(reads, 1);
   assert.equal(context.activeSession.id, 'unfinished');
 });
 
@@ -3374,6 +3770,35 @@ function healthContext(records, overrides = {}) {
   vm.runInContext(section('async function syncWorkoutToHealth(', 'function openHealthSyncHelp('), context);
   return { context, writes, saved, messages };
 }
+
+test('automatic Health delivery checks existing write authorization without opening a permission prompt', async () => {
+  const record = healthRecord();
+  const { context, writes } = healthContext([record], {
+    healthRequestAuthorization: () => assert.fail('Only an explicit user action may request a permission'),
+    healthAuthorizationStatus: async () => ({ granted: false, reason: 'not-authorized' }),
+  });
+  await context.syncWorkoutToHealth([record], { requestAuthorization: false });
+  assert.equal(writes.length, 0);
+  assert.equal(record.healthDelivery.status, 'unauthorized');
+  assert.equal(record.healthSyncPending, true);
+});
+
+test('late Health completion after privacy deletion does not resurrect local history', async () => {
+  const record = healthRecord();
+  let finish;
+  const { context, saved } = healthContext([record], {
+    healthSaveWorkout: () => new Promise((resolve) => { finish = resolve; }),
+  });
+  const pending = context.syncWorkoutToHealth([record]);
+  await new Promise((resolve) => setImmediate(resolve));
+  const writesBeforeDeletion = saved.length;
+  context.privacyErasing = true;
+  context.workouts = [];
+  finish({ saved: true, id: 'independent-health-record' });
+  await pending;
+  assert.equal(saved.length, writesBeforeDeletion);
+  assert.equal(context.workouts.length, 0);
+});
 
 const healthRecord = () => ({
   id: 'stable-workout-id', dateISO: '2026-10-18T08:00:00Z', durationSec: 123.4,

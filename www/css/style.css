@@ -122,6 +122,27 @@ body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   text-align: center;
 }
 .onboarding-step.active { display: flex; }
+#onboardingLegalForm { width: 100%; max-width: 480px; text-align: start; color: #eee; }
+.legal-consent-form { display: grid; gap: 12px; }
+.legal-consent-form p { margin: 4px 0; }
+.legal-consent-form .checkbox-row { align-items: flex-start; line-height: 1.6; }
+.legal-consent-form input[type="checkbox"] { flex: none; margin-top: 6px; }
+.legal-consent-form .btn { white-space: normal; }
+.legal-draft-warning { padding: 12px; border: 1px solid #a87814; border-radius: 10px;
+  background: #fff6dd; color: #563c07; line-height: 1.65; }
+.legal-document { text-align: start; line-height: 1.8; overflow-wrap: anywhere; }
+.legal-document h3 { margin-top: 24px; }
+.standalone-legal { margin: 0; padding: 20px max(16px, env(safe-area-inset-left)); }
+.standalone-legal main { max-width: 800px; margin-inline: auto; }
+.standalone-legal nav { position: static; flex-wrap: wrap; }
+.privacy-form-status, .privacy-deletion-status { color: var(--danger); }
+#onboardingCloudRestore { max-width: 360px; margin-bottom: 16px; }
+.onboarding-permission-text { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 380px) {
+  .onboarding-permission-card { gap: 6px; padding: 10px; }
+  .onboarding-permission-icon { font-size: 20px; }
+  .onboarding-permission-status { min-width: 16px; font-size: 16px; }
+}
 .onboarding-logo { width: 84px; height: 84px; border-radius: 20px; margin-bottom: 18px; }
 .onboarding-title { color: #fff; font-size: 22px; font-weight: 700; margin: 0 0 6px; }
 .onboarding-subtitle { color: #9a9aa3; font-size: 14px; margin: 0 0 24px; }
@@ -302,6 +323,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .exercise-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
 .exercise-card.done { border-color: #86efac; background: var(--success-soft); }
 .exercise-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+.exercise-card-head > div:first-child { min-width: 0; flex: 1; }
 .exercise-name { font-weight: 700; font-size: 15px; color: var(--text); }
 .exercise-muscle-line { font-size: 12px; font-weight: 600; color: var(--primary); margin-top: 1px; }
 .exercise-meta { font-size: 12px; color: var(--text-muted); }
@@ -311,8 +333,11 @@ html[dir="ltr"] .card-hint { text-align: left; }
   width: 22px; height: 22px; border-radius: 999px; background: var(--primary);
   color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
 }
-.exercise-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.exercise-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; max-width: 48%; }
+.exercise-name { overflow-wrap: anywhere; }
 .cardio-body { text-align: center; }
+.rope-phase { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--primary-soft); border-radius: 10px; }
+.rope-phase span { font-size: 28px; font-variant-numeric: tabular-nums; }
 .cardio-timer-display { font-size: 32px; font-weight: 800; letter-spacing: 1px; color: var(--primary); margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
 .cardio-body .settings-actions { justify-content: center; }
 .cardio-pace-row { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -320,7 +345,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .cardio-pace-row .input { margin-bottom: 0; }
 
 .sets-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.set-table-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.set-table-wrap { margin: 0 -4px; padding: 0 4px; }
 .sets-table th { font-size: 11px; color: var(--text-muted); font-weight: 500; text-align: center; padding: 4px 1px; }
 .sets-table td { text-align: center; padding: 3px 1px; }
 .set-row.completed { background: var(--success-soft); }
@@ -491,7 +516,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .training-plan-row .select { width: 100%; max-width: 100%; }
 .training-plan-row .training-field { margin: 0; }
 .training-plan-row .plan-guide { justify-self: start; align-self: end; min-height: 44px; }
-.training-equipment-actions { padding: 0 14px 10px; }
+.training-equipment-actions { padding: 0; margin: 0; }
 .set-notes { margin: 12px 14px; }
 .set-notes summary { cursor: pointer; padding-block: 8px; font-size: 13px; }
 .edit-set-row .edit-set-notes { flex-basis: 100%; }

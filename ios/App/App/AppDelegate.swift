@@ -5,13 +5,15 @@ import UserNotifications
 
 enum WorkoutAudioSession {
     private static var active = false
+    static var preferHeadsetMicrophone = false
 
     private static func options(recording: Bool, ducking: Bool) -> AVAudioSession.CategoryOptions {
         var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
         if ducking { options.insert(.duckOthers) }
         if recording {
             options.formUnion([.allowBluetoothA2DP, .defaultToSpeaker])
-            if #available(iOS 26.0, *) { options.insert(.bluetoothHighQualityRecording) }
+            if #available(iOS 26.0, *), !preferHeadsetMicrophone { options.insert(.bluetoothHighQualityRecording) }
+            if preferHeadsetMicrophone { options.insert(.allowBluetooth) }
         }
         return options
     }
@@ -43,18 +45,25 @@ enum WorkoutAudioSession {
         }
         let wired = inputs.first { [AVAudioSession.Port.headsetMic, .usbAudio, .lineIn].contains($0.portType) }
         var highQuality: AVAudioSessionPortDescription?
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), !preferHeadsetMicrophone {
             highQuality = inputs.first {
                 $0.bluetoothMicrophoneExtension?.highQualityRecording.isSupported == true
             }
         }
         let choice = WorkoutAudioPolicy.input(bluetoothOutput: bluetoothOutput,
-            wiredInput: wired != nil, highQualityBluetooth: highQuality != nil)
+            wiredInput: wired != nil, highQualityBluetooth: highQuality != nil,
+            preferHeadset: preferHeadsetMicrophone,
+            headsetAvailable: inputs.contains { $0.portType == .bluetoothHFP })
         let preferred: AVAudioSessionPortDescription?
         switch choice {
         case .wired: preferred = wired
         case .highQualityBluetooth: preferred = highQuality
+        case .headset: preferred = inputs.first { $0.portType == .bluetoothHFP }
         case .builtIn: preferred = inputs.first { $0.portType == .builtInMic }
+        }
+        if preferHeadsetMicrophone && choice == .builtIn {
+            throw NSError(domain: "AutoFit.Audio", code: 6,
+                userInfo: [NSLocalizedDescriptionKey: "No headphone microphone is available. Connect headphones or choose automatic microphone mode."])
         }
         guard let preferred = preferred else {
             throw NSError(domain: "AutoFit.Audio", code: 5,
