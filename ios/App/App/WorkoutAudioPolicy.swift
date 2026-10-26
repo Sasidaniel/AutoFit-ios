@@ -16,6 +16,15 @@ enum WorkoutAudioPolicy {
         !engineRunning || !playerPlaying || !configurationMatches
     }
 
+    // A stable category preserves music routing; only capture must stop in the background.
+    static func recordingSession(microphoneRequested: Bool, foreground: Bool, keepingAlive: Bool) -> Bool {
+        microphoneRequested && (foreground || keepingAlive)
+    }
+
+    static func captureMicrophone(microphoneRequested: Bool, foreground: Bool) -> Bool {
+        microphoneRequested && foreground
+    }
+
     static func recognitionRetryDelay(failures: Int) -> Double? {
         guard failures < 5 else { return nil }
         return Double(max(1, min(failures, 4)))

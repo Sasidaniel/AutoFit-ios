@@ -29,6 +29,37 @@ test('difficulty is Easy, Medium, Hard while legacy right values and spoken phra
   i18n.setLanguage('en');
   assert.equal(i18n.text(insights.DIFFICULTY_LABELS.right), 'Medium');
 });
+test('difficulty updates retain unchanged feedback/button nodes instead of rebuilding every exercise', () => {
+  let writes = 0;
+  const cards = [0, 1].map((index) => {
+    const feedback = { dataset: {}, classList: { toggle() {} },
+      set innerHTML(value) { writes++; this.node = { html: value }; } };
+    return { dataset: { entryIndex: index }, feedback, querySelector: () => feedback };
+  });
+  const context = nodeVM.createContext({ insights, activeSession: { entries: cards.map(() => ({ sets: [{ completed: true, difficulty: 'right' }] })) },
+    qsa: (selector) => selector.startsWith('#exerciseList') ? cards : [],
+    qs: (selector, card) => card.feedback, persistActiveSession() {} });
+  nodeVM.runInContext(section('function refreshDifficultyFeedback()', 'function intervalPhaseText('), context);
+  context.refreshDifficultyFeedback();
+  const original = cards.map((card) => card.feedback.node);
+  context.refreshDifficultyFeedback();
+  assert.equal(writes, 2);
+  assert.equal(cards[0].feedback.node, original[0]);
+  assert.equal(cards[1].feedback.node, original[1]);
+  context.activeSession.entries[0].sets[0].difficulty = 'hard';
+  context.refreshDifficultyFeedback();
+  assert.equal(writes, 3);
+  assert.notEqual(cards[0].feedback.node, original[0]);
+  assert.equal(cards[1].feedback.node, original[1]);
+});
+test('the page uses document scrolling rather than a fixed-height nested body scroller', () => {
+  const css = read('www/css/style.css');
+  const common = css.match(/html,\s*body\s*\{([^}]+)\}/)[1];
+  assert.match(common, /min-height:\s*100%/);
+  assert.doesNotMatch(common, /(?:^|[;\n])\s*height:|overflow/);
+  assert.match(css, /(?:^|\n)html\s*\{[^}]*height:\s*100%;[^}]*overflow-x:\s*hidden/);
+  assert.doesNotMatch(css.match(/(?:^|\n)body\s*\{([^}]+)\}/)[1], /overflow|(?:^|;)\s*height:/);
+});
 const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData'],
   loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
@@ -45,6 +76,8 @@ const vm = {
     const i18n = localizationContext();
     return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
+      finishingWorkout: false, pendingWorkoutAutoFinish: null,
+      isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((set) => set.completed),
       rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, cancelSpeech: () => {}, ...values });
   },
 };
@@ -983,7 +1016,7 @@ test('late voice start cannot re-enable listening after leaving the workout tab'
   assert.equal(vm.runInContext('voiceListeningActive', context), false);
 });
 
-test('repeated foreground returns request mixed voice before a workout without disabling the saved setting', async () => {
+test('native lifecycle owns repeated visibility transitions without JS microphone teardown or reactivation', async () => {
   const calls = [];
   const context = vm.createContext({
     native: {
@@ -1006,13 +1039,73 @@ test('repeated foreground returns request mixed voice before a workout without d
     await context.updateVoiceListeningState();
     await context.updateVoiceListeningState();
     assert.equal(vm.runInContext('voiceListeningActive', context), true);
+    vm.runInContext('pendingVoiceFinish = { expiresAt: Date.now() + 15000 }; voiceCountingState = { count: 3 }', context);
     context.document.visibilityState = 'hidden';
     await context.updateVoiceListeningState();
-    assert.equal(vm.runInContext('voiceListeningActive', context), false);
+    assert.equal(vm.runInContext('voiceListeningActive', context), true);
+    assert.equal(vm.runInContext('pendingVoiceFinish', context), null);
+    assert.equal(vm.runInContext('voiceCountingState.count', context), 3);
   }
-  assert.deepEqual(calls, Array.from({ length: 10 }, () => ['start', 'stop']).flat());
+  assert.deepEqual(calls, ['start']);
   assert.equal(context.settings.voiceCommandsEnabled, true);
   assert.equal(context.activeSession.running, false);
+});
+
+test('explicit tab, pause and setting changes still release native microphone intent while hidden', async () => {
+  for (const change of ["currentTab = 'home'", 'activeSession.paused = true', 'settings.voiceCommandsEnabled = false']) {
+    const calls = [];
+    const context = vm.createContext({
+      native: {
+        isNative: () => true,
+        voiceStartListening: async () => { calls.push('start'); return { listening: true }; },
+        voiceStopListening: async () => { calls.push('stop'); return true; },
+      },
+      document: { visibilityState: 'visible' },
+      settings: { voiceCommandsEnabled: true },
+      activeSession: { running: true, entries: [] }, voiceExerciseNames: () => [],
+      showToast: () => assert.fail('Unexpected toast'), updateVoiceBadgeForListeningState: () => {},
+    });
+    vm.runInContext(section('let voiceListeningActive = false;', 'function startRestTimer('), context);
+    vm.runInContext("currentTab = 'workout'", context);
+    await context.updateVoiceListeningState();
+    context.document.visibilityState = 'hidden';
+    vm.runInContext(change, context);
+    await context.updateVoiceListeningState();
+    context.document.visibilityState = 'visible';
+    await context.updateVoiceListeningState();
+    assert.deepEqual(calls, ['start', 'stop'], change);
+    assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  }
+});
+
+test('backgrounding during pending native activation does not create another start or lose explicit disable', async () => {
+  let completeStart;
+  const calls = [];
+  const context = vm.createContext({
+    native: {
+      isNative: () => true,
+      voiceStartListening: () => { calls.push('start'); return new Promise((resolve) => { completeStart = resolve; }); },
+      voiceStopListening: async () => { calls.push('stop'); return true; },
+    },
+    document: { visibilityState: 'visible' },
+    settings: { voiceCommandsEnabled: true },
+    activeSession: { entries: [] }, voiceExerciseNames: () => [],
+    showToast: () => assert.fail('Unexpected toast'), updateVoiceBadgeForListeningState: () => {},
+  });
+  vm.runInContext(section('let voiceListeningActive = false;', 'function startRestTimer('), context);
+  vm.runInContext("currentTab = 'workout'", context);
+  const starting = context.updateVoiceListeningState();
+  context.document.visibilityState = 'hidden';
+  await context.updateVoiceListeningState();
+  context.settings.voiceCommandsEnabled = false;
+  await context.updateVoiceListeningState();
+  completeStart({ listening: true });
+  await starting;
+  context.document.visibilityState = 'visible';
+  await context.updateVoiceListeningState();
+  assert.deepEqual(calls, ['start', 'stop']);
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.equal(vm.runInContext('voiceActivationPending', context), false);
 });
 
 test('PDF generation returns real PDF bytes using the bundled library', async () => {
@@ -2143,7 +2236,7 @@ test('finish confirmation expires, is session-bound and is invalidated by anothe
   }
 });
 
-test('stopping listening invalidates pending finish even when no transcript arrives while hidden', async () => {
+test('backgrounding invalidates pending finish even when no transcript arrives while hidden', async () => {
   const { context, session, calls } = voiceContext();
   context.native.voiceStopListening = async () => {};
   session.running = true;
@@ -2465,7 +2558,7 @@ function greetingContext() {
   let now = 10000, nextID = 0;
   const pending = new Map(), spoken = [];
   const context = vm.createContext({
-    activeSession: { id: 'one', running: false }, settings: { voiceAnnouncements: true, restSeconds: 90 },
+    activeSession: { id: 'one', running: false, entries: [] }, settings: { voiceAnnouncements: true, restSeconds: 90 },
     workoutGreetingTimer: null,
     setTimeout: (callback, delay) => { pending.set(++nextID, { at: now + delay, callback }); return nextID; },
     clearTimeout: (id) => pending.delete(id),
@@ -3240,7 +3333,8 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.match(delegate, /let changed = !matches\(recording: recording, ducking: ducking\)/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
   assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession,\s*force: audioInterrupted\)/);
-  assert.match(voice, /WorkoutAudioSession.activate\(recording: true, force: !audioEngine.isRunning\)/);
+  assert.match(voice, /WorkoutAudioSession.activate\(recording: true, force: audioInterrupted\)/);
+  assert.doesNotMatch(voice, /force: !audioEngine.isRunning/);
   assert.match(voice, /!BackgroundAnnouncerPlugin.isAnnouncing/);
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
   assert.match(delegate, /notifyOthersOnDeactivation/);
@@ -3302,6 +3396,20 @@ test('native foreground and new announcement attempts cannot be permanently bloc
   assert.match(speak, /ducking: true, force: audioInterrupted\)[\s\S]*audioInterrupted = false/);
   assert.match(speak, /catch \{\s*releaseAnnouncementSession\(\)\s*throw error/);
   assert.match(read('ios/App/App/AppDelegate.swift'), /if !active \|\| changed \|\| force \{[\s\S]*setActive\(true\)/);
+});
+
+test('native capture and shared-session intent have distinct foreground guards and rotation is scheduled outside callbacks', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  assert.match(swift, /usesRecordingSession: Bool \{\s*WorkoutAudioPolicy.recordingSession\([\s\S]*?keepingAlive: BackgroundAnnouncerPlugin.isKeepingAlive\)/);
+  assert.match(swift, /canCapture: Bool \{\s*WorkoutAudioPolicy.captureMicrophone\([\s\S]*?applicationState == .active\)/);
+  assert.match(swift, /UIApplication.willResignActiveNotification/);
+  assert.match(swift, /applicationEnteredBackground\(\) \{\s*end\(\)/);
+  assert.match(swift, /private func begin\(\) throws \{\s*guard Self.canCapture else \{ return \}/);
+  assert.match(swift, /guard self.generation == currentGeneration, Self.canCapture, !self.audioInterrupted/);
+  const begin = swift.slice(swift.indexOf('private func begin()'), swift.indexOf('private func endRecognition()'));
+  assert.match(begin, /result\?\.isFinal == true \{\s*self.restart\(after: 0.05\)\s*\}\s*\}\s*\}\s*let rotation = DispatchWorkItem/);
+  assert.equal((begin.match(/let rotation =/g) || []).length, 1);
+  assert.match(swift, /pendingRotation\?\.cancel\(\)\s*pendingRotation = nil/);
 });
 
 test('native recognition recovery coalesces restarts, ignores own category churn and retries transient failures', () => {
@@ -3478,7 +3586,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3487,7 +3595,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });
@@ -3905,7 +4013,7 @@ test('voice capture uses mono without voice-chat processing and preserves reques
   assert.match(swift, /channels: 1/);
   assert.match(swift, /buffer.floatChannelData\?\[0\]/);
   assert.match(swift, /announcementWillStart\(\)[\s\S]*if Self.wantsMicrophone \{ end\(\) \}/);
-  assert.match(swift, /announcementFinished\(\)[\s\S]*guard Self.usesRecordingSession/);
+  assert.match(swift, /announcementFinished\(\)[\s\S]*guard Self.canCapture/);
   assert.match(swift, /Self.wantsMicrophone = false/);
 });
 
@@ -4402,7 +4510,7 @@ test('native lifecycle stops microphone input and recovers background playback w
   const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(voice, /UIApplication.didEnterBackgroundNotification/);
   assert.match(voice, /applicationEnteredBackground\(\) \{\s*end\(\)/);
-  assert.match(voice, /wantsMicrophone && UIApplication.shared.applicationState != .background/);
+  assert.match(voice, /WorkoutAudioPolicy.captureMicrophone\([\s\S]*?applicationState == .active/);
   assert.match(audio, /\.AVAudioEngineConfigurationChange, object: audioEngine/);
   assert.match(audio, /UIApplication.didEnterBackgroundNotification/);
   assert.match(audio, /!audioInterrupted/);
@@ -4444,23 +4552,25 @@ test('exercise completion speech matches the displayed set-weighted percentage, 
   assert.match(messages[0], /התרגיל הבא: Next/);
 });
 
-test('last completed exercise explicitly announces 100 percent, while ordinary sets do not announce percentages', () => {
+test('the completed workout does not start a final rest, while ordinary sets still announce rest', () => {
   const { context, messages } = progressSpeechContext([{ sets: [{ completed: true }] }]);
   context.startRestTimer({ name: 'Last' }, true, null);
-  assert.match(messages[0], /100 אחוז מהאימון הושלמו/);
+  assert.equal(context.getWorkoutSetProgress().percent, 100);
+  assert.equal(messages.length, 0);
+  context.activeSession.entries[0].sets[0].completed = false;
   context.startRestTimer({ name: 'Last' }, false, 'Next');
-  assert.equal(messages[1], 'סט הושלם, זמן מנוחה');
+  assert.equal(messages[0], 'סט הושלם, זמן מנוחה');
   context.settings.voiceAnnouncements = false;
   context.startRestTimer({ name: 'Last' }, true, null);
-  assert.equal(messages.length, 2);
+  assert.equal(messages.length, 1);
 });
 
-test('cardio completion reports the same strength-set percentage and empty workouts never divide by zero', () => {
+test('cardio completion reports the shared all-activity percentage and empty workouts never divide by zero', () => {
   const { context } = progressSpeechContext([
     { type: 'cardio', exerciseId: 'warmup', completed: true },
     { sets: [{ completed: true }, { completed: false }] },
   ]);
-  assert.match(context.cardioCompletionMessage({ exerciseId: 'warmup' }), /50 אחוז/);
+  assert.match(context.cardioCompletionMessage({ exerciseId: 'warmup' }), /67 אחוז/);
   context.activeSession.entries = [];
   assert.equal(context.getWorkoutSetProgress().percent, 0);
 });

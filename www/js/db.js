@@ -124,6 +124,12 @@ export function saveActiveSession(session) {
 }
 export function clearActiveSession() {
   requireWritable();
-  localStorage.removeItem(KEYS.activeSession);
+  try {
+    localStorage.removeItem(KEYS.activeSession);
+  } catch (error) {
+    console.error('Active workout could not be cleared', error);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('autofit-storage-error', { detail: { key: KEYS.activeSession } }));
+    throw error;
+  }
   if (syncHook) syncHook(KEYS.activeSession, null);
 }

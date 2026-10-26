@@ -1,5 +1,101 @@
 # AutoFit release notes
 
+## 1.0 (36) - Approved release candidate (2026-10-26)
+
+App shell `autofit-v69`. The owner explicitly approved publishing the code and
+documentation and releasing build 36 to internal TestFlight. These changes are
+**not in TestFlight build 35**. The release is pending native build and Apple
+verification; approval alone does not establish successful delivery.
+
+- Completing every current-workout set and cardio segment now finishes and saves
+  the workout without a confirmation prompt. Existing partial/manual finish
+  still requests confirmation. The summary opens after successful saving.
+- Overall progress counts each strength/hold set and each cardio segment as one
+  completion unit. It cannot reach 100% while warmup, cooldown or other selected
+  cardio remains incomplete, or merely because a near-complete fraction rounds
+  upward. Separate set and exercise bars retain their own correct denominators.
+  Empty and unstarted drafts cannot auto-save.
+- Finalization runs after the current completion handler, so voice-reported
+  weights, difficulty and notes reach the saved record. Repeated render/timer
+  notifications coalesce into one finish attempt; undo, session replacement and
+  privacy erasure invalidate stale attempts. No final rest is started.
+- A completed workout checkpoints its stopped duration before history saving.
+  Storage errors leave the completed workout recoverable; reload can retry
+  without counting intervening idle time. History writes do not first mutate
+  the in-memory list, and a retry after draft-cleanup failure reuses the existing
+  record ID rather than duplicating the workout. Success feedback follows
+  successful persistence; failures distinguish unsaved history from a saved
+  workout whose screen cleanup failed. A failed completed-workout save also
+  pauses the controls and releases microphone/background audio while retaining
+  the recoverable workout.
+- Difficulty feedback no longer rebuilds unchanged buttons for every exercise
+  when another set changes. This removes avoidable DOM churn while preserving
+  notes, focus, ratings and scroll. It is a targeted improvement, not proof that
+  all physical iPhone scrolling stalls are resolved.
+- The fixed-height, overflowing body created a separate scroll container:
+  browser measurements showed an 11,141px body inside a 678px document with
+  `window.scrollTo()` unable to move the page. The body now grows naturally and
+  only the document owns page scrolling. Dialogs retain their own scrolling.
+- Native lifecycle now owns capture suspension/resumption. Hiding the WebView
+  no longer sends a second microphone stop/start sequence or discards the
+  current rep counter. Explicit pause, tab departure and voice-disable still
+  release microphone intent, including while hidden; pending finish
+  confirmations are invalidated on backgrounding.
+- During a running workout, microphone intent keeps the existing mixed
+  recording-compatible audio category across background/foreground transitions,
+  while actual capture is stopped on leaving the foreground and can only start
+  in the active app. Idle background sessions can still release audio. Restarting
+  capture no longer force-reactivates an already-active shared audio session.
+  Genuine interruptions retain the existing recovery and visible-error paths.
+- The 45-second recognition rotation is now scheduled once per task, on the
+  main thread outside the recognition callback, rather than scheduling more
+  rotations for incoming partial results.
+
+**Music support and limits:** Apple's
+[`playAndRecord`](https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/playandrecord)
+and [`mixWithOthers`](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/mixwithothers)
+documentation explicitly supports recording/playback mixed with another app's
+music. Music therefore does not make microphone-based speech recognition
+categorically impossible. This does not guarantee recognition accuracy or
+uninterrupted playback on every app/device/route combination.
+
+[`allowBluetoothA2DP`](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/allowbluetootha2dp)
+is a music-quality, output-only route. Using the phone microphone with that
+output differs from using an earbud microphone; enabling HFP gives hands-free
+routing priority on devices supporting both profiles. iOS 26's
+[`bluetoothHighQualityRecording`](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/bluetoothhighqualityrecording)
+is hardware/region dependent and is not a universal workaround.
+
+Code inspection identified redundant JS/native lifecycle control and a
+foreground-dependent category choice that requested playback/recording route
+changes even with keepalive active. The handover changes above remove those
+specific reconfiguration paths without changing microphone selection, HFP
+opt-in, announcement ducking or audio quality policy. They do not establish
+that every reported music interruption has the same cause: actual music and
+speech behavior on the affected iPhone still requires native/device acceptance.
+
+Validation: **506 JavaScript regressions and 17 module syntax checks passed**.
+Isolated browser acceptance verified 80% after four completed sets with cooldown
+pending, automatic save after cooldown with zero confirmation calls, unchanged
+saved plans/library, original workout name/notes/ratings, retained unrelated
+feedback buttons and scroll, persistence after reload, explicit storage failure,
+manual retry without duplicates, and reload retry retaining the frozen duration.
+The additional browser run verified the canonical `autofit-v69` stylesheet,
+120 distinct document scroll positions during an active workout, a zero body
+scroll offset, unchanged non-session storage, and full-page scrolling without
+horizontal overflow in Hebrew/RTL and English/LTR. The browser still identifies
+itself as manual-only rather than claiming native microphone support.
+
+JavaScript native-lifecycle contract checks cover redundant visibility calls, explicit disable,
+tab departure/pause, pending startup and background finish-confirmation expiry.
+Swift tests were extended with the foreground/keepalive/capture state matrix
+and repeated background/foreground transitions, but could not be executed on
+this Windows host: neither `swiftc` nor the iOS SDK is available. The approved
+release workflow must run all Swift suites and compile the signed app/widget
+before upload. Actual music, recognition accuracy and physical touch smoothness
+still require iPhone acceptance; browser checks are not a substitute. No actual
+user storage was read or modified during the isolated browser checks.
+
 ## 1.0 (35) - Verified internal TestFlight release (2026-10-25)
 
 App shell: `autofit-v67`. The owner explicitly approved publishing the code and

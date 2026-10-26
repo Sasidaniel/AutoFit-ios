@@ -1,6 +1,9 @@
 import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
+  'האימון נשמר בהיסטוריה, אך סגירת מסך האימון נכשלה. בדוק את ההיסטוריה לפני ניסיון נוסף.': 'Your workout was saved in history, but closing the workout failed. Check history before retrying.',
+  'בהשלמת כל הסטים ומקטעי האירובי, האימון מסתיים ונשמר אוטומטית ללא אישור. לפני ההשלמה עדיין אפשר לסיים ידנית עם אישור. את דירוג הסט האחרון אפשר לכלול בדיווח הקולי או לערוך בהיסטוריה.': 'When all sets and cardio segments are complete, the workout finishes and saves automatically without confirmation. You can still finish early manually with confirmation. Include the final set rating in a voice report or edit it in history.',
+  'השמירה האוטומטית נכשלה. נתוני האימון נשמרו במסך; לחץ על סיום אימון כדי לנסות שוב.': 'Automatic saving failed. Your workout remains on screen; tap Finish workout to retry.',
   'בינוני': 'Medium',
   'ימים שנותרו בחודש (כולל היום)': 'Days left this month (including today)',
   'יעד שבועי': 'Weekly goal',

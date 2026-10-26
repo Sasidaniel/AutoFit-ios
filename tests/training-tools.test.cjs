@@ -214,7 +214,7 @@ test('removal and undo immediately recompute mixed cardio/strength counts and pe
   assert.equal(el('overallProgressBadge').textContent, '100%');
   context.activeSession = tools.restoreWorkoutExercise(context.activeSession, original.entries[1].exerciseId);
   context.updateProgress();
-  assert.equal(el('overallProgressBadge').textContent, '33%');
+  assert.equal(el('overallProgressBadge').textContent, '50%');
   for (const item of original.entries.filter((entry) => entry.type !== 'cardio')) {
     context.activeSession = tools.removeWorkoutExercise(context.activeSession, item.exerciseId);
   }
@@ -593,7 +593,7 @@ function pauseController(savedSession) {
   const el = (id) => {
     if (!elements.has(id)) {
       const classes = new Set();
-      elements.set(id, { textContent: '', dataset: {}, disabled: false,
+      elements.set(id, { textContent: '', dataset: {}, style: {}, disabled: false,
         setAttribute(name, value) { if (name === 'data-exercise-name') this.dataset.exerciseName = value; },
         classList: { add: (value) => classes.add(value), remove: (value) => classes.delete(value),
           contains: (value) => classes.has(value), toggle: (value, force) => force ? classes.add(value) : classes.delete(value) } });
@@ -610,6 +610,7 @@ function pauseController(savedSession) {
       { exerciseId: 'native:cardio', exerciseName: 'Walk', type: 'cardio', durationSec: 600, elapsedSec: 40, startedAt: now - 20000 },
     ] };
   const context = vm.createContext({ ...timers, activeSession, formatHMS, privacyErasing: false,
+    finishingWorkout: false, pendingWorkoutAutoFinish: null,
     settings: { voiceAnnouncements: false, voiceCommandsEnabled: true }, workouts: [],
     exercises: [{ id: 'native:chest', name: 'Chest', inputType: 'reps', restSeconds: 90 },
       { id: 'native:hold', name: 'Hold', inputType: 'hold', holdSeconds: 30, restSeconds: 90 }],
@@ -668,6 +669,155 @@ function pauseController(savedSession) {
   saved.length = 0;
   return { context, calls, saved, messages, intervals, el, advance: (ms) => { now += ms; } };
 }
+
+function autoCompletionController(savedSession) {
+  const fixture = pauseController(savedSession), { context } = fixture, queue = [], records = [], summaries = [];
+  context.queueMicrotask = (callback) => queue.push(callback);
+  context.refreshDifficultyFeedback = () => {};
+  context.trainingUI = null;
+  context.db.saveWorkouts = (value) => records.push(plain(value));
+  context.showCelebration = (value) => summaries.push(plain(value));
+  context.console = { error() {} };
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'), source.indexOf('function refreshDifficultyFeedback()')), context);
+  return { ...fixture, queue, records, summaries, flush: () => { while (queue.length) queue.shift()(); } };
+}
+
+test('100 percent waits for cardio and saves the fully completed workout once without confirmation or final rest', () => {
+  const { context, queue, records, summaries, flush, el } = autoCompletionController();
+  const before = plain(context.activeSession);
+  for (const entry of context.activeSession.entries) {
+    if (entry.type !== 'cardio') for (const set of entry.sets) set.completed = true;
+  }
+  context.updateProgress();
+  assert.ok(context.getWorkoutSetProgress().percent < 100);
+  assert.equal(queue.length, 0);
+  const original = context.activeSession;
+  original.planSnapshot = { id: 'A', name: 'My custom workout', days: 1 };
+  original.entries.at(-1).completed = true;
+  context.updateProgress();
+  context.updateProgress();
+  assert.equal(el('overallProgressBadge').textContent, '100%');
+  assert.equal(queue.length, 1);
+  original.entries[0].sets[1].difficulty = 'hard';
+  original.entries[0].sets[1].notes = 'Last voice report before deferred finish';
+  let rests = 0;
+  context.restTimer.start = () => rests++;
+  context.startRestTimer(context.exercises[0], true, null);
+  assert.equal(rests, 0);
+  flush();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].length, 1);
+  assert.equal(records[0][0].id, before.id);
+  assert.equal(records[0][0].durationSec, 120);
+  assert.equal(records[0][0].planSnapshot.name, 'My custom workout');
+  assert.equal(records[0][0].entries[0].sets[1].difficulty, 'hard');
+  assert.equal(records[0][0].entries[0].sets[1].notes, 'Last voice report before deferred finish');
+  assert.equal(summaries.length, 1);
+  assert.equal(context.activeSession.id, 'next');
+});
+
+test('rounded progress never reaches 100 while a set is unfinished, and empty/unstarted drafts cannot auto-save', () => {
+  const { context, queue, flush, records } = autoCompletionController();
+  context.activeSession.entries = [{ exerciseId: 'many', sets: Array.from({ length: 200 }, (_, i) => set(20, 12, i < 199)) }];
+  context.updateProgress();
+  assert.equal(context.getWorkoutSetProgress().percent, 99);
+  assert.equal(context.getWorkoutSetProgress().setPercent, 99);
+  assert.equal(queue.length, 0);
+  context.activeSession.entries = [];
+  context.updateProgress();
+  assert.equal(context.getWorkoutSetProgress().percent, 0);
+  context.activeSession = { running: false, entries: [{ sets: [set(20, 12, true)] }] };
+  context.updateProgress();
+  flush();
+  assert.equal(records.length, 0);
+});
+
+test('deferred completion rechecks undo, replacement and privacy deletion instead of saving stale work', () => {
+  for (const change of ['undo', 'replace', 'erase']) {
+    const { context, queue, flush, records } = autoCompletionController();
+    context.activeSession.entries = [{ exerciseId: 'native:chest', sets: [set(20, 12, true)] }];
+    context.updateProgress();
+    assert.equal(queue.length, 1);
+    if (change === 'undo') context.activeSession.entries[0].sets[0].completed = false;
+    if (change === 'replace') context.activeSession = { id: 'different', running: true, entries: [] };
+    if (change === 'erase') context.privacyErasing = true;
+    flush();
+    assert.equal(records.length, 0, change);
+  }
+});
+
+test('manually completing a paused workout auto-saves its banked duration', () => {
+  const { context, records, flush } = autoCompletionController();
+  context.pauseWorkout();
+  context.activeSession.entries = [{ exerciseId: 'native:chest', sets: [set(20, 12, true)] }];
+  context.updateProgress();
+  flush();
+  assert.equal(records[0][0].durationSec, 120);
+});
+
+test('automatic history-save failure retains completed data, releases microphone/background audio and retries without lost duration', () => {
+  const { context, records, summaries, messages, calls, flush, el } = autoCompletionController();
+  const original = context.activeSession;
+  original.entries = [{ exerciseId: 'native:chest', sets: [set(20, 12, true, { difficulty: 'right', notes: 'keep' })] }];
+  const save = context.db.saveWorkouts;
+  context.db.saveWorkouts = () => { throw new Error('quota'); };
+  context.updateProgress();
+  flush();
+  assert.equal(context.activeSession, original);
+  assert.equal(context.workouts.length, 0);
+  assert.equal(summaries.length, 0);
+  assert.equal(records.length, 0);
+  assert.ok(messages.some((message) => message.includes('השמירה האוטומטית נכשלה')));
+  assert.equal(context.finishingWorkout, false);
+  assert.equal(context.voiceListeningActive, false);
+  assert.ok(calls.includes('stopListening') && calls.includes('stopBackground'));
+  assert.equal(el('btnPauseWorkout').disabled, true);
+  context.db.saveWorkouts = save;
+  context.finishWorkout();
+  assert.equal(records[0].length, 1);
+  assert.equal(records[0][0].durationSec, 120);
+  assert.equal(records[0][0].entries[0].sets[0].notes, 'keep');
+  assert.equal(summaries.length, 1);
+});
+
+test('failed automatic save reloads with a frozen duration and can finish later without counting idle time', () => {
+  const failed = autoCompletionController(), { context } = failed;
+  context.activeSession.entries = [{ exerciseId: 'native:chest', sets: [set(20, 12, true)] }];
+  context.db.saveWorkouts = () => { throw new Error('quota'); };
+  context.updateProgress();
+  failed.flush();
+  const snapshot = plain(failed.saved.at(-1));
+  assert.equal(snapshot.running, false);
+  assert.equal(snapshot.paused, true);
+  assert.equal(snapshot.accumulatedSec, 120);
+  const restored = autoCompletionController(snapshot);
+  restored.advance(3600000);
+  restored.context.updateProgress();
+  restored.flush();
+  assert.equal(restored.records[0][0].durationSec, 120);
+  assert.equal(restored.records[0][0].id, snapshot.id);
+});
+
+test('failure clearing the draft after history save is recoverable and cannot save the workout twice', () => {
+  const { context, records, summaries, messages, flush } = autoCompletionController();
+  const original = context.activeSession;
+  original.entries = [{ exerciseId: 'native:chest', sets: [set(20, 12, true)] }];
+  let clears = 0;
+  context.db.clearActiveSession = () => { if (++clears === 1) throw new Error('remove failed'); };
+  context.updateProgress();
+  flush();
+  assert.equal(context.activeSession, original);
+  assert.equal(records[0].length, 1);
+  assert.equal(summaries.length, 0);
+  assert.ok(messages.some((message) => message.startsWith('האימון נשמר בהיסטוריה, אך')));
+  const first = plain(context.workouts[0]);
+  context.finishWorkout();
+  assert.equal(records[1].length, 1);
+  assert.deepEqual(records[1][0], first);
+  assert.equal(summaries.length, 1);
+  assert.equal(context.activeSession.id, 'next');
+});
 
 test('actual pause controller freezes stopwatch/rest/cardio/holds and listening, retaining every entered value', async () => {
   const { context, advance, saved, calls, intervals, el } = pauseController();

@@ -57,7 +57,13 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc public static var isListening = false
     @objc public static var wantsMicrophone = false
     static var usesRecordingSession: Bool {
-        wantsMicrophone && UIApplication.shared.applicationState != .background
+        WorkoutAudioPolicy.recordingSession(microphoneRequested: wantsMicrophone,
+            foreground: UIApplication.shared.applicationState == .active,
+            keepingAlive: BackgroundAnnouncerPlugin.isKeepingAlive)
+    }
+    private static var canCapture: Bool {
+        WorkoutAudioPolicy.captureMicrophone(microphoneRequested: wantsMicrophone,
+            foreground: UIApplication.shared.applicationState == .active)
     }
 
     private let audioEngine = AVAudioEngine()
@@ -88,6 +94,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             self, selector: #selector(applicationEnteredBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationEnteredBackground),
+            name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
             self, selector: #selector(applicationBecameActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(
@@ -110,10 +119,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func announcementFinished() {
-        guard Self.usesRecordingSession else { return }
-        generation = UUID()
-        pendingUtterance?.cancel()
-        utterance = SpeechUtteranceBuffer()
+        guard Self.canCapture else { return }
         restart(after: 0.2)
     }
 
@@ -124,14 +130,14 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc private func applicationBecameActive() {
         audioInterrupted = false
         consecutiveFailures = 0
-        if Self.usesRecordingSession && !Self.isListening && !BackgroundAnnouncerPlugin.isAnnouncing {
+        if Self.canCapture && !Self.isListening && !BackgroundAnnouncerPlugin.isAnnouncing {
             restart(after: 0.2)
         }
     }
 
     @objc private func audioRouteChanged(_ notification: Notification) {
         DispatchQueue.main.async {
-            guard Self.usesRecordingSession, !self.audioInterrupted, !BackgroundAnnouncerPlugin.isAnnouncing else { return }
+            guard Self.canCapture, !self.audioInterrupted, !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             if notification.name == .AVAudioEngineConfigurationChange && self.audioEngine.isRunning { return }
             if let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
                AVAudioSession.RouteChangeReason(rawValue: raw) == .categoryChange,
@@ -192,7 +198,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             self.contextualPhrases = Array((call.getArray("contextualStrings") as? [String] ?? [])
                 .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
-                if Self.usesRecordingSession && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
+                if Self.canCapture && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
                 call.resolve(["inputName": AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? ""])
             } catch {
                 Self.wantsMicrophone = false
@@ -219,6 +225,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func begin() throws {
+        guard Self.canCapture else { return }
         endRecognition()
         guard SFSpeechRecognizer.authorizationStatus() == .authorized,
               AVAudioSession.sharedInstance().recordPermission == .granted else {
@@ -226,7 +233,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let currentGeneration = generation
 
-        try WorkoutAudioSession.activate(recording: true, force: !audioEngine.isRunning)
+        try WorkoutAudioSession.activate(recording: true, force: audioInterrupted)
         audioInterrupted = false
 
         let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
@@ -311,13 +318,13 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.restart(after: 0.05)
                 }
             }
-            let rotation = DispatchWorkItem { [weak self] in
-                guard let self = self, self.generation == currentGeneration, Self.isListening else { return }
-                self.restart(after: 0.05)
-            }
-            pendingRotation = rotation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: rotation)
         }
+        let rotation = DispatchWorkItem { [weak self] in
+            guard let self = self, self.generation == currentGeneration, Self.isListening else { return }
+            self.restart(after: 0.05)
+        }
+        pendingRotation = rotation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: rotation)
     }
 
     private func endRecognition() {
@@ -366,7 +373,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         let currentGeneration = generation
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            guard self.generation == currentGeneration, Self.usesRecordingSession, !self.audioInterrupted,
+            guard self.generation == currentGeneration, Self.canCapture, !self.audioInterrupted,
                   !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()

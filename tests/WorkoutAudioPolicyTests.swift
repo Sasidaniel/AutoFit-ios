@@ -29,11 +29,44 @@ struct WorkoutAudioPolicyTests {
         precondition((1...4).map { WorkoutAudioPolicy.recognitionRetryDelay(failures: $0)! } == [1, 2, 3, 4])
         precondition(WorkoutAudioPolicy.recognitionRetryDelay(failures: 5) == nil)
         precondition(WorkoutAudioPolicy.recognitionRetryDelay(failures: 6) == nil)
+        testForegroundHandover()
         testAnnouncementRecovery()
-        print("Audio routing, bounded recognition retries and announcement recovery passed")
+        print("Audio routing, foreground handover, bounded recognition retries and announcement recovery passed")
     }
 
     private final class Utterance {}
+
+    private static func testForegroundHandover() {
+        for requested in [false, true] {
+            for foreground in [false, true] {
+                for keepingAlive in [false, true] {
+                    let recording = WorkoutAudioPolicy.recordingSession(microphoneRequested: requested,
+                        foreground: foreground, keepingAlive: keepingAlive)
+                    let capture = WorkoutAudioPolicy.captureMicrophone(microphoneRequested: requested,
+                        foreground: foreground)
+                    if !requested {
+                        precondition(!recording && !capture)
+                    } else if foreground {
+                        precondition(recording && capture)
+                    } else {
+                        precondition(!capture && recording == keepingAlive)
+                    }
+                }
+            }
+        }
+        let recording = [true, false, true, false, true].map {
+            WorkoutAudioPolicy.recordingSession(microphoneRequested: true, foreground: $0, keepingAlive: true)
+        }
+        let capture = [true, false, true, false, true].map {
+            WorkoutAudioPolicy.captureMicrophone(microphoneRequested: true, foreground: $0)
+        }
+        precondition(recording.allSatisfy { $0 })
+        precondition(capture == [true, false, true, false, true])
+        precondition(!WorkoutAudioPolicy.recordingSession(microphoneRequested: false,
+            foreground: true, keepingAlive: true))
+        precondition(!WorkoutAudioPolicy.recordingSession(microphoneRequested: true,
+            foreground: false, keepingAlive: false))
+    }
 
     private static func testAnnouncementRecovery() {
         var queue = WorkoutAnnouncementQueue()

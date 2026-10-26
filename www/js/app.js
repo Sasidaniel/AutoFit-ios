@@ -70,6 +70,8 @@ let announcementPlanQueued = false;
 let announcementPlanKey = '';
 let announcementPlanRevision = 0;
 let announcementPlanChain = Promise.resolve();
+let pendingWorkoutAutoFinish = null;
+let finishingWorkout = false;
 
 const stopwatch = new Stopwatch((elapsed) => {
   const display = el('workoutTimerDisplay');
@@ -220,7 +222,7 @@ document.addEventListener('visibilitychange', () => {
     syncWorkoutActivity();
   }
   syncNativeAnnouncementPlan();
-  updateVoiceListeningState(); // pause/resume mic listening with app foreground state
+  updateVoiceListeningState();
 });
 // Some browsers only grant the wake lock from within a user gesture — retry on first tap.
 document.addEventListener('click', () => { if (!wakeLockRef) requestWakeLock(); }, { once: false });
@@ -975,63 +977,81 @@ function openWorkoutSummary(record, celebration = '') {
 }
 
 function finishWorkout() {
-  activityReadyEnabled = false;
-  stopWorkoutTimers();
-  const durationSec = activeSession.paused ? activeSession.accumulatedSec || 0 : stopwatch.stop();
-  activeSession.running = false;
-  activeSession.accumulatedSec = durationSec;
+  if (finishingWorkout) return;
+  finishingWorkout = true;
+  try {
+    activityReadyEnabled = false;
+    const durationSec = activeSession.running ? stopwatch.stop() : activeSession.accumulatedSec || 0;
+    activeSession.running = false;
+    activeSession.accumulatedSec = durationSec;
+    stopWorkoutTimers();
+    if (activeSession.entries.length > 0 && activeSession.entries.every(isEntryDone)) {
+      activeSession.paused = true;
+      persistActiveSession();
+    }
 
-  const recordedEntries = trainingTools.workoutHistoryEntries(activeSession);
-  const hasCompleted = recordedEntries.some((e) =>
-    e.type === 'cardio' ? e.completed : e.sets.some((s) => s.completed)
-  );
-  if (hasCompleted) {
-    const record = {
-      id: activeSession.id,
-      dateISO: (activeSession.startedAt || new Date().toISOString()),
-      finishedAt: new Date().toISOString(),
-      durationSec: Math.round(durationSec),
-      ...(activeSession.planSnapshot ? { planId: activeSession.planId, planSnapshot: JSON.parse(JSON.stringify(activeSession.planSnapshot)) } : {}),
-      ...(native.isNative() ? { healthSyncPending: true } : {}),
-      healthDelivery: { status: native.isNative() ? 'pending' : 'unavailable',
-        reason: native.isNative() ? '' : 'browser', updatedAt: new Date().toISOString() },
-      entries: recordedEntries
-        .map((e) => {
-          if (e.type === 'cardio') {
-            return e.completed
-              ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '',
-                ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}),
-                ...(e.removedFromWorkout ? { removedFromWorkout: true } : {}) }
-              : null;
-          }
-          const completed = insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
-          return e.removedFromWorkout ? { ...completed, removedFromWorkout: true } : completed;
-        })
-        .filter((e) => e && (e.type === 'cardio' || e.sets.length > 0)),
-    };
-    workouts.push(record);
-    db.saveWorkouts(workouts);
-    showToast('האימון נשמר בהיסטוריה ✅');
-    if (settings.voiceAnnouncements) speak('כל הכבוד על האימון');
-    showCelebration(record);
-    // Auto-sync to Apple Health on native — no manual "save to Health" tap needed.
-    if (native.isNative()) syncWorkoutToHealth([record], { requestAuthorization: false });
-  } else {
-    showToast('האימון בוטל (לא הושלם אף סט)');
+    const recordedEntries = trainingTools.workoutHistoryEntries(activeSession);
+    const hasCompleted = recordedEntries.some((e) =>
+      e.type === 'cardio' ? e.completed : e.sets.some((s) => s.completed)
+    );
+    let record;
+    if (hasCompleted) {
+      record = workouts.find((workout) => workout.id === activeSession.id) || {
+        id: activeSession.id,
+        dateISO: (activeSession.startedAt || new Date().toISOString()),
+        finishedAt: new Date().toISOString(),
+        durationSec: Math.round(durationSec),
+        ...(activeSession.planSnapshot ? { planId: activeSession.planId, planSnapshot: JSON.parse(JSON.stringify(activeSession.planSnapshot)) } : {}),
+        ...(native.isNative() ? { healthSyncPending: true } : {}),
+        healthDelivery: { status: native.isNative() ? 'pending' : 'unavailable',
+          reason: native.isNative() ? '' : 'browser', updatedAt: new Date().toISOString() },
+        entries: recordedEntries
+          .map((e) => {
+            if (e.type === 'cardio') {
+              return e.completed
+                ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '',
+                  ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}),
+                  ...(e.removedFromWorkout ? { removedFromWorkout: true } : {}) }
+                : null;
+            }
+            const completed = insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
+            return e.removedFromWorkout ? { ...completed, removedFromWorkout: true } : completed;
+          })
+          .filter((e) => e && (e.type === 'cardio' || e.sets.length > 0)),
+      };
+      const next = [...workouts.filter((workout) => workout.id !== record.id), record];
+      db.saveWorkouts(next);
+      workouts = next;
+    }
+
+    db.clearActiveSession();
+    activeSession = buildDraftSession();
+    syncWorkoutActivity();
+    syncNativeAnnouncementPlan();
+    voiceCountingState = null;
+    updateVoiceBadgeForListeningState();
+    el('workoutTimerDisplay').textContent = '00:00';
+    el('btnStartWorkout').classList.remove('hidden');
+    el('btnFinishWorkout').classList.add('hidden');
+    renderWorkoutTab();
+    renderHistoryTab();
+    if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
+    if (record) {
+      showToast('האימון נשמר בהיסטוריה ✅');
+      if (settings.voiceAnnouncements) speak('כל הכבוד על האימון');
+      showCelebration(record);
+      if (native.isNative()) syncWorkoutToHealth([record], { requestAuthorization: false });
+    } else {
+      showToast('האימון בוטל (לא הושלם אף סט)');
+    }
+  } finally {
+    finishingWorkout = false;
+    if (activeSession.paused) {
+      updateWorkoutPauseControls();
+      updateVoiceListeningState();
+      if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
+    }
   }
-
-  db.clearActiveSession();
-  activeSession = buildDraftSession();
-  syncWorkoutActivity();
-  syncNativeAnnouncementPlan();
-  voiceCountingState = null;
-  updateVoiceBadgeForListeningState();
-  el('workoutTimerDisplay').textContent = '00:00';
-  el('btnStartWorkout').classList.remove('hidden');
-  el('btnFinishWorkout').classList.add('hidden');
-  renderWorkoutTab();
-  renderHistoryTab();
-  if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
 }
 
 function persistActiveSession() {
@@ -1642,8 +1662,10 @@ function getWorkoutSetProgress() {
   const total = strengthEntries.reduce((a, e) => a + e.sets.length, 0);
   const done = strengthEntries.reduce((a, e) => a + e.sets.filter((s) => s.completed).length, 0);
   const cardio = activeSession.entries.filter((entry) => entry.type === 'cardio');
-  return { total, done, percent: total ? Math.round((done / total) * 100)
-    : cardio.length ? Math.round(cardio.filter((entry) => entry.completed).length / cardio.length * 100) : 0 };
+  const units = strengthEntries.reduce((sum, entry) => sum + Math.max(1, entry.sets.length), 0) + cardio.length;
+  const completed = done + cardio.filter((entry) => entry.completed).length;
+  const percent = units ? completed === units ? 100 : Math.min(99, Math.round(completed / units * 100)) : 0;
+  return { total, done, percent, setPercent: total ? done === total ? 100 : Math.min(99, Math.round(done / total * 100)) : 0 };
 }
 
 function cardioCompletionMessage(entry) {
@@ -1652,24 +1674,47 @@ function cardioCompletionMessage(entry) {
   return `${message}. ${getWorkoutSetProgress().percent} אחוז מהאימון הושלמו`;
 }
 
+function scheduleWorkoutAutoFinish() {
+  const session = activeSession;
+  const complete = () => (session.running || session.paused) && session.entries.length > 0
+    && session.entries.every(isEntryDone);
+  if (!complete() || pendingWorkoutAutoFinish === session || finishingWorkout) return;
+  pendingWorkoutAutoFinish = session;
+  // Let the completion handler finish persisting voice ratings/targets first.
+  queueMicrotask(() => {
+    if (pendingWorkoutAutoFinish !== session) return;
+    pendingWorkoutAutoFinish = null;
+    if (activeSession !== session || !complete() || privacyErasing) return;
+    try {
+      finishWorkout();
+    } catch (error) {
+      console.error('Automatic workout save failed', error);
+      showToast(workouts.some((workout) => workout.id === session.id)
+        ? 'האימון נשמר בהיסטוריה, אך סגירת מסך האימון נכשלה. בדוק את ההיסטוריה לפני ניסיון נוסף.'
+        : 'השמירה האוטומטית נכשלה. נתוני האימון נשמרו במסך; לחץ על סיום אימון כדי לנסות שוב.');
+    }
+  });
+}
+
 function updateProgress() {
   if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');
-  const { total, done, percent: pct } = getWorkoutSetProgress();
+  const { total, done, percent: pct, setPercent } = getWorkoutSetProgress();
   const progressEntries = strengthEntries.length ? strengthEntries : activeSession.entries.filter((entry) => entry.type === 'cardio');
-  el('setsProgressText').textContent = total || !activeSession.entries.length ? `${done} / ${total} סטים הושלמו (${pct}%)`
+  el('setsProgressText').textContent = total || !activeSession.entries.length ? `${done} / ${total} סטים הושלמו (${setPercent}%)`
     : i18n.text(`${progressEntries.filter((entry) => entry.completed).length} / ${progressEntries.length} מקטעי אירובי הושלמו (${pct}%)`);
-  el('setsProgressFill').style.width = `${pct}%`;
+  el('setsProgressFill').style.width = `${total ? setPercent : pct}%`;
 
   const totalEx = activeSession.entries.length;
   const doneEx = activeSession.entries.filter((e) => e.type === 'cardio' ? e.completed : e.sets.length && e.sets.every((s) => s.completed)).length;
-  const exPct = totalEx ? Math.round((doneEx / totalEx) * 100) : 0;
+  const exPct = totalEx ? doneEx === totalEx ? 100 : Math.min(99, Math.round(doneEx / totalEx * 100)) : 0;
   el('exProgressText').textContent = `${doneEx} / ${totalEx} תרגילים הושלמו (${exPct}%)`;
   el('exProgressFill').style.width = `${exPct}%`;
 
-  // Overall workout percentage is based on sets completion (the finest-grained measure).
+  // Cardio contributes one unit; 100% requires every planned activity.
   el('overallProgressBadge').textContent = `${pct}%`;
   refreshDifficultyFeedback();
+  scheduleWorkoutAutoFinish();
 }
 
 function refreshDifficultyFeedback() {
@@ -1683,6 +1728,9 @@ function refreshDifficultyFeedback() {
       card.appendChild(feedback);
     }
     const completed = entry.sets.map((set, index) => ({ set, index })).filter(({ set }) => set.completed);
+    const key = JSON.stringify(completed.map(({ set, index }) => [index, set.difficulty || '']));
+    if (feedback.dataset.completionKey === key) return;
+    feedback.dataset.completionKey = key;
     feedback.classList.toggle('hidden', !completed.length);
     feedback.innerHTML = completed.length ? `<div class="field-label">איך היה? אפשר לדלג</div>
       ${completed.map(({ set, index }) => `<div class="set-feedback-row" role="group" aria-label="סט ${index + 1}">
@@ -2594,8 +2642,8 @@ function handleVoiceTranscript(transcript) {
 /* ---------------- Voice commands: listening lifecycle ---------------- */
 // Listens for the whole time the Workout tab is open and the app is in the
 // foreground (not just once a workout is running — "start workout" itself is
-// a voice command), except during an explicit workout pause. Otherwise it is
-// gated on tab + visibility + setting + permission, independent of running.
+// a voice command), except during an explicit workout pause. Native lifecycle
+// stops background capture without discarding the requested listening state.
 let voiceListeningActive = false;
 let voiceActivationPending = false;
 let voiceListeningRevision = 0;
@@ -2617,10 +2665,15 @@ async function requestVoiceActivation() {
 }
 async function updateVoiceListeningState() {
   if (!native.isNative()) return;
-  const should = currentTab === 'workout'
+  const requested = currentTab === 'workout'
     && !activeSession.paused
-    && document.visibilityState === 'visible'
     && settings.voiceCommandsEnabled === true;
+  // Native lifecycle pauses capture, retaining the workout's existing audio route.
+  if (requested && document.visibilityState !== 'visible') {
+    pendingVoiceFinish = null;
+    return;
+  }
+  const should = requested && document.visibilityState === 'visible';
   if (!should) pendingVoiceFinish = null;
   if (should === voiceListeningActive) return;
   const revision = ++voiceListeningRevision;
@@ -2646,7 +2699,7 @@ async function updateVoiceListeningState() {
 
 
 function startRestTimer(ex, exerciseDone, nextExerciseName) {
-  if (activeSession.paused) return;
+  if (activeSession.paused || activeSession.entries.length > 0 && activeSession.entries.every(isEntryDone)) return;
   cancelWorkoutGreeting();
   const seconds = ex.restSeconds || settings.restSeconds || 90;
   el('restExerciseName').setAttribute('data-exercise-name', ex.name);
