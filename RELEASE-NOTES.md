@@ -1,11 +1,19 @@
 # AutoFit release notes
 
-## 1.0 (36) - Approved release candidate (2026-10-26)
+## 1.0 (36) - Verified internal TestFlight release (2026-10-26)
 
 App shell `autofit-v69`. The owner explicitly approved publishing the code and
 documentation and releasing build 36 to internal TestFlight. These changes are
-**not in TestFlight build 35**. The release is pending native build and Apple
-verification; approval alone does not establish successful delivery.
+**not in TestFlight build 35**. **506 Node 22 regressions, all four Swift suites,
+signed app/widget archive, export and upload passed in macOS CI.**
+
+**Apple verified build 36 as VALID / IN_BETA_TESTING at 2026-10-26 13:06:13 UTC.**
+Released binary source:
+[`b9c7b0564b6b8f968fa78f67cc68d6f2674409ca`](https://github.com/Sasidaniel/AutoFit-ios/commit/b9c7b0564b6b8f968fa78f67cc68d6f2674409ca).
+Apple build ID: `da47390a-c4f6-4c16-bb83-6a9ec5853965`.
+The [build and verification run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40327116066)
+completed successfully. External state: `READY_FOR_BETA_SUBMISSION`; no external
+beta or App Store submission was performed.
 
 - Completing every current-workout set and cardio segment now finishes and saves
   the workout without a confirmation prompt. Existing partial/manual finish
@@ -89,12 +97,12 @@ itself as manual-only rather than claiming native microphone support.
 JavaScript native-lifecycle contract checks cover redundant visibility calls, explicit disable,
 tab departure/pause, pending startup and background finish-confirmation expiry.
 Swift tests were extended with the foreground/keepalive/capture state matrix
-and repeated background/foreground transitions, but could not be executed on
-this Windows host: neither `swiftc` nor the iOS SDK is available. The approved
-release workflow must run all Swift suites and compile the signed app/widget
-before upload. Actual music, recognition accuracy and physical touch smoothness
-still require iPhone acceptance; browser checks are not a substitute. No actual
-user storage was read or modified during the isolated browser checks.
+and repeated background/foreground transitions. They could not run locally on
+Windows, but subsequently compiled and passed in the approved macOS release
+workflow, together with all other Swift suites and the signed app/widget build.
+Actual music, recognition accuracy and physical touch smoothness still require
+iPhone acceptance; browser and CI checks are not a substitute. No actual user
+storage was read or modified during the isolated browser checks.
 
 ## 1.0 (35) - Verified internal TestFlight release (2026-10-25)
 
