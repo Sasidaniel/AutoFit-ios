@@ -1,11 +1,23 @@
 # AutoFit release notes
 
-## 1.0 (37) - Supersets and workout defaults release candidate (2026-10-28)
+## 1.0 (37) - Verified internal TestFlight release (2026-10-28)
 
 App shell `autofit-v70`. The owner approved release 37 after adding the
-reset-to-original-program behavior below. **Not uploaded to TestFlight yet**;
-build 36 remains the latest verified release until the delivery receipt is
-recorded here.
+reset-to-original-program behavior below.
+
+**Apple verified build 37 as VALID / IN_BETA_TESTING at 2026-10-28 08:33:36 UTC.**
+Released binary source:
+[`b635479afe86407bd93ebeb8a8b47d762df4e6f4`](https://github.com/Sasidaniel/AutoFit-ios/commit/b635479afe86407bd93ebeb8a8b47d762df4e6f4).
+Apple build ID: `c4ddf9b8-26b0-4894-a1ed-0c3ab8ab3165`.
+The [signed build and upload run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40657007037)
+passed all **516 Node 22 regressions, all four Swift suites, app/widget archive,
+export and upload**. Its final availability check received Apple HTTP 422 after
+the build became VALID / READY_FOR_BETA_TESTING. The separate
+[existing-build verification](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40657645607)
+then passed and confirmed **VALID / IN_BETA_TESTING**, using the same source
+and already-uploaded build. **One binary upload; no rebuild or duplicate upload.**
+External state: `READY_FOR_BETA_SUBMISSION`; no external beta or App Store
+submission was performed.
 
 1. Added an **Exercises > Supersets** category with three curated pairs:
    leg press + leg-press calf raises, chest press + seated cable row, and
