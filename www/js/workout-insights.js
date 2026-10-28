@@ -17,9 +17,10 @@ export function completedEntrySnapshot(entry, exercise) {
     inputType,
     category: exercise?.category || '',
     ...(exercise?.catalogId ? { catalogId: exercise.catalogId } : {}),
+    ...(exercise?.superset ? { superset: JSON.parse(JSON.stringify(exercise.superset)) } : {}),
     ...(entry.targetReps ? { targetReps: Number(entry.targetReps) } : {}),
     comparisonKey: exercise && (exercise.catalogId || !UNSPECIFIED_VARIANTS.has(exercise.name))
-      ? JSON.stringify([exercise.name, exercise.notes || '', inputType]) : null,
+      ? JSON.stringify([exercise.name, exercise.notes || '', inputType, ...(exercise.superset ? [exercise.superset.id] : [])]) : null,
     loadKind: exercise?.loadKind === 'assistance' || exercise?.name === 'גרביטון' || exercise?.catalogId === 'assisted' ? 'assistance' : 'external',
     sets: entry.sets.filter((set) => set.completed).map((set) => ({
       weightKg: Number(set.weightKg) || 0,

@@ -1,6 +1,86 @@
 import { LIBRARY_EXERCISES, PLANNING_EXERCISES, exerciseGuide } from './exercise-library.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+export const SUPERSET_RECIPES = [
+  { id: 'leg-press-calves', name: 'לחיצת רגליים + תאומים — סופר סט', guides: ['legPress', 'legPressCalf'], reps: 15 },
+  { id: 'chest-row', name: 'לחיצת חזה + חתירה — סופר סט', guides: ['chest', 'row'], reps: 12 },
+  { id: 'arms', name: 'יד קדמית + יד אחורית — סופר סט', guides: ['curl', 'triceps'], reps: 12 },
+];
+
+export function supersetExercises(recipeId, catalog, sets = 3) {
+  const recipe = SUPERSET_RECIPES.find((item) => item.id === recipeId);
+  if (!recipe || !Number.isInteger(sets) || sets < 1 || sets > 100) throw new Error('צמד הסופר סט אינו תקין');
+  const available = [...PLANNING_EXERCISES, ...LIBRARY_EXERCISES, ...catalog];
+  return recipe.guides.map((guideId, index) => {
+    const source = available.find((exercise) => exercise.catalogId === guideId && !exercise.superset);
+    if (!source) throw new Error('אחד מתרגילי הסופר סט אינו זמין');
+    return { ...copy(source), id: `superset:${recipe.id}:${index + 1}`, active: false,
+      defaultSets: sets, defaultReps: String(recipe.reps), targetReps: recipe.reps, targetWeightKg: null,
+      superset: { id: recipe.id, order: index, name: recipe.name } };
+  });
+}
+
+export function upgradeSavedASuperset(settings) {
+  if (!settings.training?.plans) return settings;
+  let changed = false;
+  const plans = settings.training.plans.map((plan) => {
+    if (plan.legCalfSupersetV1) return plan;
+    const namedA = /^(?:(?:אימון|תוכנית|תכנית)(?:\s+אימונים)?\s*)?A(?:$|[\s:—-])/i.test(String(plan.name || '').trim());
+    let upgraded = false;
+    const originals = [];
+    const sessions = plan.sessions.map((day, dayIndex) => {
+      if (!(String(day.label || '').trim().toUpperCase() === 'A' || namedA && plan.sessions.length === 1)) return day;
+      const matches = day.exercises.filter((exercise) => !exercise.superset
+        && (exercise.catalogId === 'legPress' || exercise.name === 'לחיצת רגליים'));
+      if (matches.length !== 1 || day.exercises.some((exercise) => exercise.superset?.id === 'leg-press-calves')) return day;
+      const original = matches[0];
+      const sets = Number(original.defaultSets || 3);
+      if (!Number.isInteger(sets) || sets < 1 || sets > 100) return day;
+      const pair = supersetExercises('leg-press-calves', [], sets);
+      pair.forEach((part) => { part.restSeconds = original.restSeconds || settings.restSeconds || 90; });
+      if (day.exercises.some((exercise) => pair.some((part) => part.id === exercise.id))) return day;
+      originals.push({ dayIndex, exercise: copy(original) });
+      upgraded = true;
+      return { ...day, exercises: day.exercises.flatMap((exercise) => exercise === original ? pair.map(planExercise) : [exercise]) };
+    });
+    if (!upgraded) return plan;
+    changed = true;
+    return { ...plan, sessions, legCalfSupersetV1: { originals } };
+  });
+  return changed ? { ...settings, training: { ...settings.training, plans } } : settings;
+}
+
+export function restoreSavedASuperset(plan) {
+  const backup = plan.legCalfSupersetV1;
+  if (!backup?.originals || backup.restored) throw new Error('לא נמצא גיבוי ללחיצת הרגליים המקורית');
+  const next = copy(plan);
+  for (const { dayIndex, exercise } of backup.originals) {
+    const day = next.sessions[dayIndex];
+    const index = day?.exercises.findIndex((item) => item.superset?.id === 'leg-press-calves');
+    if (index == null || index < 0 || day.exercises.some((item) => item.id === exercise.id)) {
+      throw new Error('The saved plan changed; reopen the editor');
+    }
+    day.exercises = day.exercises.filter((item) => item.superset?.id !== 'leg-press-calves');
+    day.exercises.splice(index, 0, copy(exercise));
+  }
+  next.legCalfSupersetV1.restored = true;
+  return next;
+}
+
+export function supersetNextEntry(session, entry) {
+  const group = entry.exerciseSnapshot?.superset;
+  if (!group || !entry.sets?.length) return null;
+  const members = session.entries.filter((candidate) => candidate.exerciseSnapshot?.superset?.id === group.id);
+  if (members.length !== 2) return null;
+  const remaining = members.filter((candidate) => candidate.sets.some((set) => !set.completed));
+  return remaining.sort((a, b) => a.sets.filter((set) => set.completed).length - b.sets.filter((set) => set.completed).length
+    || a.exerciseSnapshot.superset.order - b.exerciseSnapshot.superset.order)[0] || null;
+}
+
+export function supersetNeedsRest(session, entry) {
+  const next = supersetNextEntry(session, entry);
+  return !next || next === entry || next.exerciseSnapshot.superset.order === 0;
+}
 export const PLAN_MUSCLES = ['חזה', 'גב', 'רגליים', 'כתפיים', 'יד קדמית', 'יד אחורית', 'בטן', 'ישבן', 'שוקיים'];
 const META = {
   squat: ['squat', 'רגליים', ['ישבן'], true], goblet: ['squat', 'רגליים', ['ישבן'], true],
@@ -64,8 +144,8 @@ export function planningCatalog(catalog) {
 
 export function planExercise(exercise) {
   return Object.fromEntries(['id', 'catalogId', 'name', 'category', 'inputType', 'defaultSets', 'defaultReps',
-    'targetReps', 'targetWeightKg', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals']
-    .filter((key) => exercise[key] !== undefined).map((key) => [key, key === 'intervals' ? copy(exercise[key]) : exercise[key]]));
+    'targetReps', 'targetWeightKg', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals', 'superset']
+    .filter((key) => exercise[key] !== undefined).map((key) => [key, ['intervals', 'superset'].includes(key) ? copy(exercise[key]) : exercise[key]]));
 }
 
 export function createSavedWorkout(name, state, id) {
@@ -92,6 +172,12 @@ export function trainingMetadata(exercise) {
   const meta = key && Object.hasOwn(META, key) ? META[key] : info?.movement
     ? [info.movement, info.muscles[0], info.muscles.slice(1), info.compound === true] : null;
   return info && meta ? { movement: meta[0], primary: meta[1], secondary: meta[2], compound: meta[3], equipment: info.equipment } : null;
+}
+
+export function supportsPlanMuscles(muscles, exercise) {
+  const primary = trainingMetadata(exercise)?.primary;
+  return !muscles?.length || muscles.includes(primary)
+    || exercise.superset?.id === 'leg-press-calves' && primary === 'שוקיים' && muscles.includes('רגליים');
 }
 
 export function editSavedPlanExercise(original, changes) {
@@ -136,12 +222,12 @@ export function replaceSavedPlan(plans, original, draft) {
     if (new Set(day.exercises.map((exercise) => exercise.id)).size !== day.exercises.length) {
       throw new Error('Choose distinct exercises in each session');
     }
-    if (day.splitMuscles && day.exercises.some((exercise) => !day.splitMuscles.includes(trainingMetadata(exercise)?.primary))) {
+    if (day.splitMuscles && day.exercises.some((exercise) => !supportsPlanMuscles(day.splitMuscles, exercise))) {
       throw new Error('Selected muscle groups do not cover every split day');
     }
     const required = day.requiredMuscles || draft.options?.muscles || [];
     if (required.some((muscle) => !day.exercises.some((exercise) => trainingMetadata(exercise)?.primary === muscle))
-      || draft.options?.muscles?.length && day.exercises.some((exercise) => !draft.options.muscles.includes(trainingMetadata(exercise)?.primary))) {
+      || draft.options?.muscles?.length && day.exercises.some((exercise) => !supportsPlanMuscles(draft.options.muscles, exercise))) {
       throw new Error('Keep every selected muscle group in the plan');
     }
   }
@@ -307,6 +393,24 @@ export function estimateWorkoutDuration(session, catalog = [], defaultRest = 90,
     const estimate = estimateEntryDuration(entry, exercise, defaultRest, { remaining: false, ...options });
     for (const key of Object.keys(result)) result[key] += estimate[key];
   }
+  const seen = new Set();
+  for (const entry of session.entries) {
+    const group = entry.exerciseSnapshot?.superset;
+    if (!group || seen.has(group.id)) continue;
+    seen.add(group.id);
+    const members = session.entries.filter((item) => item.exerciseSnapshot?.superset?.id === group.id);
+    if (members.length !== 2) continue;
+    const restFor = (item) => {
+      const exercise = item.exerciseSnapshot || byId.get(item.exerciseId);
+      return Number(exercise?.restSeconds) > 0 ? Number(exercise.restSeconds) : defaultRest;
+    };
+    const counts = members.map((item) => item.sets.filter((set) => !options.remaining || !set.completed).length);
+    const individual = counts.reduce((sum, count, index) => sum + count * restFor(members[index]), 0);
+    const second = members.find((item) => item.exerciseSnapshot.superset.order === 1) || members[1];
+    const paired = Math.min(...counts) * restFor(second)
+      + counts.reduce((sum, count, index) => sum + (count - Math.min(...counts)) * restFor(members[index]), 0);
+    for (const key of ['seconds', 'lowSeconds', 'highSeconds', 'restSeconds']) result[key] -= individual - paired;
+  }
   if (options.remaining && options.restSeconds > 0) {
     // This is the unexpired rest for an already-completed set, not another future set.
     for (const key of ['seconds', 'lowSeconds', 'highSeconds', 'restSeconds']) result[key] += options.restSeconds;
@@ -347,7 +451,7 @@ export function timeBudgetProposal(session, catalog, minutes, defaultRest = 90, 
     const role = budgetRole(exercise);
     return { entry, index, ...estimateEntryDuration(entry, exercise, defaultRest),
       group: entry.type === 'cardio' ? null : role.group,
-      protected: entryHasActivity(entry) || entry.exerciseId === currentId || entry.type !== 'cardio' && !role.known,
+      protected: !!entry.exerciseSnapshot?.superset || entryHasActivity(entry) || entry.exerciseId === currentId || entry.type !== 'cardio' && !role.known,
       priority: entry.exerciseId === 'warmup' ? 0 : entry.exerciseId === 'cooldown' ? 4
         : role.priority };
   });
@@ -397,6 +501,9 @@ export function applyTimeBudget(session, selectedIds, minutes, catalog = []) {
   const currentId = session.currentExerciseId || session.running ? currentWorkoutEntry(session)?.exerciseId : null;
   if (session.entries.some((entry) => (entryHasActivity(entry) || entry.exerciseId === currentId)
     && !selected.has(entry.exerciseId))) throw new Error('Cannot defer an exercise with recorded or in-progress data');
+  if (session.entries.some((entry) => entry.exerciseSnapshot?.superset && !selected.has(entry.exerciseId))) {
+    throw new Error('יש להשאיר את שני חלקי הסופר סט יחד');
+  }
   if (!selected.size || selectedIds.some((id) => !session.entries.some((entry) => entry.exerciseId === id))) {
     throw new Error('Choose at least one existing exercise');
   }
@@ -490,7 +597,7 @@ export function planCatalog(catalog, equipment, location) {
   const allowed = new Set(['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר', ...equipment]);
   return catalog.filter((exercise) => {
     const info = exerciseGuide(exercise);
-    return exercise.catalogId && trainingMetadata(exercise) && info
+    return !exercise.superset && exercise.catalogId && trainingMetadata(exercise) && info
       && info.equipment.every((item) => allowed.has(item))
       && (info.places || (info.equipment.includes('מכונה') ? ['gym'] : ['home', 'gym'])).includes(location);
   });
@@ -674,6 +781,7 @@ export function activatePlanExercises(catalog, proposed) {
   // Preserve canonical names, custom notes, images and every unselected library entry.
   return [...proposed.map((item) => ({ ...copy(catalog.find((exercise) => exercise.id === item.id)), active: true,
     defaultSets: item.defaultSets, defaultReps: item.defaultReps, targetReps: item.targetReps,
+    superset: item.superset ? copy(item.superset) : null,
     ...Object.fromEntries(['targetWeightKg', 'holdSeconds', 'pace'].filter((key) => Object.hasOwn(item, key)).map((key) => [key, item[key]])),
     ...(item.inputType === 'cardio' ? { intervals: item.intervals ? copy(item.intervals) : null } : {}),
     restSeconds: item.restSeconds, ...(item.inputType === 'cardio' ? { durationMinutes: item.durationMinutes,

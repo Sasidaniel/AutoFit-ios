@@ -1,5 +1,86 @@
 # AutoFit release notes
 
+## 1.0 (37) - Supersets and workout defaults release candidate (2026-10-28)
+
+App shell `autofit-v70`. The owner approved release 37 after adding the
+reset-to-original-program behavior below. **Not uploaded to TestFlight yet**;
+build 36 remains the latest verified release until the delivery receipt is
+recorded here.
+
+1. Added an **Exercises > Supersets** category with three curated pairs:
+   leg press + leg-press calf raises, chest press + seated cable row, and
+   dumbbell curls + cable triceps extensions. Each card includes both authored
+   guides and an explicit action to add the complete pair. Pairs are recipes,
+   not extra exercises counted twice in the catalog.
+2. The leg/calf recipe prescribes **15 repetitions per part**. Each part has
+   its own identity, load, repetitions, set notes, difficulty and guide.
+   The sequence is first part, second part, then the configured rest before
+   the next round. No rest overlay is imposed between parts; taking extra
+   rest is always allowed. Full-workout completion still auto-saves without
+   starting a final rest.
+3. Updated only an explicitly named saved **A** workout or an explicitly
+   labeled **A** split day containing one unambiguous leg press. Its original
+   exercise, including custom fields, is backed up inside the saved plan.
+   Set count and rest are preserved, with separate unset loads for the two
+   new parts rather than copying the old leg-press load to calf raises.
+   Ambiguous matches are left unchanged. This is additive to the library;
+   it does not rewrite other saved plans, old history or a workout in progress.
+4. The saved-plan editor can add complete recipe pairs, edit each part's
+   targets, or restore the original backed-up leg press. Restoration remains
+   a draft until **Save changes**; cancellation leaves the stored plan intact.
+   Choose the updated saved A explicitly for its next workout.
+5. Added **leg-press calf raises** and **standing machine calf raises** with
+   bilingual authored instructions, schematics and reviewed external
+   demonstrations. Existing bodyweight, single-leg, dumbbell and seated
+   machine calf options remain available under legs. There are now
+   **132 built-in definitions**: 25 seed, 101 library and 6 planning exercises,
+   covered by **118 authored guides**.
+6. Calf work and leg-press work retain separate measurements and muscle-work
+   statistics. Superset metadata survives saved plans, activation and history,
+   and is identified in history and text/image/PDF sharing. Grouped performance
+   is not silently compared against a standalone prior baseline.
+7. Duration estimates count both parts' work and paired rests rather than
+   charging a full rest between parts. Time-budget proposals keep grouped
+   parts together and remain conservative. If a partner is removed, ordinary
+   rest/focus behavior remains available and the workout indicates the
+   incomplete pair. Unequal set counts continue safely with normal rest for
+   the remaining solo sets. Automatic plan generation does not select half
+   of a superset as an unrelated standalone exercise.
+8. The build-36 automatic save, document scrolling and music/microphone
+   lifecycle improvements remain in place. This phase makes **no new native
+   audio-policy changes** and cannot establish physical iPhone/headphone
+   behavior from a browser. Native recognition, music continuity, touch
+   scrolling and machine suitability still need owner acceptance on device.
+9. Changes made **on Workout** remain session-only: removing exercises or
+   adding/removing sets, entering repetitions/loads, equipment swaps and
+   time-budget selections do not become the next workout's defaults. History
+   retains the actual completed performance, including completed sets from
+   removed exercises. Finishing or cancelling builds a fresh draft from the
+   selected program, restoring its exercise list, set counts and configured
+   targets rather than automatically importing the last performance.
+   Explicit numeric repetition targets/defaults are shown again; ranged
+   prescriptions remain intact without inventing a numeric result. A load
+   without an explicitly saved target is blank. Reload does not backfill
+   untouched fields from history, and an incomplete session remains intact.
+   The existing explicit **Restore from previous workout** action remains
+   available; using it still changes only the current workout. Deliberately
+   editing a saved plan or accepting a target for future workouts remains a
+   separate, persistent action.
+
+Local validation: **516 JavaScript regressions and 17 module syntax checks**
+passed. Isolated browser acceptance covered A-only migration with unchanged
+B/C, history and an incomplete active workout; restore/cancel/save semantics;
+editing a muscle-constrained A; all six calf options under legs; Hebrew RTL
+and English LTR; alternating focus/rest and independent 80kg/30kg records
+through six completed sets; and exactly one automatic history save at 100%.
+Those loads were synthetic test inputs, not exercise recommendations.
+Additional browser acceptance removed one part, changed the remaining part
+from three sets of 15 to four sets of 7 at a synthetic 11kg, and completed it.
+History kept those four actual sets; the next draft and a subsequent reload
+restored both original exercises, three sets of 15 each, the explicitly
+configured 20kg target on one part and a blank load on the other.
+The local review preview uses explicitly labeled demonstration data only.
+
 ## 1.0 (36) - Verified internal TestFlight release (2026-10-26)
 
 App shell `autofit-v69`. The owner explicitly approved publishing the code and

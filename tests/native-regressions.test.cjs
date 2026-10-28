@@ -20,6 +20,8 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
+const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
+  ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises'], library);
 test('difficulty is Easy, Medium, Hard while legacy right values and spoken phrases remain compatible', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(insights.DIFFICULTY_LABELS)), { easy: 'קל', right: 'בינוני', hard: 'קשה' });
   for (const phrase of ['היה בינוני', 'הסט היה בינוני', 'היה מתאים', 'it was medium', 'it was moderate', 'it was just right']) {
@@ -74,7 +76,7 @@ const vm = {
   ...nodeVM,
   createContext(values = {}) {
     const i18n = localizationContext();
-    return nodeVM.createContext({ i18n, library, insights, voiceReports, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
+    return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       finishingWorkout: false, pendingWorkoutAutoFinish: null,
       isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((set) => set.completed),
@@ -228,8 +230,8 @@ test('internal delivery refuses an inconsistent non-exempt encryption declaratio
 });
 
 test('expanded catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
-  assert.equal(library.LIBRARY_EXERCISES.length, 99);
-  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 99);
+  assert.equal(library.LIBRARY_EXERCISES.length, 101);
+  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 101);
   const translation = localizationContext();
   translation.setLanguage('en');
   for (const exercise of library.LIBRARY_EXERCISES) {
@@ -260,9 +262,9 @@ test('every authored exercise has an offline illustration and selected instructi
   const translation = localizationContext();
   const seeds = nodeVM.runInContext('SEED_EXERCISES', translation);
   const exercises = [...seeds, ...library.LIBRARY_EXERCISES, ...library.PLANNING_EXERCISES];
-  assert.equal(exercises.length, 130);
+  assert.equal(exercises.length, 132);
   assert.equal(exercises.filter((exercise) => !(exercise.id || '').startsWith('library:extended-')).length, 57);
-  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 116);
+  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 118);
   for (const exercise of exercises) {
     const guide = library.exerciseGuide(exercise);
     assert.ok(guide, exercise.name);
@@ -270,9 +272,9 @@ test('every authored exercise has an offline illustration and selected instructi
     for (const video of guide.videos) {
       const url = new URL(video.href);
       assert.equal(url.protocol, 'https:');
-      assert.ok(['www.youtube.com', 'www.muscleandstrength.com', 'us.physitrack.com'].includes(url.hostname));
+      assert.ok(['www.youtube.com', 'www.muscleandstrength.com', 'us.physitrack.com', 'www.strengthlog.com'].includes(url.hostname));
       assert.ok(video.publisher && video.title);
-      assert.equal(video.reviewedOn, exercise.catalogId === 'jumpRope' ? '2026-10-25'
+      assert.equal(video.reviewedOn, ['legPressCalf', 'standingMachineCalf'].includes(exercise.catalogId) ? '2026-10-26' : exercise.catalogId === 'jumpRope' ? '2026-10-25'
         : (exercise.id || '').startsWith('library:extended-') ? '2026-10-22' : '2026-10-21');
       assert.doesNotMatch(video.href, /search|results|undefined/);
     }
@@ -464,7 +466,7 @@ test('library expansion preserves originals and skips existing IDs and authored 
   const expanded = library.expandedLibrary(originals);
   assert.equal(expanded[0], originals[0]);
   assert.equal(expanded[1], originals[1]);
-  assert.equal(expanded.length, 99);
+  assert.equal(expanded.length, 101);
   assert.equal(JSON.stringify(originals), before);
   assert.equal(JSON.stringify(library.expandedLibrary(expanded)), JSON.stringify(expanded));
   assert.ok(expanded.slice(originals.length).every((exercise) => exercise.active === false));
@@ -476,7 +478,7 @@ test('library migration does not select additions, replace IDs or resurrect dele
   const selected = context.exercises.filter((exercise) => exercise.active !== false).map((exercise) => exercise.id);
   assert.equal(selected.length, 25);
   const added = context.exercises.filter((exercise) => exercise.id.startsWith('library:'));
-  assert.equal(added.length, 99);
+  assert.equal(added.length, 101);
   const removedId = added[0].id;
   added[1].name = 'My edited library exercise';
   added[1].notes = 'Leave this alone';
@@ -505,7 +507,7 @@ test('explicit additional-catalog installation preserves deleted legacy choices 
   ];
   const before = JSON.stringify(originals);
   const expanded = library.expandedLibrary(originals, { newOnly: true });
-  assert.equal(expanded.length, 75);
+  assert.equal(expanded.length, 77);
   assert.equal(JSON.stringify(expanded.slice(0, 2)), before);
   assert.ok(expanded.slice(2).every((exercise) => exercise.id.startsWith('library:extended-') && !exercise.active));
   assert.ok(!expanded.some((exercise) => exercise.id === 'library:pushup'));
@@ -544,7 +546,7 @@ test('library filters match both languages, combine constraints and preserve cus
   assert.match(read('www/index.html'), /value="מתחילים">מתחילים<\/option>/);
 });
 
-test('all 130 catalog definitions are browsable from a 51-entry library without installation or selection', () => {
+test('all 132 catalog definitions are browsable from a 51-entry library without installation or selection', () => {
   const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
   const stored = [
     ...Array.from(seeds, (exercise, index) => ({ ...exercise, id: exercise.id || `original:${index}`, active: true })),
@@ -553,8 +555,8 @@ test('all 130 catalog definitions are browsable from a 51-entry library without 
   assert.equal(stored.length, 51);
   const before = JSON.stringify(stored);
   const catalog = library.browsableLibrary(stored, seeds);
-  assert.equal(catalog.length, 130);
-  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, 130);
+  assert.equal(catalog.length, 132);
+  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, 132);
   assert.equal(JSON.stringify(stored), before);
   stored.forEach((exercise, index) => assert.equal(catalog[index], exercise));
   assert.equal(catalog.filter((exercise) => exercise.active !== false).length, 25);
@@ -563,7 +565,7 @@ test('all 130 catalog definitions are browsable from a 51-entry library without 
   const { context } = exerciseLibraryContext(stored);
   const categories = vm.runInContext('EXERCISE_LIBRARY_CATEGORIES', context);
   const counts = categories.map((group) => catalog.filter((exercise) => context.exerciseLibraryGroup(exercise) === group.id).length);
-  assert.equal(counts.reduce((sum, count) => sum + count, 0), 130);
+  assert.equal(counts.reduce((sum, count) => sum + count, 0), 132);
   assert.equal(context.exerciseLibraryGroup({ category: 'ישבן' }), 'legs');
   assert.equal(context.exerciseLibraryGroup({ category: 'שוקיים' }), 'legs');
 });
@@ -574,7 +576,7 @@ test('catalog browsing preserves renamed/custom records and deleted definitions 
   const custom = { id: 'custom', name: 'My own movement', active: true, defaultSets: 7 };
   const records = [renamed, custom], before = JSON.stringify(records);
   const catalog = library.browsableLibrary(records, seeds);
-  assert.equal(catalog.length, 131);
+  assert.equal(catalog.length, 133);
   assert.equal(catalog.find((exercise) => exercise.id === renamed.id), renamed);
   assert.equal(catalog.find((exercise) => exercise.id === custom.id), custom);
   assert.equal(JSON.stringify(records), before);
@@ -2724,7 +2726,7 @@ test('English share output uses English labels and left-to-right columns without
   context.i18n.setLanguage('en');
   vm.runInContext(section('function formatCardioExtra(', 'async function buildWorkoutShareImages('), context);
   const records = [{ durationSec: 1800, entries: [
-    { exerciseName: 'לחיצת חזה', sets: [{ weightKg: 10, reps: 12 }] },
+    { exerciseName: 'לחיצת חזה', superset: { id: 'chest-row', order: 0, name: 'לחיצת חזה + חתירה — סופר סט' }, sets: [{ weightKg: 10, reps: 12 }] },
     { exerciseName: 'ראשי', sets: [{ weightKg: 20, reps: 10 }] },
   ] }];
   [...context.buildWorkoutShareCanvases(records)];
@@ -2734,9 +2736,11 @@ test('English share output uses English labels and left-to-right columns without
   assert.ok(setColumn.x < repColumn.x);
   assert.ok(drawn.some((item) => item.text === '🏋️ Chest press'));
   assert.ok(drawn.some((item) => item.text === '🏋️ ראשי'));
+  assert.ok(drawn.some((item) => item.text === 'Chest press + row — superset (1/2)'));
   const lines = Array.from(context.buildWorkoutShareLines(records));
   assert.ok(lines.includes('🏋️ ראשי'));
   assert.ok(lines.includes('   Set 1: 10 kg × 12'));
+  assert.ok(lines.includes('   Chest press + row — superset (1/2)'));
   assert.ok(lines.some((line) => line.includes('שם אישי')));
 });
 
@@ -3586,7 +3590,7 @@ test('offline navigation with query parameters falls back to the cached app with
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69', 'autofit-v70'],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3595,7 +3599,7 @@ test('offline navigation with query parameters falls back to the cached app with
   let done;
   handlers.activate({ waitUntil: (promise) => { done = promise; } });
   await done;
-  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68']);
+  assert.deepEqual(deleted, ['autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69']);
   let response;
   handlers.fetch({ request: { method: 'GET', mode: 'navigate', url: 'https://example.test/?tab=workout' },
     respondWith: (promise) => { response = promise; } });

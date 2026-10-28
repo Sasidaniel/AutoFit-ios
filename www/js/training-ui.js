@@ -5,13 +5,14 @@ import * as i18n from './i18n.js';
 // Keep authored Hebrew in DOM templates so the shared translator can reverse a language switch.
 const t = (value) => value;
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const name = (exercise) => esc(i18n.exerciseName(exercise.name || exercise.exerciseName));
+const name = (exercise) => esc(i18n.exerciseName(exercise.name || exercise.exerciseName))
+  + (exercise.superset ? ` · ${esc(i18n.text(exercise.superset.name))} (${exercise.superset.order + 1}/2)` : '');
 const button = (id, label, primary = false) => `<button type="button" id="${id}" class="btn btn-${primary ? 'primary' : 'secondary'} btn-small">${t(label)}</button>`;
 const field = (label, content) => `<label class="training-field"><span>${t(label)}</span>${content}</label>`;
 const options = (items, selected) => items.map(([value, label]) => `<option value="${esc(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${t(label)}</option>`).join('');
 const note = (text) => `<p class="field-hint">${t(text)}</p>`;
 const DURATION_ASSUMPTIONS = 'מוצג הממוצע של אומדן קצר וארוך, לא ממוצע של אימונים קודמים. כולל מנוחה מלאה אחרי כל סט, גם האחרון; 2–3 שניות לחזרה (לפחות 15–25 שניות עבודה לסט חזרות), 15–30 שניות הכנה ומעבר לתרגיל כוח או החזקה, ו-10–30 שניות הכנה לאירובי. זמני החזקה ואירובי לפי ההגדרה. בתרגילי צד מאומתים מחושבים שני הצדדים. כשאין יעד חזרות מספרי, מניחים 8–15 חזרות. זו אינה הנחיה למהר; המתנה לציוד והפסקות נוספות עשויות להאריך את האימון.';
-const durationDetails = () => `<details class="field-hint"><summary>${t('על מה מבוסס האומדן?')}</summary><p>${t(DURATION_ASSUMPTIONS)}</p></details>`;
+const durationDetails = () => `<details class="field-hint"><summary>${t('על מה מבוסס האומדן?')}</summary><p>${t(DURATION_ASSUMPTIONS)}</p><p>${t('בסופר סט מלא המנוחה מחושבת לאחר שני החלקים, לא ביניהם. בהצעת קיצור זמן הצמד נשאר יחד והאומדן שמרני.')}</p></details>`;
 export function durationEstimateText(estimate) {
   const totalMinutes = Math.max(0, Math.round((estimate.lowSeconds + estimate.highSeconds) / 120));
   const hours = Math.floor(totalMinutes / 60);
@@ -454,10 +455,10 @@ export function createTrainingUI(api) {
         });
         if (new Set(day.exercises.map((exercise) => exercise.id)).size !== day.exercises.length) throw new Error('Choose distinct exercises in each session');
         const required = day.requiredMuscles || plan.options.muscles || [];
-        if (day.splitMuscles && day.exercises.some((exercise) => !day.splitMuscles.includes(tools.trainingMetadata(exercise)?.primary))) throw new Error('Selected muscle groups do not cover every split day');
+        if (day.splitMuscles && day.exercises.some((exercise) => !tools.supportsPlanMuscles(day.splitMuscles, exercise))) throw new Error('Selected muscle groups do not cover every split day');
         if (required.length && (required.some((muscle) =>
           !day.exercises.some((exercise) => tools.trainingMetadata(exercise)?.primary === muscle))
-          || plan.options.muscles?.length && day.exercises.some((exercise) => !plan.options.muscles.includes(tools.trainingMetadata(exercise)?.primary)))) {
+          || plan.options.muscles?.length && day.exercises.some((exercise) => !tools.supportsPlanMuscles(plan.options.muscles, exercise)))) {
           throw new Error('Keep every selected muscle group in the plan');
         }
       });
@@ -537,11 +538,18 @@ export function createTrainingUI(api) {
             </div></section>`).join('')}
           ${field('הוספת תרגיל', `<select class="select saved-plan-add" data-no-translate>${available.filter((exercise) =>
             !day.exercises.some((existing) => existing.id === exercise.id)
-            && (!day.splitMuscles || day.splitMuscles.includes(tools.trainingMetadata(exercise)?.primary))
-            && (!draft.options?.muscles?.length || draft.options.muscles.includes(tools.trainingMetadata(exercise)?.primary)))
-            .map((exercise) => `<option value="${esc(exercise.id)}">${name(exercise)}</option>`).join('')}</select>`)}
+            && tools.supportsPlanMuscles(day.splitMuscles, exercise)
+            && tools.supportsPlanMuscles(draft.options?.muscles, exercise))
+            .map((exercise) => `<option value="${esc(exercise.id)}">${name(exercise)}</option>`).join('')}
+            ${tools.SUPERSET_RECIPES.filter((recipe) => {
+              const parts = tools.supersetExercises(recipe.id, available);
+              return parts.every((part) => !day.exercises.some((exercise) => exercise.id === part.id)
+                && tools.supportsPlanMuscles(day.splitMuscles, part)
+                && tools.supportsPlanMuscles(draft.options?.muscles, part));
+            }).map((recipe) => `<option value="recipe:${recipe.id}">${esc(i18n.text(recipe.name))}</option>`).join('')}</select>`)}
           <button class="btn btn-secondary" data-add-exercise>${t('הוספת התרגיל לתוכנית')}</button>
         </section>`).join('')}
+        ${draft.legCalfSupersetV1 && !draft.legCalfSupersetV1.restored ? note('תוכנית A עודכנה ללחיצת רגליים ותאומים: 15 חזרות לכל חלק. התרגיל המקורי שמור לשחזור; משקלים נבחרים בנפרד.') + button('btnRestoreOriginalLegPress', 'שחזור לחיצת הרגליים המקורית') : ''}
         ${button('btnSaveEditedPlan', 'שמירת השינויים בתוכנית', true)} ${button('btnCancelEditedPlan', 'ביטול ללא שמירה')}`;
       body.querySelectorAll('[data-move], [data-remove-exercise], [data-add-exercise]').forEach((control) => {
         control.onclick = () => safely(dialog, () => {
@@ -549,9 +557,16 @@ export function createTrainingUI(api) {
           const section = control.closest('[data-saved-day]');
           const day = next.sessions[Number(section.dataset.savedDay)];
           if (control.hasAttribute('data-add-exercise')) {
-            const selected = available.find((exercise) => exercise.id === section.querySelector('.saved-plan-add').value);
-            if (!selected) throw new Error('Choose at least one exercise before saving');
-            day.exercises.push(tools.planExercise(selected));
+            const value = section.querySelector('.saved-plan-add').value;
+            if (value.startsWith('recipe:')) {
+              const parts = tools.supersetExercises(value.slice(7), available);
+              if (parts.some((part) => day.exercises.some((exercise) => exercise.id === part.id))) throw new Error('צמד הסופר סט הזה כבר נבחר');
+              day.exercises.push(...parts.map(tools.planExercise));
+            } else {
+              const selected = available.find((exercise) => exercise.id === value);
+              if (!selected) throw new Error('Choose at least one exercise before saving');
+              day.exercises.push(tools.planExercise(selected));
+            }
           } else {
             const index = Number(control.closest('[data-saved-row]').dataset.savedRow);
             if (control.hasAttribute('data-remove-exercise')) day.exercises.splice(index, 1);
@@ -572,6 +587,8 @@ export function createTrainingUI(api) {
         savedPlans();
       });
       body.querySelector('#btnCancelEditedPlan').onclick = () => dialog.close();
+      const restore = body.querySelector('#btnRestoreOriginalLegPress');
+      if (restore) restore.onclick = () => safely(dialog, () => { draft = tools.restoreSavedASuperset(readDraft()); render(); });
       i18n.translateDOM(body);
     }
     render();

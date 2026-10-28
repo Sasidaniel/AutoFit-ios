@@ -414,6 +414,11 @@ function init() {
     settings.libraryExpansionV1Applied = true;
     db.saveSettings(settings);
   }
+  const supersetSettings = trainingTools.upgradeSavedASuperset(settings);
+  if (supersetSettings !== settings) {
+    db.saveSettings(supersetSettings);
+    settings = supersetSettings;
+  }
   // one-time bump: program week now defaults to 3 (full sets) instead of the old
   // ramp-up default of 1, since the program no longer needs a gradual sets ramp-up
   if (!settings.programWeekV2Applied) {
@@ -426,7 +431,6 @@ function init() {
   } else {
     // migrate existing active sessions that don't yet have the warm-up/cool-down walk entries
     let sessionMigrated = false;
-    const lastByExercise = getLastCompletedValuesByExercise();
     if (!activeSession.programPinned && !activeSession.entries.some((e) => e.exerciseId === 'warmup')
       && exercises.some((e) => e.id === 'warmup' && e.active !== false)) {
       activeSession.entries.unshift(makeCardioEntry('warmup'));
@@ -441,27 +445,13 @@ function init() {
     exercises.filter((ex) => ex.active !== false && !activeSession.programPinned).forEach((ex) => {
       if (!activeSession.entries.some((e) => e.exerciseId === ex.id)) {
         const cooldownIdx = activeSession.entries.findIndex((e) => e.exerciseId === 'cooldown');
-        const last = lastByExercise[ex.id];
         const newEntry = ex.inputType === 'cardio' ? makeCardioEntry(ex.id) : {
           exerciseId: ex.id,
           exerciseName: ex.name,
-          sets: Array.from({ length: setsForWeek(ex) }, () => ({ weightKg: last ? last.weightKg : '', reps: last ? last.reps : '', completed: false })),
+          sets: Array.from({ length: setsForWeek(ex) }, () => makeProgramSet(ex)),
         };
         if (cooldownIdx === -1) activeSession.entries.push(newEntry);
         else activeSession.entries.splice(cooldownIdx, 0, newEntry);
-        sessionMigrated = true;
-      }
-    });
-    // backfill any exercise that's still completely untouched (no typed values, nothing
-    // checked off) with the weight/reps last logged for it — so the current weights are
-    // always restored from history, not just for brand-new sessions
-    activeSession.entries.forEach((entry) => {
-      if (entry.type === 'cardio') return;
-      const last = lastByExercise[entry.exerciseId];
-      if (!last) return;
-      const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
-      if (isBlank) {
-        entry.sets.forEach((s) => { s.weightKg = last.weightKg; s.reps = last.reps; });
         sessionMigrated = true;
       }
     });
@@ -591,8 +581,17 @@ function buildDraftSession() {
   return buildProgramDraft(exercises);
 }
 
+function makeProgramSet(exercise) {
+  const reps = Number(exercise.targetReps || exercise.defaultReps);
+  return {
+    weightKg: exercise.targetWeightKg ?? '',
+    reps: exercise.inputType !== 'hold' && Number.isInteger(reps) && reps > 0 ? reps : '',
+    completed: false,
+    ...(exercise.targetReps ? { voiceTargetReps: Number(exercise.targetReps) } : {}),
+  };
+}
+
 function buildProgramDraft(program, programSettings = settings) {
-  const lastByExercise = getLastCompletedValuesByExercise();
   const selectedPlan = programSettings.training?.activePlan;
   const savedPlan = programSettings.training?.plans?.find((plan) => plan.id === selectedPlan?.id);
   const planSnapshot = selectedPlan?.snapshot || (savedPlan?.sessions[selectedPlan.day]
@@ -614,17 +613,10 @@ function buildProgramDraft(program, programSettings = settings) {
         exerciseName: ex.name,
         exerciseSnapshot: { id: ex.id, name: ex.name, notes: ex.notes || '', catalogId: ex.catalogId,
           category: ex.category, inputType: ex.inputType, loadKind: ex.loadKind,
+          ...(ex.superset ? { superset: JSON.parse(JSON.stringify(ex.superset)) } : {}),
           defaultReps: ex.defaultReps, restSeconds: ex.restSeconds, holdSeconds: ex.holdSeconds },
         ...(ex.targetReps ? { targetReps: Number(ex.targetReps) } : {}),
-        sets: Array.from({ length: setsForWeek(ex, programSettings) }, (_, i) => {
-          const last = lastByExercise[ex.id];
-          return {
-            weightKg: ex.targetWeightKg ?? (last ? last.weightKg : ''),
-            reps: last ? last.reps : '',
-            completed: false,
-            ...(ex.targetReps ? { voiceTargetReps: Number(ex.targetReps) } : {}),
-          };
-        }),
+        sets: Array.from({ length: setsForWeek(ex, programSettings) }, () => makeProgramSet(ex)),
       })),
       ...(cooldownEx ? [makeCardioEntry('cooldown', program)] : []),
     ],
@@ -1113,6 +1105,15 @@ function trainingAPI() {
       syncWorkoutActivity();
     },
     saveSettings(next) { db.saveSettings(next); settings = next; },
+    addSuperset(recipeId) {
+      const parts = trainingTools.supersetExercises(recipeId, exercises);
+      const existing = parts.map((part) => exercises.find((exercise) => exercise.id === part.id));
+      if (existing.some((exercise) => exercise && exercise.active !== false)) throw new Error('צמד הסופר סט הזה כבר נבחר');
+      const ids = new Set(parts.map((part) => part.id));
+      const next = [...exercises.filter((exercise) => !ids.has(exercise.id)),
+        ...parts.map((part, index) => ({ ...(existing[index] || part), active: true }))];
+      applyProgram(next, settings);
+    },
     changeWorkoutRemoval(exerciseId, restore = false) {
       if (activeSession.running) pauseWorkout();
       const transform = restore ? trainingTools.restoreWorkoutExercise : trainingTools.removeWorkoutExercise;
@@ -1176,6 +1177,11 @@ function trainingAPI() {
       const proposed = plan.sessions[day].exercises;
       const missing = trainingTools.planningCatalog(exercises).filter((candidate) =>
         proposed.some((item) => item.id === candidate.id) && !exercises.some((item) => item.id === candidate.id));
+      for (const item of proposed.filter((item) => item.superset)) {
+        const part = trainingTools.supersetExercises(item.superset.id, exercises).find((part) => part.id === item.id);
+        if (!part || part.catalogId !== item.catalogId) throw new Error('צמד הסופר סט אינו תקין');
+        if (!exercises.some((exercise) => exercise.id === part.id) && !missing.some((exercise) => exercise.id === part.id)) missing.push(part);
+      }
       const nextExercises = trainingTools.activatePlanExercises([...exercises, ...missing], proposed);
       const training = settings.training || {};
       const plans = [...(training.plans || []).filter((item) => item.id !== plan.id), plan];
@@ -1422,6 +1428,9 @@ function renderWorkoutTab() {
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</div>
           <div class="exercise-muscle-line">${escapeHtml(ex.category)}</div>
           <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות` : ''}${ex.inputType === 'hold' && ex.notes ? ' &middot; ' : ''}<span data-no-translate data-exercise-notes="${escapeAttr(ex.notes || '')}">${escapeHtml(i18n.exerciseNotes(ex.notes || ''))}</span></div>
+          ${ex.superset ? `<p class="field-hint"><strong>${escapeHtml(i18n.text(ex.superset.name))}</strong><br>${i18n.text('חלק')} ${ex.superset.order + 1} / 2 · ${i18n.text('חזרות')}: ${escapeHtml(String(entry.targetReps || ex.defaultReps))}<br>${i18n.text(activeSession.entries.filter((item) => item.exerciseSnapshot?.superset?.id === ex.superset.id).length === 2
+            ? 'משקל נפרד לכל תרגיל. מנוחה אחרי שני החלקים; אפשר לנוח לפי הצורך.'
+            : 'הצמד אינו מלא באימון הזה. התרגיל ממשיך עם מנוחה רגילה.')}</p>` : ''}
         </div>
       </div>
       <div class="exercise-head-right">
@@ -2011,6 +2020,8 @@ function nextEntryName(entry) {
 }
 
 function nextWorkoutEntry(entry) {
+  const paired = entry.exerciseSnapshot?.superset && trainingTools.supersetNextEntry(activeSession, entry);
+  if (paired && paired !== entry) return paired;
   const idx = activeSession.entries.indexOf(entry);
   if (idx < 0) return null;
   return [...activeSession.entries.slice(idx + 1), ...activeSession.entries.slice(0, idx)]
@@ -2119,6 +2130,13 @@ function rememberCompletedSet(entry, set) {
 }
 
 function advanceWorkoutFocus(entry) {
+  const paired = entry.exerciseSnapshot?.superset && trainingTools.supersetNextEntry(activeSession, entry);
+  if (paired && (!activeSession.currentExerciseId || activeSession.currentExerciseId === entry.exerciseId)) {
+    activeSession.currentExerciseId = paired.exerciseId;
+    refreshVoiceSelection();
+    updateVoiceBadgeForListeningState();
+    return;
+  }
   if (!isEntryDone(entry) || activeSession.currentExerciseId && activeSession.currentExerciseId !== entry.exerciseId) return;
   const remaining = nextWorkoutEntry(entry);
   if (remaining) activeSession.currentExerciseId = remaining.exerciseId;
@@ -2700,6 +2718,13 @@ async function updateVoiceListeningState() {
 
 function startRestTimer(ex, exerciseDone, nextExerciseName) {
   if (activeSession.paused || activeSession.entries.length > 0 && activeSession.entries.every(isEntryDone)) return;
+  const entry = ex.superset && activeSession.entries.find((entry) => entry.exerciseId === ex.id);
+  if (entry && !trainingTools.supersetNeedsRest(activeSession, entry)) {
+    restTimer.stop();
+    el('restOverlay').classList.add('hidden');
+    if (settings.voiceAnnouncements && !voiceReportInProgress) speak('סופר סט — עבור לחלק השני. אפשר לנוח לפי הצורך', i18n.locale());
+    return;
+  }
   cancelWorkoutGreeting();
   const seconds = ex.restSeconds || settings.restSeconds || 90;
   el('restExerciseName').setAttribute('data-exercise-name', ex.name);
@@ -2772,6 +2797,7 @@ function renderHistoryTab() {
         ` : `
           <div class="history-exercise-line">
             <b data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</b>
+            ${e.superset ? `<p class="field-hint">${escapeHtml(i18n.text(e.superset.name))} · ${i18n.text('חלק')} ${e.superset.order + 1} / 2</p>` : ''}
             ${e.removedFromWorkout ? '<p class="field-hint">הוסר מהאימון; הביצועים שהושלמו נשמרו</p>' : ''}
             <div class="history-sets-line">
               ${e.sets.map((s, i) => `<div>סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps} ${e.inputType === 'hold' ? 'שניות' : 'חזרות'}${Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty) ? ` · <span>${insights.DIFFICULTY_LABELS[s.difficulty]}</span>` : ''}${s.notes ? `<p data-no-translate>${escapeHtml(s.notes)}</p>` : ''}</div>`).join('')}
@@ -2913,6 +2939,7 @@ function buildWorkoutShareLines(workoutsArr) {
           if (entry.completed) lines.push(`⏱ ${i18n.exerciseName(entry.exerciseName)}: ${Math.round(entry.durationSec / 60)} min${formatCardioExtra(entry)}`);
         } else if (entry.sets.length) {
           lines.push(`🏋️ ${i18n.exerciseName(entry.exerciseName)}`);
+          if (entry.superset) lines.push(`   ${i18n.text(entry.superset.name)} (${entry.superset.order + 1}/2)`);
           entry.sets.forEach((set, index) => {
             lines.push(`   Set ${index + 1}: ${set.weightKg} kg × ${set.reps}${entry.inputType === 'hold' ? ' seconds' : ''}`);
             if (Object.hasOwn(insights.DIFFICULTY_LABELS, set.difficulty)) lines.push(`   ${i18n.text(insights.DIFFICULTY_LABELS[set.difficulty])}`);
@@ -2946,6 +2973,7 @@ function buildWorkoutShareLines(workoutsArr) {
       }
       if (!e.sets.length) return;
       lines.push(`🏋️ ${e.exerciseName}`);
+      if (e.superset) lines.push(`   ${i18n.text(e.superset.name)} (${e.superset.order + 1}/2)`);
       e.sets.forEach((s, i) => {
         lines.push(`   סט ${i + 1}: ${s.weightKg} ק"ג × ${s.reps}${e.inputType === 'hold' ? ' שניות' : ''}`);
         if (Object.hasOwn(insights.DIFFICULTY_LABELS, s.difficulty)) lines.push(`   ${insights.DIFFICULTY_LABELS[s.difficulty]}`);
@@ -3003,6 +3031,7 @@ function* buildWorkoutShareCanvases(workoutsArr) {
       }
       if (!e.sets.length) return;
       add('exTitle', 36, { text: i18n.exerciseName(e.exerciseName) });
+      if (e.superset) add('annotation', 22, { text: `${i18n.text(e.superset.name)} (${e.superset.order + 1}/2)` });
       add('tableHeader', 28, {});
       e.sets.forEach((s, i) => {
         add('tableRow', 26, { i, weightKg: s.weightKg, reps: s.reps });
@@ -3705,6 +3734,7 @@ function chartBaseOptions() {
 
 /* ================= EXERCISES TAB ================= */
 const EXERCISE_LIBRARY_CATEGORIES = [
+  { id: 'supersets', label: 'סופר סטים', icon: '🔗', category: 'סופר סטים' },
   { id: 'warmup', label: 'אירובי / חימום ושחרור', icon: '🔥', category: 'קרדיו', inputType: 'cardio' },
   { id: 'static', label: 'תרגילים סטטיים', icon: '⏱️', category: 'בטן', inputType: 'hold' },
   { id: 'legs', label: 'רגליים', icon: '🦵', category: 'רגליים' },
@@ -3904,7 +3934,7 @@ function renderExercisesTab() {
       <button class="exercise-category-button" data-category="${group.id}" aria-pressed="${exerciseLibraryCategory === group.id}">
         <span class="exercise-category-icon" aria-hidden="true">${group.icon.endsWith('.svg') ? `<img src="${group.icon}" alt="" width="32" height="32">` : group.icon}</span>
         <span class="exercise-category-label">${group.label}</span>
-        <span class="exercise-category-count">${exerciseLibraryCount(catalog.filter((ex) => exerciseLibraryGroup(ex) === group.id).length)}</span>
+        <span class="exercise-category-count">${group.id === 'supersets' ? `${trainingTools.SUPERSET_RECIPES.length} ${i18n.text('צמדים')}` : exerciseLibraryCount(catalog.filter((ex) => exerciseLibraryGroup(ex) === group.id).length)}</span>
       </button>`).join('')}`;
   qsa('[data-category]', grid).forEach((button) => {
     button.addEventListener('click', () => {
@@ -3915,12 +3945,40 @@ function renderExercisesTab() {
   const list = el('exerciseManageList');
   list.innerHTML = '';
   list.onpointerdown = null;
+  el('btnAddExercise').classList.remove('hidden');
   el('exerciseLibraryPanel').classList.toggle('hidden', !exerciseLibraryCategory && !filtering);
   if (!exerciseLibraryCategory && !filtering) {
     list.innerHTML = '<div class="exercise-library-empty">בחר קטגוריה כדי לעיין בספרייה, או פתח את ״האימון שלי״ לניהול התוכנית שלך.</div>';
     return;
   }
   const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
+  if (exerciseLibraryCategory === 'supersets') {
+    el('exerciseLibraryFilters').classList.add('hidden');
+    el('btnAddExercise').classList.add('hidden');
+    el('exerciseLibraryTitle').textContent = i18n.text('סופר סטים');
+    el('exerciseLibraryCount').textContent = `${trainingTools.SUPERSET_RECIPES.length} ${i18n.text('צמדים')}`;
+    el('exerciseLibraryHint').textContent = i18n.text('שני תרגילים ברצף בכל סבב. הרישום והמשקל נפרדים; מנוחה לאחר שני החלקים. אין חובה לוותר על מנוחה כשצריך.');
+    for (const recipe of trainingTools.SUPERSET_RECIPES) {
+      const parts = trainingTools.supersetExercises(recipe.id, exercises);
+      const item = document.createElement('section');
+      item.className = 'exercise-manage-item';
+      item.innerHTML = `<h3>${escapeHtml(i18n.text(recipe.name))}</h3><p>${recipe.reps} ${i18n.text('חזרות לכל חלק')}, 3 ${i18n.text('סבבים')}</p>
+        ${parts.map((part, index) => `<p>${index + 1}. <span data-no-translate>${escapeHtml(i18n.exerciseName(part.name))}</span> <button class="btn btn-secondary btn-small" data-part-guide="${index}">${i18n.text('הדרכה')}</button></p>`).join('')}
+        <button class="btn btn-primary btn-small" data-add-superset>${i18n.text('הוסף צמד לאימון שלי')}</button><p class="field-hint" role="status"></p>`;
+      qsa('[data-part-guide]', item).forEach((button) => button.onclick = () => openExerciseGuide(parts[Number(button.dataset.partGuide)]));
+      qs('[data-add-superset]', item).onclick = () => {
+        try { trainingAPI().addSuperset(recipe.id); renderExercisesTab(); }
+        catch (error) {
+          console.error('Superset selection failed', error);
+          qs('[role="status"]', item).textContent = i18n.text(error.message);
+        }
+      };
+      list.appendChild(item);
+    }
+    i18n.translateDOM(list);
+    return;
+  }
+  el('btnAddExercise').classList.remove('hidden');
   const visible = isMyWorkout ? selected : catalog.filter((ex) =>
     (!exerciseLibraryCategory || exerciseLibraryGroup(ex) === exerciseLibraryCategory)
     && library.matchesLibraryFilters(ex, filters, i18n.searchText));
@@ -4326,25 +4384,24 @@ function reorderActiveSessionToMatchExercises() {
     activeSession.entries = [warmup, ...reordered, ...orphan, cooldown].filter(Boolean);
   } else {
     // fresh draft: fully sync to the currently-active exercise list (add new, drop deselected)
-    const lastByExercise = getLastCompletedValuesByExercise();
     const synced = strengthExercises.filter((ex) => ex.active !== false).map((ex) => {
       if (ex.inputType === 'cardio') return byExId[ex.id] || makeCardioEntry(ex.id);
-      const last = lastByExercise[ex.id];
       if (byExId[ex.id]) {
         const entry = byExId[ex.id];
+        if (ex.superset) entry.exerciseSnapshot = { ...ex, images: undefined };
         const isBlank = entry.sets.every((s) => !s.completed && !s.weightKg && !s.reps);
         if (isBlank) {
           const desired = setsForWeek(ex);
-          while (entry.sets.length < desired) entry.sets.push({ weightKg: '', reps: '', completed: false });
+          while (entry.sets.length < desired) entry.sets.push(makeProgramSet(ex));
           entry.sets.length = desired;
         }
-        if (isBlank && last) entry.sets.forEach((s) => { s.weightKg = last.weightKg; s.reps = last.reps; });
         return entry;
       }
       return {
         exerciseId: ex.id,
         exerciseName: ex.name,
-        sets: Array.from({ length: setsForWeek(ex) }, () => ({ weightKg: last ? last.weightKg : '', reps: last ? last.reps : '', completed: false })),
+        exerciseSnapshot: { ...ex, images: undefined }, targetReps: ex.targetReps,
+        sets: Array.from({ length: setsForWeek(ex) }, () => makeProgramSet(ex)),
       };
     });
     activeSession.entries = [warmup, ...synced, cooldown].filter(Boolean);

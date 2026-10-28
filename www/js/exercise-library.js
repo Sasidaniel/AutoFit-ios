@@ -492,6 +492,16 @@ const CATALOG_EXTENSION = {
     pair('הרם עקבים בשליטה בלי להקפיץ את המשקל.', 'Raise your heels under control without bouncing the load.'),
     pair('הורד לאט לטווח נוח בקרסוליים ונעל את המכשיר לפני יציאה.', 'Lower slowly through a comfortable ankle range and secure the machine before exiting.'),
   ]),
+  legPressCalf: expandedGuide(pair('עליות עקבים במכשיר לחיצת רגליים', 'Leg press calf raise'), ['שוקיים'], ['מכונה'], 'legPressCalf', 'calf', [
+    pair('השתמש רק במכשיר שהיצרן מתיר בו הרמות עקבים. כוון מעצורי בטיחות ובחר עומס מתאים לתאומים בנפרד.', 'Use only a machine whose manufacturer permits calf raises. Set the safety stops and select a calf-appropriate load separately.'),
+    pair('הישאר עם גב ואגן נתמכים, קדמת כפות הרגליים יציבה וברכיים כפופות מעט. נעל את המכשיר לפני שינוי מיקום הרגליים.', 'Keep your back and hips supported, forefeet secure and knees slightly bent. Secure the machine before repositioning your feet.'),
+    pair('הנע את הקרסוליים באיטיות כדי להרים ולהוריד עקבים בטווח נשלט. אל תקפיץ, תנעל ברכיים או תניח לכף הרגל להחליק.', 'Move your ankles slowly to raise and lower your heels through a controlled range. Avoid bouncing, locking your knees or letting your feet slip.'),
+  ], { level: 'בינוניים' }),
+  standingMachineCalf: expandedGuide(pair('עליות עקבים בעמידה במכונה', 'Standing machine calf raise'), ['שוקיים'], ['מכונה'], 'calf', 'calf', [
+    pair('כוון את כריות הכתפיים ואת מעצורי הבטיחות לפי המכשיר, והנח את קדמת כפות הרגליים ביציבות על המשטח.', 'Adjust the shoulder pads and safety stops for the machine and place your forefeet securely on its platform.'),
+    pair('הרם עקבים בשליטה, כשהגוף יציב והברכיים אינן נעולות.', 'Raise your heels under control with your body stable and knees unlocked.'),
+    pair('הורד לאט לטווח נוח, ללא קפיצה. אבטח את המכשיר לפני הירידה.', 'Lower slowly through a comfortable range without bouncing. Secure the machine before stepping off.'),
+  ]),
   dumbbellCalfRaise: expandedGuide(pair('עליות עקבים עם משקולות', 'Standing dumbbell calf raise'), ['שוקיים'], ['משקולות יד'], 'calf', 'calf', [
     pair('עמוד על רצפה ישרה עם עומס קל; אפשר יד תומכת בקיר ומשקולת ביד השנייה.', 'Stand on level ground with a light load; you may support one hand on a wall and hold a dumbbell in the other.'),
     pair('הרם עקבים בלי לגלגל קרסוליים לצדדים.', 'Lift your heels without rolling your ankles sideways.'),
@@ -616,6 +626,8 @@ const muscleAndStrength = (slug, title) => videoLink(`https://www.muscleandstren
 const reviewedVideo = (video) => [{ ...video, reviewedOn: '2026-10-22' }];
 const reviewedStrengthVideo = (slug, title) => reviewedVideo(muscleAndStrength(slug, title));
 const SELECTED_VIDEOS = {
+  legPressCalf: [{ href: 'https://www.strengthlog.com/calf-raise-in-leg-press/', publisher: 'StrengthLog', title: 'Calf Raise in Leg Press — animated demonstration', reviewedOn: '2026-10-26' }],
+  standingMachineCalf: [{ href: 'https://www.strengthlog.com/standing-calf-raise/', publisher: 'StrengthLog', title: 'Standing Calf Raise — animated demonstration', reviewedOn: '2026-10-26' }],
   jumpRope: [{ ...youtube('T_tVMJEkUpg', 'Crossrope Jump Ropes', "How to Jump Rope | Beginner's Tutorial from Crossrope"), reviewedOn: '2026-10-25' }],
   wallPushup: reviewedVideo(videoLink('https://us.physitrack.com/home-exercise-video/push-up-against-wall', 'Physitrack', 'Joint Stability Push Ups against Wall')),
   kneePushup: reviewedStrengthVideo('knee-pushups.html', 'Knee Push-Up'),
@@ -980,6 +992,7 @@ const poses = {
   press: [SEATED, [[40,23],[40,39],[44,15],[48,1],[40,82],[70,83],[70,138]]],
   shrug: [STANDING, [[45,18],[45,29],[46,50],[46,71],[45,78],[45,108],[45,138]]],
   legPress: [[[24,64],[35,78],[52,87],[70,98],[56,104],[77,82],[99,53]], [[24,64],[35,78],[52,87],[70,98],[56,104],[91,75],[125,43]]],
+  legPressCalf: [[[24,64],[35,78],[52,87],[70,98],[56,104],[89,76],[118,48]], [[24,64],[35,78],[52,87],[70,98],[56,104],[89,76],[121,44]]],
   legExtension: [SEATED, [[40,23],[40,39],[55,57],[70,57],[40,82],[70,83],[125,82]]],
   legCurl: [[[40,23],[40,39],[55,57],[70,57],[40,82],[70,83],[125,82]], [[40,23],[40,39],[55,57],[70,57],[40,82],[70,83],[62,136]]],
   crunch: [LYING, [[30,75],[45,85],[60,100],[70,110],[85,105],[110,88],[130,138]]],
@@ -1056,7 +1069,7 @@ export function exerciseIllustration(info, isHold = false) {
     if (['chest', 'oneRow'].includes(info.pose)) equipment += '<path d="M25 103H124M35 103v35M115 103v35"/>';
     if (['pulldown', 'press', 'legExtension', 'legCurl', 'legPress'].includes(info.pose)) equipment += '<path d="M25 40v48h54M31 88v50M72 88v50"/>';
     if (['pulldown', 'triceps'].includes(info.pose)) equipment += `<path d="M140 137V4H70L${hand[0]} ${hand[1]}"/><rect x="127" y="83" width="19" height="52" rx="2"/>`;
-    if (info.pose === 'legPress') equipment += '<path d="M21 62l35 43 77-59M95 29l44 32M46 123h88"/>';
+    if (['legPress', 'legPressCalf'].includes(info.pose)) equipment += '<path d="M21 62l35 43 77-59M95 29l44 32M46 123h88"/>';
     if (['legExtension', 'legCurl'].includes(info.pose)) equipment += `<path d="M${knee[0]} ${knee[1]}L${foot[0]} ${foot[1]}"/><circle cx="${foot[0]}" cy="${foot[1]}" r="7"/>`;
     if (info.pose === 'wallSit') equipment += '<path d="M27 14v124"/>';
     if (['hang', 'assisted', 'pullup'].includes(info.pose)) equipment += '<path d="M34 5h92M38 5v133"/>';

@@ -12,6 +12,7 @@ function load(file, names, values = {}) {
 }
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
+  'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
   'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'editSavedPlanExercise', 'replaceSavedPlan',
@@ -44,6 +45,159 @@ function threeSavedPlans() {
       sessions: [{ exercises: [tools.planExercise(find('floor'))] }], omitted: [] },
   ]);
 }
+
+test('superset recipes have two stable independent identities and never inherit leg-press loads', () => {
+  for (const recipe of tools.SUPERSET_RECIPES) {
+    const parts = tools.supersetExercises(recipe.id, catalog, 4);
+    assert.equal(parts.length, 2);
+    assert.equal(new Set(parts.map((part) => part.id)).size, 2);
+    assert.deepEqual(plain(parts.map((part) => part.superset.order)), [0, 1]);
+    for (const part of parts) {
+      assert.equal(part.active, false);
+      assert.equal(part.defaultSets, 4);
+      assert.equal(part.targetReps, recipe.reps);
+      assert.equal(part.targetWeightKg, null);
+      assert.ok(library.exerciseGuide(part));
+      assert.ok(tools.trainingMetadata(part));
+      assert.deepEqual(plain(tools.planExercise(part).superset), plain(part.superset));
+    }
+    assert.deepEqual(plain(tools.supersetExercises(recipe.id, catalog, 4)), plain(parts));
+  }
+  assert.throws(() => tools.supersetExercises('unknown', catalog), /אינו תקין/);
+  assert.throws(() => tools.supersetExercises('arms', catalog, 0), /אינו תקין/);
+});
+
+test('the requested A-only update preserves other days/plans, originals, custom metadata and all active data', () => {
+  const original = { id: 'my:press', name: 'לחיצת רגליים', defaultSets: 4, defaultReps: '12',
+    targetWeightKg: 90, notes: 'personal note', images: ['my-photo'], customTargets: [{ weight: 85 }] };
+  const plans = threeSavedPlans();
+  plans[0].sessions[0].exercises.push(original);
+  plans[1].sessions[0].exercises.push(plain(original));
+  const settings = { restSeconds: 120, training: { plans, activePlan: { id: plans[0].id, day: 0 }, monthlyGoal: { target: 12 } }, custom: { keep: true } };
+  const before = JSON.stringify(settings);
+  const result = tools.upgradeSavedASuperset(settings);
+  assert.equal(JSON.stringify(settings), before);
+  assert.notEqual(result, settings);
+  assert.deepEqual(plain(result.training.plans.slice(1)), plain(plans.slice(1)));
+  assert.deepEqual(plain(result.training.activePlan), plain(settings.training.activePlan));
+  assert.deepEqual(plain(result.training.monthlyGoal), { target: 12 });
+  const updated = result.training.plans[0];
+  assert.deepEqual(plain(updated.extra), plain(plans[0].extra));
+  assert.deepEqual(plain(updated.sessions[0].exercises.slice(0, 2)), plain(plans[0].sessions[0].exercises.slice(0, 2)));
+  const pair = updated.sessions[0].exercises.slice(-2);
+  assert.ok(pair.every((part) => part.defaultSets === 4 && part.targetReps === 15 && part.targetWeightKg === null));
+  assert.ok(pair.every((part) => part.restSeconds === 120));
+  assert.deepEqual(plain(updated.legCalfSupersetV1.originals[0].exercise), original);
+  assert.equal(tools.upgradeSavedASuperset(result), result);
+  const restored = tools.restoreSavedASuperset(updated);
+  assert.deepEqual(plain(restored.sessions), plain(plans[0].sessions));
+  const restoredSettings = { training: { plans: [restored] } };
+  assert.equal(tools.upgradeSavedASuperset(restoredSettings), restoredSettings);
+});
+
+test('A update recognizes explicit split A only and declines ambiguous leg-press matches', () => {
+  const press = { ...tools.planExercise(library.PLANNING_EXERCISES.find((part) => part.catalogId === 'legPress')), defaultSets: 3 };
+  const plan = { id: 'ab', name: 'Personal split', sessions: [
+    { label: 'A', exercises: [press] }, { label: 'B', exercises: [plain(press)] },
+  ] };
+  const updated = tools.upgradeSavedASuperset({ training: { plans: [plan] } });
+  assert.equal(updated.training.plans[0].sessions[0].exercises.length, 2);
+  assert.deepEqual(plain(updated.training.plans[0].sessions[1]), plan.sessions[1]);
+  for (const name of ['B', 'A/B', 'Cardio A', 'A']) {
+    const exercises = name === 'A' ? [press, { ...press, id: 'duplicate' }] : [press];
+    const settings = { training: { plans: [{ id: 'x', name, sessions: [{ exercises }] }] } };
+    assert.equal(tools.upgradeSavedASuperset(settings), settings, name);
+  }
+});
+
+test('adding calves to a constrained A split remains editable and restores the original muscle selection', () => {
+  const press = plain(tools.planExercise(library.PLANNING_EXERCISES.find((part) => part.catalogId === 'legPress')));
+  const plan = { id: 'constrained', name: 'AB', options: { muscles: ['רגליים'] }, sessions: [
+    { label: 'A', splitMuscles: ['רגליים'], requiredMuscles: ['רגליים'], exercises: [press] },
+    { label: 'B', splitMuscles: ['רגליים'], requiredMuscles: ['רגליים'], exercises: [plain(press)] },
+  ] };
+  const updated = tools.upgradeSavedASuperset({ training: { plans: [plan] } }).training.plans[0];
+  assert.deepEqual(plain(updated.options), plan.options);
+  assert.deepEqual(plain(updated.sessions[0].splitMuscles), ['רגליים']);
+  assert.deepEqual(plain(updated.sessions[1]), plan.sessions[1]);
+  assert.doesNotThrow(() => tools.replaceSavedPlan([updated], updated, plain(updated)));
+  const restored = tools.restoreSavedASuperset(updated);
+  assert.deepEqual(plain(restored.sessions), plan.sessions);
+  assert.deepEqual(plain(restored.options), plan.options);
+  assert.doesNotThrow(() => tools.replaceSavedPlan([updated], updated, restored));
+});
+
+test('superset rounds alternate A/B with rest after B and degrade safely after removal or unequal sets', () => {
+  const parts = tools.supersetExercises('leg-press-calves', catalog);
+  const current = tools.durationSession(parts.map((part) => ({ ...part, active: true })));
+  const [a, b] = current.entries;
+  for (let round = 0; round < 3; round++) {
+    a.sets[round].completed = true;
+    assert.equal(tools.supersetNextEntry(current, a), b);
+    assert.equal(tools.supersetNeedsRest(current, a), false);
+    b.sets[round].completed = true;
+    assert.equal(tools.supersetNextEntry(current, b), round === 2 ? null : a);
+    assert.equal(tools.supersetNeedsRest(current, b), true);
+  }
+  a.sets.push(set());
+  assert.equal(tools.supersetNextEntry(current, a), a);
+  assert.equal(tools.supersetNeedsRest(current, a), true);
+  current.entries = [a];
+  assert.equal(tools.supersetNextEntry(current, a), null);
+  assert.equal(tools.supersetNeedsRest(current, a), true);
+});
+
+test('superset history/activation retains grouping and records calf work separately from leg press', () => {
+  const parts = tools.supersetExercises('leg-press-calves', catalog);
+  const activated = tools.activatePlanExercises([...catalog, ...parts], parts);
+  assert.equal(activated.filter((part) => part.active).length, 2);
+  const snapshots = parts.map((part, index) => insights.completedEntrySnapshot(entry(part, [set(20 + index * 10, 15, true, { notes: 'keep', difficulty: 'right' })]), part));
+  assert.ok(snapshots.every((snapshot) => snapshot.superset?.id === 'leg-press-calves'));
+  const old = insights.completedEntrySnapshot(entry(parts[0], [set(20, 15, true)]), { ...parts[0], superset: null });
+  assert.equal(insights.compareEntries(snapshots[0], old), null);
+  const work = tools.weeklyMuscleWork([{ id: 'logged', dateISO: '2026-10-28T08:00:00Z', entries: snapshots }], new Date('2026-10-28T09:00:00Z'));
+  assert.equal(work.muscles['רגליים'].primary, 1);
+  assert.equal(work.muscles['שוקיים'].primary, 1);
+  assert.equal(work.unknownSets, 0);
+  assert.equal(snapshots[0].sets[0].weightKg, 20);
+  assert.equal(snapshots[1].sets[0].weightKg, 30);
+});
+
+test('paired duration removes only between-part rests and time budgeting cannot silently split a pair', () => {
+  const parts = tools.supersetExercises('leg-press-calves', catalog).map((part) => ({ ...part, active: true }));
+  const current = tools.durationSession(parts);
+  const paired = tools.estimateWorkoutDuration(current);
+  const separate = parts.reduce((sum, part, index) => sum + tools.estimateEntryDuration(current.entries[index], part, 90, { remaining: false }).seconds, 0);
+  assert.equal(paired.seconds, separate - 270);
+  assert.equal(paired.restSeconds, 270);
+  const proposal = tools.timeBudgetProposal(current, parts, 10);
+  assert.ok(proposal.rows.every((row) => row.selected && row.protected));
+  assert.throws(() => tools.applyTimeBudget(current, [parts[0].id], 10, parts), /הסופר סט יחד/);
+});
+
+test('actual workout controller alternates superset focus and starts no rest between parts', () => {
+  const { context, el } = pauseController();
+  const parts = tools.supersetExercises('leg-press-calves', catalog);
+  context.exercises = parts;
+  context.activeSession.entries = tools.durationSession(parts.map((part) => ({ ...part, active: true }))).entries
+    .map((item, index) => ({ ...item, exerciseName: parts[index].name }));
+  context.activeSession.currentExerciseId = parts[0].id;
+  const [a, b] = context.activeSession.entries;
+  let rests = 0;
+  context.restTimer.start = () => { rests++; };
+  for (let round = 0; round < 3; round++) {
+    context.setWorkoutSetCompletion(a, a.sets[round], parts[0], round, true);
+    assert.equal(context.activeSession.currentExerciseId, parts[1].id);
+    assert.equal(el('restOverlay').classList.contains('hidden'), true);
+    assert.equal(rests, round);
+    context.setWorkoutSetCompletion(b, b.sets[round], parts[1], round, true);
+    if (round < 2) {
+      assert.equal(context.activeSession.currentExerciseId, parts[0].id);
+      assert.equal(rests, round + 1);
+    }
+  }
+  assert.equal(rests, 2, 'No final rest at genuine workout completion');
+});
 
 test('editing one of three existing plans preserves custom triangle pulldown identity, ranges, nested targets, order and other plans', () => {
   const plans = threeSavedPlans(), before = plain(plans), draft = plain(plans[0]);
@@ -261,10 +415,10 @@ test('paused hold measurements and rope interval recipes survive removal, reload
     sets: [{ ...hold.sets[0], holdStartedAt: 123 }] }]), 'hold'), /Pause/);
 });
 
-test('73 additional exercises have distinct trusted muscle, movement and real-equipment metadata', () => {
+test('75 additional exercises have distinct trusted muscle, movement and real-equipment metadata', () => {
   const additions = catalog.filter((exercise) => exercise.id.startsWith('library:extended-'));
-  assert.equal(additions.length, 73);
-  assert.equal(new Set(additions.map((exercise) => exercise.catalogId)).size, 73);
+  assert.equal(additions.length, 75);
+  assert.equal(new Set(additions.map((exercise) => exercise.catalogId)).size, 75);
   for (const exercise of additions) {
     const metadata = tools.trainingMetadata(exercise);
     assert.ok(metadata, exercise.name);
@@ -296,8 +450,8 @@ test('the PDF exercise variants are real distinct library choices with correct m
 test('the built-in catalog counter is separate from installed custom exercises and selected workout membership', () => {
   const seed = load('www/js/seed.js', ['SEED_EXERCISES']).SEED_EXERCISES;
   const data = [{ id: 'mine:1', name: 'Custom', active: true }, { ...find('chairStand'), active: false }];
-  assert.deepEqual(plain(library.catalogStats(data, seed)), { builtIn: 130, stored: 2, selected: 1 });
-  assert.deepEqual(plain(library.catalogStats([], seed)), { builtIn: 130, stored: 0, selected: 0 });
+  assert.deepEqual(plain(library.catalogStats(data, seed)), { builtIn: 132, stored: 2, selected: 1 });
+  assert.deepEqual(plain(library.catalogStats([], seed)), { builtIn: 132, stored: 0, selected: 0 });
 });
 
 test('all authored diagrams render and new equipment variants have appropriate distinct movement poses', () => {
@@ -1987,9 +2141,55 @@ test('future draft uses accepted load and explicit target, not live reps or a re
   const draft = context.buildDraftSession();
   assert.equal(draft.entries[0].sets[0].weightKg, 17.5);
   assert.equal(draft.entries[0].sets[0].voiceTargetReps, 12);
-  assert.equal(draft.entries[0].sets[0].reps, 7);
+  assert.equal(draft.entries[0].sets[0].reps, 12);
   assert.equal(draft.entries[0].targetReps, 12);
   assert.equal(draft.entries[0].exerciseSnapshot.catalogId, 'floor');
+});
+
+test('finishing restores original exercises, set counts and targets while history keeps session-only changes', () => {
+  const { context } = pauseController();
+  const original = [
+    { ...find('chest'), active: true, defaultSets: 3, targetReps: 12, targetWeightKg: 20 },
+    { ...find('floor'), active: true, defaultSets: 2, defaultReps: '8' },
+  ];
+  context.exercises = plain(original);
+  context.settings.programWeek = 3;
+  context.db.uid = () => 'fresh-original-program';
+  context.getLastCompletedValuesByExercise = () => { throw new Error('No automatic history prefill'); };
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  context.activeSession = { ...context.buildDraftSession(), id: 'temporary-edits', paused: true,
+    startedAt: '2026-10-28T08:00:00Z', accumulatedSec: 40 };
+  context.activeSession.entries[0].sets[0] = set(100, 5, true, { notes: 'Actual performance', difficulty: 'hard' });
+  context.activeSession = tools.removeWorkoutExercise(context.activeSession, original[0].id);
+  context.activeSession.entries[0].sets = [set(99, 4, true)];
+  context.finishWorkout();
+  const next = plain(context.activeSession), logged = plain(context.workouts[0]);
+  assert.deepEqual(next.entries.map((item) => item.exerciseId), original.map((item) => item.id));
+  assert.deepEqual(next.entries.map((item) => item.sets.length), [3, 2]);
+  assert.ok(next.entries[0].sets.every((item) => item.weightKg === 20 && item.reps === 12 && !item.completed));
+  assert.ok(next.entries[1].sets.every((item) => item.weightKg === '' && item.reps === 8 && !item.completed));
+  assert.equal(next.removedExercises, undefined);
+  assert.deepEqual(plain(context.exercises), original);
+  const removed = logged.entries.find((item) => item.exerciseId === original[0].id);
+  assert.equal(removed.removedFromWorkout, true);
+  assert.deepEqual(removed.sets[0], set(100, 5, true, { notes: 'Actual performance', difficulty: 'hard' }));
+  const changed = logged.entries.find((item) => item.exerciseId === original[1].id);
+  assert.equal(changed.sets.length, 1);
+  assert.equal(changed.sets[0].weightKg, 99);
+  assert.equal(changed.sets[0].reps, 4);
+});
+
+test('fresh drafts leave unknown/ranged loads and repetitions blank rather than importing a past result', () => {
+  const source = read('www/js/app.js');
+  const exercise = { ...find('floor'), active: true, defaultReps: '8–12' };
+  const context = vm.createContext({ exercises: [exercise], settings: { programWeek: 3 }, db: { uid: () => 'blank-defaults' },
+    getLastCompletedValuesByExercise: () => { throw new Error('History must stay separate'); } });
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  const fresh = context.buildDraftSession().entries[0];
+  assert.ok(fresh.sets.every((item) => item.weightKg === '' && item.reps === '' && !item.completed));
+  assert.equal(fresh.exerciseSnapshot.defaultReps, '8–12');
+  assert.equal(tools.entryHasActivity(fresh), false);
 });
 
 test('all authored training UI labels use the shared bilingual dictionary', () => {
