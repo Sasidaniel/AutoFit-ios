@@ -1050,7 +1050,7 @@ function pauseController(savedSession) {
       saveProgramState() {} },
     i18n: { text: (value) => value, translateDOM() {}, exerciseName: (value) => value, getLanguage: () => 'he', getGender: () => 'general', locale: () => 'he-IL' },
     document: { visibilityState: 'visible' }, currentTab: 'workout', voiceListeningActive: !!activeSession.running,
-    voiceListeningRequested: !!activeSession.running, voiceFocusedRequested: false,
+    voiceListeningRequested: !!activeSession.running, voiceFocusedRequested: false, voicePlaybackHandoff: false,
     voiceListeningRevision: 0, voiceActivationPending: false, voiceListeningError: '', voiceInputName: '',
     voiceReports: { voiceReportHints: () => [] }, voiceExerciseNames: () => [],
     requestWakeLock() {}, speak() {}, playBeep() {}, cancelSpeech() {}, refreshVoiceSelection() {}, updateVoiceBadgeForListeningState() {},

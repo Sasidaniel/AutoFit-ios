@@ -12,10 +12,8 @@ export function createMusicControls(api, doc = document) {
   function render() {
     const authorized = state?.authorization === 'authorized';
     const label = busy ? 'ממתין ל-Apple Music'
-      : !state ? 'בדיקת Apple Music'
-        : !authorized ? 'אפשר Apple Music'
-          : state.state === 'playing' ? 'השהיית מוזיקה'
-            : ['paused', 'stopped'].includes(state.state) ? 'המשך מוזיקה' : 'בדיקת Apple Music';
+      : state && ['notDetermined', 'denied', 'restricted'].includes(state.authorization) ? 'אפשר Apple Music'
+        : authorized && state.state === 'playing' ? 'עצור מוזיקה' : 'נגן מוזיקה';
     for (const button of buttons) {
       button.textContent = t(label);
       button.disabled = busy;
@@ -37,7 +35,7 @@ export function createMusicControls(api, doc = document) {
   }
   function report(cause) {
     console.error('Apple Music control failed', cause);
-    state = null;
+    state = { authorization: state?.authorization || 'unknown', state: 'unknown' };
     error = 'לא התקבל אישור מ-Apple Music. אפשר לנסות שוב או להמשיך דרך הנגן.';
     render();
     api.toast(error);
@@ -56,27 +54,29 @@ export function createMusicControls(api, doc = document) {
   }
   async function toggle() {
     if (busy) return;
-    if (!state) { await refresh(); return; }
+    const playing = state?.state !== 'playing';
     busy = true;
     ++revision;
     error = '';
     render();
     try {
+      if (!state || state.authorization === 'unknown') {
+        const request = ++revision;
+        const next = await api.native.musicStatus();
+        if (request === revision) receive(next);
+      }
       if (state.authorization === 'notDetermined') {
         receive(await api.native.musicRequestAuthorization());
       } else if (state.authorization !== 'authorized') {
         error = permissionHint;
         api.toast(error);
-      } else if (['playing', 'paused', 'stopped'].includes(state.state)) {
-        const playing = state.state !== 'playing';
-        if (playing) await api.beforePlay();
-        const next = await api.native.musicSetPlayback(playing);
-        receive(next);
+      } else {
+        const request = ++revision;
+        const next = await api.setPlayback(playing);
+        if (request === revision) receive(next);
         if (playing ? next.state !== 'playing' : !['paused', 'stopped'].includes(next.state)) {
           throw new Error('Apple Music did not confirm the playback action');
         }
-      } else {
-        receive(await api.native.musicStatus());
       }
     } catch (cause) {
       report(cause);
@@ -91,6 +91,7 @@ export function createMusicControls(api, doc = document) {
     try {
       Promise.resolve(api.native.onMusicChanged((next) => {
         ++revision;
+        if (next?.authorization === 'authorized' && ['playing', 'paused'].includes(next.state)) error = '';
         try { receive(next); } catch (cause) { report(cause); }
       })).catch(report);
     } catch (cause) { report(cause); }

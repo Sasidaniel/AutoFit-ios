@@ -7,6 +7,13 @@ import UIKit
 private final class RecognitionAudioSink {
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var inputAt: TimeInterval = 0
+
+    var lastInputAt: TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return inputAt
+    }
 
     func replace(with next: SFSpeechAudioBufferRecognitionRequest?) {
         lock.lock()
@@ -17,6 +24,7 @@ private final class RecognitionAudioSink {
 
     func append(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
+        if buffer.frameLength > 0 { inputAt = ProcessInfo.processInfo.systemUptime }
         request?.append(buffer)
         lock.unlock()
     }
@@ -76,6 +84,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pendingUtterance: DispatchWorkItem?
     private var pendingRestart: DispatchWorkItem?
     private var pendingRotation: DispatchWorkItem?
+    private var pendingCaptureCheck: DispatchWorkItem?
+    private var captureStartedAt: TimeInterval = 0
     private var pendingFocusEnd: DispatchWorkItem?
     private var generation = UUID()
     private var captureGeneration = UUID()
@@ -402,6 +412,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             tapInstalled = true
             audioEngine.prepare()
             try audioEngine.start()
+            captureStartedAt = ProcessInfo.processInfo.systemUptime
         }
         VoiceCommandPlugin.isListening = true
         notifyListeningState()
@@ -434,6 +445,26 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         pendingRotation = rotation
         DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: rotation)
+        if pendingCaptureCheck == nil { scheduleCaptureCheck(capture: captureGeneration) }
+    }
+
+    private func scheduleCaptureCheck(capture: UUID) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.captureGeneration == capture,
+                  Self.canCapture, !self.audioInterrupted, !BackgroundAnnouncerPlugin.isAnnouncing else { return }
+            self.pendingCaptureCheck = nil
+            let elapsed = ProcessInfo.processInfo.systemUptime - max(self.captureStartedAt, self.audioSink.lastInputAt)
+            if WorkoutAudioPolicy.needsCaptureRecovery(engineRunning: self.audioEngine.isRunning,
+                                                       secondsWithoutInput: elapsed) {
+                self.end()
+                self.notifyListeningState(reason: "recovering")
+                self.retryRecognition(after: self.voiceError("Microphone stopped delivering audio"))
+            } else {
+                self.scheduleCaptureCheck(capture: capture)
+            }
+        }
+        pendingCaptureCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     private func endRecognition() {
@@ -452,6 +483,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func end() {
+        pendingCaptureCheck?.cancel()
+        pendingCaptureCheck = nil
         endRecognition()
         captureGeneration = UUID()
         if audioEngine.isRunning {
@@ -469,10 +502,10 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 } catch {
                     notifyListeners("voiceError", data: ["reason": "Cannot release microphone audio: \(error.localizedDescription)"])
                 }
-                notifyListeningState(reason: audioInterrupted || !WorkoutAudioSession.canAutomaticallyResume ? "interrupted"
-                    : BackgroundAnnouncerPlugin.isAnnouncing ? "announcement" : "inactive")
             }
         }
+        notifyListeningState(reason: audioInterrupted || !WorkoutAudioSession.canAutomaticallyResume ? "interrupted"
+            : BackgroundAnnouncerPlugin.isAnnouncing ? "announcement" : Self.canCapture ? "recovering" : "inactive")
     }
 
     private func voiceError(_ message: String) -> NSError {

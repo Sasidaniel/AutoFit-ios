@@ -1,0 +1,48 @@
+name: iOS audio validation (no release)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install existing dependencies
+        run: npm ci
+      - name: Run JavaScript regressions
+        run: npm test
+      - name: Sync iOS dependencies
+        run: npx cap sync ios
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: Test native speech and audio policies
+        run: |
+          set -e
+          swiftc ios/App/App/SpeechUtteranceBuffer.swift tests/SpeechUtteranceBufferTests.swift -o "$RUNNER_TEMP/speech-tests"
+          "$RUNNER_TEMP/speech-tests"
+          swiftc ios/App/App/WorkoutAudioPolicy.swift tests/WorkoutAudioPolicyTests.swift -o "$RUNNER_TEMP/audio-tests"
+          "$RUNNER_TEMP/audio-tests"
+          swiftc -D ACTIVITY_STATE_TEST ios/App/App/WorkoutActivityAttributes.swift tests/WorkoutActivityStateTests.swift -o "$RUNNER_TEMP/activity-tests"
+          "$RUNNER_TEMP/activity-tests"
+          swiftc ios/App/App/ScheduledWorkoutAnnouncement.swift tests/ScheduledWorkoutAnnouncementTests.swift -o "$RUNNER_TEMP/announcement-tests"
+          "$RUNNER_TEMP/announcement-tests"
+      - name: Compile app and widget for simulator without signing or distribution
+        run: |
+          set -e
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/AudioValidation" \
+            CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/audio-build.log" 2>&1 || {
+              tail -n 120 "$RUNNER_TEMP/audio-build.log"
+              exit 1
+            }

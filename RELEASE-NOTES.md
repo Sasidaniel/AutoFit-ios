@@ -1,5 +1,36 @@
 # AutoFit release notes
 
+## Unreleased - audio reliability and focused goals after iPhone 39 feedback
+
+- Treat music plus hands-free commands/counting as the highest-priority product
+  path. These fixes are not in the installed 39 binary; another release requires
+  fresh owner approval. Offline cache: `autofit-v97`.
+- Replaced the Music status-check dead end with an explicit Play/Pause action.
+  Interrupted/unknown states permit user-requested play, not blind automatic
+  recovery. Confirmed state, permission gating and shared buttons remain.
+- Explicit play now releases capture/focused listening before the player request
+  and only then restores mixed listening. Failed actions also restore eligible
+  listening; pauses never stop capture. Pending requests block premature microphone
+  reactivation. Count state survives, while disabled, paused, off-tab or background
+  capture is not enabled. Newer player notifications supersede old command replies.
+- Fixed reproducible native transcript cursor loss when numeric partial results
+  shrink/expand. Numeric runs occupy one cursor position, preserving later
+  numbers and completion commands. Live counting also decodes joined ascending
+  digits without confusing two spoken reps with the twelve-rep target.
+  Explicit performance reports retain their original numeric meaning.
+- Added a real input-frame watchdog, independent of recognition rotation.
+  An engine stop/four seconds without input triggers bounded capture recovery;
+  ordinary silence with flowing frames is healthy. It stops with capture and
+  does not run in background, interruptions or app announcements.
+- Recommendations now reuse library muscle groups/icons, then show one selected
+  exercise instead of every full evidence card. Saved targets are collapsed by
+  muscle. Custom/legacy exercises remain available under General.
+- All 650 JS tests pass and 20 modules parse. Added Swift rewrite/30-count
+  sequences and exact watchdog threshold cases. A separate manual macOS workflow
+  runs tests and unsigned app/widget Simulator compilation, never distribution.
+  Execution and physical iPhone/Apple Music acceptance remain pending.
+- Detailed handoff: PRE-RELEASE-REVIEW sections 66-67.
+
 ## 1.0 (39) - verified internal TestFlight release (2026-10-29)
 
 - Shortened audio recovery to “Retry listening”; retained automatic workout

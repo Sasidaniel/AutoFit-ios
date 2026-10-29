@@ -40,6 +40,25 @@ struct SpeechUtteranceBufferTests {
         precondition(buffer.update("10", isFinal: false, at: 0.1) == "10")
         precondition(buffer.update("10", isFinal: true, at: 0.2) == nil)
 
+        for prefix in ["", "התחל סט "] {
+            buffer = SpeechUtteranceBuffer()
+            if !prefix.isEmpty {
+                precondition(buffer.update(prefix, isFinal: true, at: 0) == "התחל סט")
+            }
+            precondition(buffer.update(prefix + "1 2", isFinal: false, at: 1) == "1 2")
+            precondition(buffer.update(prefix + "123", isFinal: false, at: 2) == "123")
+            precondition(buffer.update(prefix + "1 2 3 4", isFinal: false, at: 3) == "1 2 3 4")
+            precondition(buffer.update(prefix + "12345", isFinal: false, at: 4) == "12345")
+            precondition(buffer.update(prefix + "12345 סיימתי", isFinal: true, at: 5) == "סיימתי")
+            precondition(buffer.flush(at: 6) == nil)
+        }
+        buffer = SpeechUtteranceBuffer()
+        for count in 1...30 {
+            let text = (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")
+            precondition(buffer.update(text, isFinal: false, at: Double(count)) == text)
+            precondition(buffer.update(text, isFinal: true, at: Double(count) + 0.1) == nil)
+        }
+
         buffer = SpeechUtteranceBuffer()
         precondition(buffer.update("התחל אימון", isFinal: false, at: 1) == nil)
         precondition(buffer.update("התחל אימון", isFinal: false, at: 1.4) == nil)

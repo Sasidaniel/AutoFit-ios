@@ -489,7 +489,7 @@ function init() {
   if (typeof createTrainingUI === 'function' && !trainingUI) trainingUI = createTrainingUI(trainingAPI());
   if (typeof createMusicControls === 'function' && !musicControls) musicControls = createMusicControls({
     native, toast: showToast,
-    beforePlay: async () => { if (voiceFocusedRequested) await setFocusedListening(false); },
+    setPlayback: setWorkoutMusicPlayback,
   });
 
   // keep the phone screen on the whole time the site is open, not just during a workout.
@@ -1178,6 +1178,8 @@ function trainingAPI() {
   };
   return {
     uid: db.uid, dialog: openTrainingDialog, guide: openExerciseGuide,
+    muscleGroups: () => EXERCISE_LIBRARY_CATEGORIES.filter((group) => group.id !== 'supersets'),
+    exerciseGroup: (exercise) => exerciseLibraryGroup(exercise),
     durationState: ({ live = false } = {}) => ({ session: activeSession, exercises, settings,
       program: live ? null : trainingTools.durationSession(myWorkoutExercises(), (exercise) => setsForWeek(exercise)),
       restSeconds: remainingRest() }),
@@ -2288,6 +2290,20 @@ function parseSpokenNumber(text) {
   return last;
 }
 
+// Decode joined ascending counts ("123" -> third rep), not explicit performance reports.
+function parseSpokenRepCount(text, previous = 0) {
+  const last = normalizeVoiceText(text).split(' ').at(-1);
+  if (/^\d{2,}$/.test(last)) {
+    let sequence = '';
+    for (let count = 1; count <= 100; count++) {
+      sequence += count;
+      if (sequence === last && previous <= count) return count;
+      if (!last.startsWith(sequence)) break;
+    }
+  }
+  return parseSpokenNumber(text);
+}
+
 function normalizeVoiceText(text) {
   return i18n.canonicalVoice(text || '').normalize('NFKC').toLowerCase().replace(/\p{M}/gu, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -2684,7 +2700,7 @@ function handleVoiceTranscript(transcript) {
   const numberText = endsCount ? t.replace(endPhrase, '') : t;
   const onlyNumbers = numberText.split(' ').every((word) => /^\d+$/.test(word)
     || HE_NUM_WORDS[word] !== undefined || (word.startsWith('ו') && HE_NUM_WORDS[word.slice(1)] !== undefined));
-  const parsedCount = onlyNumbers ? parseSpokenNumber(numberText) : null;
+  const parsedCount = onlyNumbers ? parseSpokenRepCount(numberText, voiceCountingState?.count || 0) : null;
   const spokenCount = Number.isSafeInteger(parsedCount) && parsedCount >= 0 ? parsedCount : null;
   if (voiceCountingState && endsCount && spokenCount !== null) command = 'setDone';
 
@@ -2904,6 +2920,7 @@ function handleVoiceTranscript(transcript) {
 let voiceListeningActive = false;
 let voiceListeningRequested = false;
 let voiceFocusedRequested = false;
+let voicePlaybackHandoff = false;
 let voiceActivationPending = false;
 let voiceListeningRevision = 0;
 let voiceListeningError = '';
@@ -2924,6 +2941,10 @@ async function requestVoiceActivation(focused = false) {
   updateVoiceBadgeForListeningState();
 }
 async function setFocusedListening(focused) {
+  if (voicePlaybackHandoff) {
+    showToast('עדכון הניגון מתבצע. נסה שוב לאחר סיומו.');
+    return;
+  }
   if (!native.isNative() || currentTab !== 'workout' || activeSession.paused || document.visibilityState !== 'visible') {
     showToast('האזנה ממוקדת זמינה באייפון כשהאימון פתוח ואינו מושהה.');
     return;
@@ -2934,6 +2955,28 @@ async function setFocusedListening(focused) {
   }
   voiceFocusedRequested = focused;
   await updateVoiceListeningState(true);
+}
+
+async function setWorkoutMusicPlayback(playing) {
+  if (!playing) return native.musicSetPlayback(false);
+  if (document.visibilityState !== 'visible') throw new Error('Music playback requires the app to be active');
+  voicePlaybackHandoff = true;
+  ++voiceListeningRevision;
+  voiceFocusedRequested = false;
+  voiceListeningRequested = false;
+  voiceListeningActive = false;
+  voiceActivationPending = false;
+  pendingVoiceFinish = null;
+  updateVoiceBadgeForListeningState();
+  try {
+    const result = await native.voiceRecoverAudio();
+    if (!result.released) throw new Error(result.reason || 'Microphone audio release was not confirmed');
+    return await native.musicSetPlayback(true);
+  } finally {
+    voicePlaybackHandoff = false;
+    if (currentTab === 'workout' && settings.voiceCommandsEnabled && !activeSession.paused
+      && document.visibilityState === 'visible') await updateVoiceListeningState(true);
+  }
 }
 
 async function recoverWorkoutAudio() {
@@ -2970,12 +3013,13 @@ function handleVoiceListeningChanged(data) {
   if (!voiceListeningActive) pendingVoiceFinish = null;
   voiceListeningError = data.reason === 'interrupted' ? 'ההאזנה מושהית אחרי הפרעה. אפשר לנסות חידוש בכפתור האודיו.'
     : data.reason === 'announcement' ? 'ההאזנה מושהית בזמן הכרזה'
+      : data.reason === 'recovering' ? 'קלט המיקרופון נעצר — מחדש את ההאזנה'
       : data.reason === 'inactive' ? 'ההאזנה מושהית כשהאפליקציה אינה פעילה' : '';
   updateVoiceBadgeForListeningState();
 }
 
 async function updateVoiceListeningState(force = false) {
-  if (!native.isNative()) return;
+  if (!native.isNative() || voicePlaybackHandoff) return;
   const requested = currentTab === 'workout'
     && !activeSession.paused
     && settings.voiceCommandsEnabled === true;

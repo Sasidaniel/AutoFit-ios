@@ -47,7 +47,7 @@ function musicControlsFixture({ platform = true, authorization = 'authorized', s
   };
   const module = loadPhaseOneModule('www/js/music-controls.js', ['createMusicControls'],
     { i18n: { text: (value) => value }, console: { error() {} } });
-  const ui = module.createMusicControls({ native, beforePlay: async () => { calls.push('end-focused-listening'); },
+  const ui = module.createMusicControls({ native, setPlayback: (playing) => native.musicSetPlayback(playing),
     toast: (text) => toasts.push(text) }, doc);
   return { ui, native, calls, toasts, buttons, hint, events, doc, flush: () => new Promise(setImmediate),
     change: (next) => { current = next; listener(next); } };
@@ -69,7 +69,7 @@ test('music permission is user initiated and permission approval alone never sta
   await fixture.buttons[0].click();
   assert.ok(fixture.calls.includes('authorize'));
   assert.ok(!fixture.calls.includes('play'));
-  assert.ok(fixture.buttons.every((button) => button.textContent === 'המשך מוזיקה'));
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'נגן מוזיקה'));
 });
 
 test('header and floating music buttons share confirmed state, prevent double taps and honor external changes', async () => {
@@ -85,15 +85,14 @@ test('header and floating music buttons share confirmed state, prevent double ta
   assert.ok(fixture.buttons.every((button) => button.disabled));
   await fixture.buttons[0].click();
   assert.equal(fixture.calls.filter((call) => call === 'play').length, 1);
-  assert.ok(fixture.calls.indexOf('end-focused-listening') < fixture.calls.indexOf('play'));
   finish({ authorization: 'authorized', state: 'playing' });
   await pending;
-  assert.ok(fixture.buttons.every((button) => !button.disabled && button.textContent === 'השהיית מוזיקה'));
+  assert.ok(fixture.buttons.every((button) => !button.disabled && button.textContent === 'עצור מוזיקה'));
   fixture.change({ authorization: 'authorized', state: 'paused' });
-  assert.ok(fixture.buttons.every((button) => button.textContent === 'המשך מוזיקה'));
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'נגן מוזיקה'));
 });
 
-test('music never reports unconfirmed playback and retries status instead of guessing after a failure', async () => {
+test('music never reports unconfirmed playback and keeps an explicit play action available after failure', async () => {
   for (const result of [new Error('offline'), { authorization: 'authorized', state: 'paused' }]) {
     const fixture = musicControlsFixture();
     await fixture.flush();
@@ -102,11 +101,16 @@ test('music never reports unconfirmed playback and retries status instead of gue
       return result;
     };
     await fixture.buttons[0].click();
-    assert.ok(fixture.buttons.every((button) => button.textContent === 'בדיקת Apple Music'));
+    assert.ok(fixture.buttons.every((button) => button.textContent === 'נגן מוזיקה'));
     assert.match(fixture.hint.textContent, /לא התקבל אישור/);
     assert.equal(fixture.toasts.length, 1);
+    let retry;
+    fixture.native.musicSetPlayback = async (playing) => {
+      retry = playing; return { authorization: 'authorized', state: 'playing' };
+    };
     await fixture.buttons[0].click();
-    assert.equal(fixture.buttons[0].textContent, 'המשך מוזיקה');
+    assert.equal(retry, true);
+    assert.equal(fixture.buttons[0].textContent, 'עצור מוזיקה');
   }
 });
 
@@ -119,11 +123,11 @@ test('stale status reads cannot overwrite a newer native music notification', as
   fixture.change({ authorization: 'authorized', state: 'playing' });
   finish({ authorization: 'authorized', state: 'paused' });
   await pending;
-  assert.equal(fixture.buttons[0].textContent, 'השהיית מוזיקה');
+  assert.equal(fixture.buttons[0].textContent, 'עצור מוזיקה');
 });
 
-test('denied music permission and interruptions do not cause repeated prompts or playback commands', async () => {
-  for (const config of [{ authorization: 'denied', state: 'unavailable' }, { state: 'interrupted' }]) {
+test('denied music permission does not cause repeated prompts or playback commands', async () => {
+  for (const config of [{ authorization: 'denied', state: 'unavailable' }, { authorization: 'restricted', state: 'unavailable' }]) {
     const fixture = musicControlsFixture(config);
     await fixture.flush();
     await fixture.buttons[0].click();
@@ -131,6 +135,43 @@ test('denied music permission and interruptions do not cause repeated prompts or
     assert.ok(!fixture.calls.includes('play'));
     assert.ok(!fixture.calls.includes('pause'));
   }
+});
+
+test('interrupted and unknown music states offer explicit play instead of a status-check dead end', async () => {
+  for (const state of ['interrupted', 'unknown', 'seeking', 'stopped']) {
+    const fixture = musicControlsFixture({ state });
+    await fixture.flush();
+    assert.equal(fixture.buttons[0].textContent, 'נגן מוזיקה');
+    await fixture.buttons[0].click();
+    assert.ok(fixture.calls.includes('play'));
+    assert.equal(fixture.buttons[0].textContent, 'עצור מוזיקה');
+    await fixture.buttons[1].click();
+    assert.ok(fixture.calls.includes('pause'));
+  }
+});
+
+test('a late command response cannot override a newer external Music pause', async () => {
+  const fixture = musicControlsFixture();
+  await fixture.flush();
+  fixture.native.musicSetPlayback = async () => {
+    fixture.change({ authorization: 'authorized', state: 'paused' });
+    return { authorization: 'authorized', state: 'playing' };
+  };
+  await fixture.buttons[0].click();
+  assert.equal(fixture.buttons[0].textContent, 'נגן מוזיקה');
+});
+
+test('Music honors the displayed play intent even when a delayed permission-status read races with player events', async () => {
+  const fixture = musicControlsFixture({ authorization: 'unknown', state: 'unknown' });
+  await fixture.flush();
+  let finish;
+  fixture.native.musicStatus = () => new Promise((resolve) => { finish = resolve; });
+  const pending = fixture.buttons[0].click();
+  fixture.change({ authorization: 'authorized', state: 'paused' });
+  finish({ authorization: 'authorized', state: 'playing' });
+  await pending;
+  assert.ok(fixture.calls.includes('play'));
+  assert.ok(!fixture.calls.includes('pause'));
 });
 
 test('Apple Music bridge is wired into the app target, permission-gated, bounded and never changes queue or audio policy', () => {
@@ -154,6 +195,41 @@ test('Apple Music bridge is wired into the app target, permission-gated, bounded
   assert.equal((html.match(/data-music-toggle/g) || []).length, 2);
   assert.match(html.match(/id="workoutQuickStatus"[\s\S]*?<\/div>/)[0], /data-music-toggle/);
   assert.match(read('www/service-worker.js'), /'\.\/js\/music-controls\.js'/);
+});
+
+test('capture recovery tracks real input independently of recognition-task rotation and stays bounded', () => {
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  const recognitionEnd = swift.slice(swift.indexOf('private func endRecognition()'), swift.indexOf('private func end()'));
+  const captureEnd = swift.slice(swift.indexOf('private func end()'), swift.indexOf('private func voiceError'));
+  assert.match(swift, /inputAt = ProcessInfo\.processInfo\.systemUptime/);
+  assert.match(swift, /self.captureGeneration == capture/);
+  assert.match(swift, /needsCaptureRecovery[\s\S]*self.end\(\)[\s\S]*reason: "recovering"[\s\S]*retryRecognition/);
+  assert.doesNotMatch(recognitionEnd, /pendingCaptureCheck/);
+  assert.match(captureEnd, /pendingCaptureCheck\?\.cancel\(\)/);
+  assert.match(captureEnd, /\n        notifyListeningState\(reason:/);
+});
+
+test('native audio validation cannot sign, archive, dispatch releases or upload builds', () => {
+  const workflow = read('.github/workflows/ios-audio-validation.yml');
+  assert.match(workflow, /workflow_dispatch/);
+  assert.match(workflow, /contents: read/);
+  assert.match(workflow, /xcodebuild build/);
+  assert.match(workflow, /CODE_SIGNING_ALLOWED=NO/);
+  assert.doesNotMatch(workflow, /secrets\.|xcodebuild archive|altool|upload-app|workflow run|build_number|push:/);
+});
+
+test('progress browsing reuses library groups, keeps personal exercises and separates groups without mutating definitions', () => {
+  const { groupProgressExercises } = loadPhaseOneModule('www/js/training-ui.js', ['groupProgressExercises']);
+  const definitions = [{ id: 'chest', icon: 'chest.svg' }, { id: 'back', icon: 'back.svg' }, { id: 'general', icon: '+' }];
+  const exercises = [{ id: 'a', group: 'chest' }, { id: 'b', group: 'back' }, { id: 'personal', group: 'legacy' }];
+  const before = JSON.stringify([definitions, exercises]);
+  const result = groupProgressExercises(exercises, definitions, (exercise) => exercise.group);
+  assert.deepEqual(Array.from(result, (group) => [group.id, group.icon, ...group.exercises.map((exercise) => exercise.id)]),
+    [['chest', 'chest.svg', 'a'], ['back', 'back.svg', 'b'], ['general', '+', 'personal']]);
+  assert.equal(JSON.stringify([definitions, exercises]), before);
+  assert.equal(groupProgressExercises([], definitions, () => 'chest').length, 0);
+  assert.match(app, /muscleGroups: \(\) => EXERCISE_LIBRARY_CATEGORIES/);
+  assert.match(app, /exerciseGroup: \(exercise\) => exerciseLibraryGroup\(exercise\)/);
 });
 
 test('music wrapper sends explicit playback intent and fails visibly when the native plugin is missing', async () => {
@@ -414,6 +490,65 @@ function focusedVoiceFixture() {
   vm.runInContext("currentTab = 'workout'", context);
   return { context, calls, messages };
 }
+
+test('explicit Music play releases capture before playback and restores mixed listening without discarding counts', async () => {
+  for (const fail of [false, true]) {
+    const { context, calls } = focusedVoiceFixture();
+    await context.setFocusedListening(true);
+    context.voiceCountingState = { count: 2 };
+    calls.length = 0;
+    let finish;
+    context.native.musicSetPlayback = () => {
+      calls.push(['play']);
+      return new Promise((resolve, reject) => {
+        finish = () => fail ? reject(new Error('Music unavailable')) : resolve({ state: 'playing' });
+      });
+    };
+    const pending = context.setWorkoutMusicPlayback(true);
+    await new Promise(setImmediate);
+    await context.updateVoiceListeningState(true);
+    assert.deepEqual(calls, [['release'], ['play']]);
+    assert.equal(context.voiceCountingState.count, 2);
+    finish();
+    if (fail) await assert.rejects(pending, /Music unavailable/);
+    else assert.equal((await pending).state, 'playing');
+    assert.deepEqual(calls, [['release'], ['play'], ['start', false]]);
+    assert.equal(context.voiceCountingState.count, 2);
+  }
+});
+
+test('Music pause does not release capture; playback never enables disabled listening or restarts it off-screen', async () => {
+  for (const mode of ['disabled', 'hidden', 'left-workout', 'paused']) {
+    const { context, calls } = focusedVoiceFixture();
+    context.native.musicSetPlayback = async (playing) => { calls.push([playing ? 'play' : 'pause']); return { state: playing ? 'playing' : 'paused' }; };
+    await context.setWorkoutMusicPlayback(false);
+    assert.deepEqual(calls, [['pause']]);
+    calls.length = 0;
+    if (mode === 'disabled') context.settings.voiceCommandsEnabled = false;
+    else context.native.musicSetPlayback = async () => {
+      calls.push(['play']);
+      if (mode === 'hidden') context.document.visibilityState = 'hidden';
+      if (mode === 'left-workout') vm.runInContext("currentTab = 'home'", context);
+      if (mode === 'paused') context.activeSession.paused = true;
+      return { state: 'playing' };
+    };
+    await context.setWorkoutMusicPlayback(true);
+    assert.deepEqual(calls, [['release'], ['play']]);
+  }
+});
+
+test('a refused capture handoff never sends play and a pending handoff blocks exclusive listening', async () => {
+  const { context, calls, messages } = focusedVoiceFixture();
+  let release;
+  context.native.voiceRecoverAudio = () => new Promise((resolve) => { release = resolve; });
+  context.native.musicSetPlayback = async () => { assert.fail('Must not play without release'); };
+  const pending = context.setWorkoutMusicPlayback(true);
+  await context.setFocusedListening(true);
+  assert.match(messages.at(-1), /הניגון/);
+  release({ released: false, reason: 'Microphone busy' });
+  await assert.rejects(pending, /Microphone busy/);
+  assert.deepEqual(calls, [['start', false]]);
+});
 
 test('focused listening is explicit and reversible, and native capture events distinguish speech and interruption pauses', async () => {
   const { context, calls } = focusedVoiceFixture();
@@ -1561,7 +1696,7 @@ test('language changes are durable, restart recognition in the new locale and do
     qsa: () => buttons, settings: { language: 'he' }, activeSession: session,
     db: { saveSettings: (value) => calls.push(['saved', value.language]) },
     appInitialized: true, currentTab: 'workout', voiceListeningActive: true, voiceListeningRevision: 0,
-    voiceListeningRequested: true, voiceFocusedRequested: false, voiceActivationPending: false,
+    voiceListeningRequested: true, voiceFocusedRequested: false, voiceActivationPending: false, voicePlaybackHandoff: false,
     window: { speechSynthesis: { cancel() {} } }, console,
     syncNativeAnnouncementPlan() {}, syncWorkoutActivity() {}, renderBrand() {}, renderHomeTab() {},
     native: { voiceStopListening: async () => { calls.push(['stop']); return true; } },
@@ -3442,6 +3577,29 @@ test('spoken counts save the last number and ending a set works within the same 
   assert.equal(entry.sets[0].completed, true);
 });
 
+test('rewritten and concatenated numeric transcripts count twelve actual reps instead of finishing after two', () => {
+  const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ reps: '12', weightKg: 40, completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('לחיצת חזה');
+  for (let count = 1; count <= 12; count++) {
+    const text = Array.from({ length: count }, (_, index) => String(index + 1)).join(count % 2 ? ' ' : '');
+    context.handleVoiceTranscript(text);
+    assert.equal(entry.sets[0].reps, count, text);
+    assert.equal(entry.sets[0].completed, count === 12, text);
+    assert.equal(entry.sets[0].weightKg, 40);
+  }
+});
+
+test('direct numeric counts above two and explicit performance reports retain their original meaning', () => {
+  const { context } = voiceContext();
+  assert.equal(context.parseSpokenRepCount('12', 11), 12);
+  assert.equal(context.parseSpokenRepCount('עשרים ושתיים', 21), 22);
+  assert.equal(context.parseSpokenRepCount('1 2 3 4', 3), 4);
+  assert.equal(context.parseSpokenRepCount('123456789101112131415', 14), 15);
+  assert.equal(context.parseSpokenRepCount('12', 1), 2);
+  assert.equal(context.parseSpokenNumber('12'), 12);
+});
+
 function contextualEntries() {
   return [
     { exerciseId: 'warmup', exerciseName: 'חימום-הליכה', type: 'cardio', durationSec: 300, completed: false },
@@ -4690,7 +4848,7 @@ test('listening badge identifies the actual microphone alongside the selected ex
     native: { isNative: () => true }, el: () => badge,
     activeSession: { currentExerciseId: 'bench', entries: [{ exerciseId: 'bench', exerciseName: 'Bench' }] },
     voiceListeningActive: true, voiceListeningError: '', voiceCountingState: null,
-    voiceActivationPending: false, voiceFocusedRequested: false,
+    voiceActivationPending: false, voiceFocusedRequested: false, voicePlaybackHandoff: false,
     voiceInputName: 'iPhone microphone', voiceTargetEntryIndex: () => 0,
   });
   vm.runInContext(section('function setVoiceBadge(', 'function handleVoiceTranscript('), context);

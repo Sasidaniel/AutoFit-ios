@@ -30,6 +30,10 @@ enum WorkoutAudioPolicy {
         return Double(max(1, min(failures, 4)))
     }
 
+    static func needsCaptureRecovery(engineRunning: Bool, secondsWithoutInput: Double) -> Bool {
+        !engineRunning || secondsWithoutInput >= 4
+    }
+
     static let focusedListeningSeconds: Double = 120
 }
 

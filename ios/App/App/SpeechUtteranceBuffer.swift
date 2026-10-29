@@ -14,7 +14,7 @@ struct SpeechUtteranceBuffer {
             transcript = text
             changedAt = now
         }
-        let words = transcript.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let words = Self.parts(transcript)
         let pending = Array(words.dropFirst(committedWords))
         if words.count >= committedWords && pending.allSatisfy(Self.isNumberWord) {
             var start = committedWords
@@ -35,7 +35,7 @@ struct SpeechUtteranceBuffer {
     }
 
     private mutating func emit() -> String? {
-        let words = transcript.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let words = Self.parts(transcript)
         guard words.count > committedWords else { return nil }
         let text = words.dropFirst(committedWords).joined(separator: " ")
         committedWords = words.count
@@ -43,7 +43,25 @@ struct SpeechUtteranceBuffer {
         return text
     }
 
+    // Recognition rewrites a spoken numeric run into fewer tokens, e.g. "1 2" -> "12".
+    // Treat that run as one cursor position so following counts and commands are not lost.
+    private static func parts(_ text: String) -> [String] {
+        var result: [String] = []
+        var numeric = false
+        for word in text.split(whereSeparator: { $0.isWhitespace }).map(String.init) {
+            let nextNumeric = isNumberToken(word)
+            if numeric && nextNumeric { result[result.count - 1] += " " + word }
+            else { result.append(word) }
+            numeric = nextNumeric
+        }
+        return result
+    }
+
     private static func isNumberWord(_ value: String) -> Bool {
+        value.split(whereSeparator: { $0.isWhitespace }).allSatisfy { isNumberToken(String($0)) }
+    }
+
+    private static func isNumberToken(_ value: String) -> Bool {
         let word = value.lowercased().trimmingCharacters(in: .punctuationCharacters)
         if !word.isEmpty && word.allSatisfy({ $0.isNumber }) { return true }
         let numbers: Set<String> = [

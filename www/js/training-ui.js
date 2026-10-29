@@ -95,6 +95,16 @@ const ACTION_ERRORS = {
   'No suitable exercises for these preferences': 'אין מספיק תרגילים מאומתים לשילוב הזה. שנה מיקום או ציוד; לא נוספו תרגילים מומצאים.',
 };
 
+export function groupProgressExercises(exercises, definitions, groupForExercise) {
+  const groups = definitions.map((group) => ({ ...group, exercises: [] }));
+  for (const exercise of exercises) {
+    const group = groups.find((item) => item.id === groupForExercise(exercise)) || groups.find((item) => item.id === 'general');
+    if (!group) throw new Error('Exercise has no progress browsing group');
+    group.exercises.push(exercise);
+  }
+  return groups.filter((group) => group.exercises.length);
+}
+
 export function createTrainingUI(api) {
   const plans = document.getElementById('plansPageContent');
   plans.innerHTML = `<section class="card training-hub">
@@ -253,20 +263,31 @@ export function createTrainingUI(api) {
     sessionNotice(dialog);
   }
 
-  function recommendations(scope = 'program') {
+  function recommendations(scope = 'program', muscle = '', exerciseId = '') {
     const state = api.getState();
     const focus = trainingSettings().progressFocus || '';
     const history = statisticsOverview(state.history).records;
     const recordedIds = new Set(history.flatMap((record) => record.entries.map((entry) => entry.exerciseId)));
     const chosen = state.exercises.filter((exercise) => scope === 'history' ? recordedIds.has(exercise.id) : exercise.active !== false);
-    const records = focus ? chosen.map((exercise) => ({ exercise, advice: progressRecommendation(exercise, state.history, new Date(), focus) })) : [];
+    const groups = groupProgressExercises(chosen, api.muscleGroups(), api.exerciseGroup);
+    const group = groups.find((item) => item.id === muscle);
+    const selected = group?.exercises.find((exercise) => exercise.id === exerciseId);
+    const records = focus && selected ? [{ exercise: selected, advice: progressRecommendation(selected, state.history, new Date(), focus) }] : [];
     const dialog = api.dialog(t('יעדים אישיים והמלצות'), `
       <p data-no-translate>${i18n.text('אימונים בהיסטוריה')}: ${history.length}</p>
       ${field('במה תרצה להתקדם?', `<select class="select" id="adviceFocus">${options(PROGRESS_FOCUSES, focus)}</select>`)}
       ${field('תרגילים להצגה', `<select class="select" id="adviceScope">${options([['program', 'האימון שלי'], ['history', 'תרגילים מההיסטוריה']], scope)}</select>`)}
-      ${note('יעדים אינם נוצרים אוטומטית מההיסטוריה. אפשר לבחור יעד אישי גם כשחסרים פרטים להשוואה בטוחה.')}
-      ${note('לא הוראה רפואית ולא שינוי אוטומטי. נפח אינו כוח. שינוי עומס דורש בחירה ואישור שלך לאימונים הבאים.')}
-      ${!focus ? note('בחר תחילה אם להתמקד במשקל, בחזרות או בסטים.') : !records.length ? note('אין תרגילים שמורים בבחירה הזאת. ההיסטוריה המקורית נשארת בטאב היסטוריה.') : ''}
+      ${group ? `${button('btnAdviceMuscles', 'חזרה לקבוצות השרירים')}<h3>${t(group.id === 'warmup' ? 'אירובי ותנועה' : group.label)}</h3>
+        ${field('בחירת תרגיל', `<select class="select" id="adviceExercise"><option value="">${t('בחר תרגיל אחד')}</option>${group.exercises.map((exercise) =>
+          `<option value="${esc(exercise.id)}" ${exercise.id === exerciseId ? 'selected' : ''}>${esc(i18n.exerciseName(exercise.name))}</option>`).join('')}</select>`)}`
+        : `<p>${t('בחר קבוצת שרירים כדי להתמקד בתרגיל אחד.')}</p>
+        <div class="exercise-category-grid library-browse-grid">${groups.map((item) => `<button type="button" class="exercise-category-button" data-advice-muscle="${esc(item.id)}">
+          <span class="exercise-category-icon" aria-hidden="true">${item.icon.endsWith('.svg') ? `<img src="${esc(item.icon)}" alt="">` : item.icon}</span>
+          <span>${t(item.id === 'warmup' ? 'אירובי ותנועה' : item.label)}</span><small>${item.exercises.length === 1 ? t('תרגיל אחד') : `${item.exercises.length} ${t('תרגילים')}`}</small></button>`).join('')}</div>`}
+      ${!groups.length ? note('אין תרגילים שמורים בבחירה הזאת. ההיסטוריה המקורית נשארת בטאב היסטוריה.') : !focus ? note('בחר תחילה אם להתמקד במשקל, בחזרות או בסטים.') : ''}
+      ${records.length ? `<details><summary>${t('על ההמלצה האישית')}</summary>
+        ${note('יעדים אינם נוצרים אוטומטית מההיסטוריה. אפשר לבחור יעד אישי גם כשחסרים פרטים להשוואה בטוחה.')}
+        ${note('לא הוראה רפואית ולא שינוי אוטומטי. נפח אינו כוח. שינוי עומס דורש בחירה ואישור שלך לאימונים הבאים.')}</details>` : ''}
       ${records.map(({ exercise, advice }, index) => `<section class="training-advice">
         <h4 data-no-translate>${name(exercise)}</h4><strong>${t(RECOMMENDATIONS[advice.kind])}</strong><p>${t(REASONS[advice.reason])}</p>
         <p class="field-hint" data-no-translate>${i18n.text('אימונים שתועדו לתרגיל')}: ${advice.historyCount}</p>
@@ -290,24 +311,35 @@ export function createTrainingUI(api) {
     dialog.querySelector('#adviceFocus').onchange = () => safely(dialog, () => {
       saveTraining({ progressFocus: dialog.querySelector('#adviceFocus').value });
       dialog.close();
-      recommendations(scope);
+      recommendations(scope, muscle, exerciseId);
     });
     dialog.querySelector('#adviceScope').onchange = () => {
       const selected = dialog.querySelector('#adviceScope').value;
       dialog.close();
       recommendations(selected);
     };
+    dialog.querySelectorAll('[data-advice-muscle]').forEach((btn) => btn.onclick = () => {
+      dialog.close();
+      recommendations(scope, btn.dataset.adviceMuscle);
+    });
+    const back = dialog.querySelector('#btnAdviceMuscles');
+    if (back) back.onclick = () => { dialog.close(); recommendations(scope); };
+    const picker = dialog.querySelector('#adviceExercise');
+    if (picker) picker.onchange = () => {
+      dialog.close();
+      recommendations(scope, muscle, picker.value);
+    };
     dialog.querySelectorAll('[data-clear-load]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       api.clearLoadTarget(records[Number(btn.dataset.clearLoad)].exercise.id);
       dialog.close();
-      recommendations(scope);
+      recommendations(scope, muscle, exerciseId);
     }));
     dialog.querySelectorAll('[data-target]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       const target = Number(btn.closest('section').querySelector('.advice-target').value);
       if (!Number.isInteger(target) || target < 1 || target > 100) throw new RangeError('Target must be 1–100 reps');
       api.saveTarget(records[Number(btn.dataset.target)].exercise.id, target);
       dialog.close();
-      recommendations(scope);
+      recommendations(scope, muscle, exerciseId);
     }));
     dialog.querySelectorAll('[data-advice]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       const { exercise, advice } = records[Number(btn.dataset.advice)];
@@ -854,11 +886,15 @@ export function createTrainingUI(api) {
         if (Number(exercise.targetReps) > 0) values.push(`${Number(exercise.targetReps)} ${t('חזרות')}`);
         if (exercise.targetWeightKg != null) values.push(`${Number(exercise.targetWeightKg)} ${t('ק"ג')}`);
         if (trainingSettings().decisions?.[exercise.id]?.defaultSets) values.push(`${Number(exercise.defaultSets)} ${t('סטים')}`);
-        return values.length ? `<li>${name(exercise)}: ${values.join(' · ')}${exercise.active === false ? ` · ${t('לא באימון הנוכחי')}` : ''}</li>` : '';
-      }).filter(Boolean);
-    const targetHTML = savedTargets.length ? `<ul>${savedTargets.join('')}</ul><p>${t('השמירה תחול באימונים הבאים בלבד. האימון הנוכחי וההיסטוריה לא ישתנו.')}</p>`
-      : `<p>${t('עדיין לא בחרת יעד לתרגיל. פתח יעדים אישיים והמלצות כדי לבחור ולשמור יעד; ההיסטוריה הקיימת נשמרת.')}</p>`;
+        return { ...exercise, targetSummary: values.join(' · ') };
+      }).filter((exercise) => exercise.targetSummary);
     const targetNode = document.getElementById('progressSavedTargets');
+    const openGroups = new Set([...targetNode.querySelectorAll('details[open]')].map((node) => node.dataset.targetGroup));
+    const targetHTML = savedTargets.length ? groupProgressExercises(savedTargets, api.muscleGroups(), api.exerciseGroup).map((group) =>
+      `<details data-target-group="${esc(group.id)}" ${openGroups.has(group.id) ? 'open' : ''}><summary>${t(group.label)} · ${group.exercises.length}</summary><ul>${group.exercises.map((exercise) =>
+        `<li>${name(exercise)}: ${exercise.targetSummary}${exercise.active === false ? ` · ${t('לא באימון הנוכחי')}` : ''}</li>`).join('')}</ul></details>`).join('')
+      + `<p>${t('השמירה תחול באימונים הבאים בלבד. האימון הנוכחי וההיסטוריה לא ישתנו.')}</p>`
+      : `<p>${t('עדיין לא בחרת יעד לתרגיל. פתח יעדים אישיים והמלצות כדי לבחור ולשמור יעד; ההיסטוריה הקיימת נשמרת.')}</p>`;
     if (targetNode.innerHTML !== targetHTML) targetNode.innerHTML = targetHTML;
     document.querySelectorAll('#exerciseList .exercise-card[data-entry-index]').forEach((card) => {
       const entry = state.session.entries[Number(card.dataset.entryIndex)];
