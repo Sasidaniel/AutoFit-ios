@@ -24,7 +24,7 @@ function options(select, values, current, label = (value) => value, optional = t
 
 export function renderProfileFields(prefix, profile, root = document) {
   const gender = root.getElementById(`${prefix}Gender`);
-  options(gender, Object.keys(genders), profile.gender || '', (value) => genders[value], true, 'בחר מין מהרשימה.');
+  options(gender, Object.keys(genders), profile.gender || 'male', (value) => genders[value], true, 'בחר מין מהרשימה.');
   gender.options[0].disabled = true;
   if (prefix === 'ob') gender.onchange = () => {
     if (gender.value) i18n.setGender(readProfileGender(prefix, root));

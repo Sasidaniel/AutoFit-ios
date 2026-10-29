@@ -1,6 +1,9 @@
 import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
+  'תרגול לפי זמן': 'Timed practice',
+  'הערות לתרגול (רשות)': 'Practice notes (optional)',
+  'כלוב בטיחות': 'Rack with safety bars',
   'מתח ומקבילים': 'Pull-up bars and parallel bars',
   'תוכניות': 'Plans',
   'תוכניות שמורות שלי': 'My saved plans',

@@ -84,7 +84,7 @@ export function supersetNeedsRest(session, entry) {
 export const PLAN_MUSCLES = ['חזה', 'גב', 'רגליים', 'כתפיים', 'יד קדמית', 'יד אחורית', 'בטן', 'ישבן', 'שוקיים'];
 const META = {
   squat: ['squat', 'רגליים', ['ישבן'], true], goblet: ['squat', 'רגליים', ['ישבן'], true],
-  lunge: ['lunge', 'רגליים', ['ישבן'], true], hinge: ['hinge', 'ישבן', ['רגליים', 'גב תחתון'], true],
+  lunge: ['lunge', 'רגליים', ['ישבן'], true], hinge: ['hinge', 'רגליים', ['ישבן', 'גב תחתון'], true],
   bridge: ['hip-extension', 'ישבן', ['רגליים'], false], calf: ['calf', 'שוקיים', [], false],
   pushup: ['horizontal-push', 'חזה', ['יד אחורית', 'כתפיים'], true],
   chest: ['horizontal-push', 'חזה', ['יד אחורית', 'כתפיים'], true],
@@ -99,7 +99,7 @@ const META = {
   dumbbellPress: ['vertical-push', 'כתפיים', ['יד אחורית'], true],
   triceps: ['elbow-extension', 'יד אחורית', [], false],
   overhead: ['elbow-extension', 'יד אחורית', [], false],
-  curl: ['elbow-flexion', 'יד קדמית', [], false], hammer: ['elbow-flexion', 'יד קדמית', ['אמות'], false],
+  curl: ['elbow-flexion', 'יד קדמית', [], false], hammer: ['elbow-flexion', 'אמות', ['יד קדמית'], false],
   front: ['shoulder-flexion', 'כתפיים', [], false], lateral: ['shoulder-abduction', 'כתפיים', [], false],
   shrug: ['shrug', 'טרפז', [], false], back: ['back-extension', 'גב תחתון', [], false],
   deadbug: ['core-control', 'בטן', [], false], birdDog: ['core-control', 'בטן', ['גב תחתון'], false],
@@ -776,7 +776,7 @@ export function generatePlan(options, catalog) {
     || !['beginner', 'regular'].includes(experience) || ![1, 2, 3, 4, 5, 6].includes(days)
     || ![20, 30, 45, 60, 90].includes(minutes) || !['home', 'gym', 'outside'].includes(location)
     || !Array.isArray(equipment) || new Set(equipment).size !== equipment.length
-    || equipment.some((item) => !['משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'כיסא יציב', 'TRX', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן'].includes(item))
+    || equipment.some((item) => !['משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'כיסא יציב', 'TRX', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן', 'כלוב בטיחות'].includes(item))
     || !['auto', 'full-body', 'ab', 'abc'].includes(split)
     || split === 'ab' && days < 2 || split === 'abc' && days < 3
     || ['walk', 'run'].includes(goal) && !['auto', 'full-body'].includes(split)

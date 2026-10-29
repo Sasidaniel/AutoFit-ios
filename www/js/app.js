@@ -702,7 +702,8 @@ function makeCardioEntry(kind, program = exercises) {
   const ex = program.find((e) => e.id === kind) || {};
   const name = ex.name || (kind === 'warmup' ? DEFAULT_WARMUP_NAME : DEFAULT_COOLDOWN_NAME);
   const minutes = ex.durationMinutes || 5;
-  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || 'treadmill', pace: ex.pace || DEFAULT_CARDIO_PACE,
+  const walkingBoundary = kind === 'warmup' || kind === 'cooldown';
+  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || (walkingBoundary ? 'treadmill' : ''), pace: ex.pace || (walkingBoundary ? DEFAULT_CARDIO_PACE : ''),
     ...(ex.intervals ? { intervals: JSON.parse(JSON.stringify(ex.intervals)),
       exerciseSnapshot: { id: ex.id, name: ex.name, catalogId: ex.catalogId, inputType: 'cardio' } } : {}) };
 }
@@ -1952,7 +1953,10 @@ function renderCardioCard(entry, number) {
   const card = document.createElement('div');
   const ex = exercises.find((e) => e.id === entry.exerciseId) || {};
   const mediaExercise = entry.exerciseSnapshot || ex;
-  const hasGuide = !!library.exerciseGuide(mediaExercise);
+  const info = library.exerciseGuide(mediaExercise);
+  const hasGuide = !!info;
+  const activityOnly = info?.activityOnly === true;
+  const treadmillAvailable = !info || ['walk', 'jog'].includes(info.pose) || entry.location === 'treadmill';
   card.className = 'exercise-card' + (entry.completed ? ' done' : '');
   const minutes = Math.round(entry.durationSec / 6) / 10;
   const fullDurationSec = entry.intervals ? trainingTools.ropeIntervalSchedule(entry.intervals).reduce((total, phase) => total + phase.seconds, 0)
@@ -1964,7 +1968,7 @@ function renderCardioCard(entry, number) {
         <span class="exercise-num">${number}</span>
         <div>
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
-          <div class="exercise-meta">${entry.exerciseId === 'warmup' || entry.exerciseId === 'cooldown' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
+          <div class="exercise-meta">${activityOnly ? 'תרגול לפי זמן' : entry.exerciseId === 'warmup' || entry.exerciseId === 'cooldown' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
           <div class="exercise-head-right">
             <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
             ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
@@ -1980,11 +1984,12 @@ function renderCardioCard(entry, number) {
       <div class="cardio-pace-row">
         <select class="select cardioLocation">
           <option value="" ${!entry.location ? 'selected' : ''}>מיקום (לא צויין)</option>
-          <option value="treadmill" ${entry.location === 'treadmill' ? 'selected' : ''}>🏃 הליכון</option>
+          ${treadmillAvailable ? `<option value="treadmill" ${entry.location === 'treadmill' ? 'selected' : ''}>🏃 הליכון</option>` : ''}
+          <option value="gym" ${entry.location === 'gym' ? 'selected' : ''}>חדר כושר</option>
           <option value="outside" ${entry.location === 'outside' ? 'selected' : ''}>🌳 בחוץ</option>
           <option value="home" ${entry.location === 'home' ? 'selected' : ''}>🏠 בבית</option>
         </select>
-        <input class="input cardioPace" type="text" placeholder='קצב/מהירות (לדוגמה: מהירות 6 ~10 קמ"ש)' value="${escapeHtml(entry.pace || '')}">
+        <input class="input cardioPace" type="text" placeholder="${activityOnly ? 'הערות לתרגול (רשות)' : 'קצב/מהירות (לדוגמה: מהירות 6 ~10 קמ&quot;ש)'}" value="${escapeHtml(entry.pace || '')}">
       </div>
       <div class="settings-actions">
         <button class="btn btn-secondary btn-small btnCardioStart">${entry.startedAt && !entry.completed ? '⏸ עצור' : '▶ התחל'}</button>
@@ -4073,7 +4078,6 @@ function chartBaseOptions() {
 const EXERCISE_LIBRARY_CATEGORIES = [
   { id: 'supersets', label: 'סופר סטים', icon: '🔗', category: 'סופר סטים' },
   { id: 'warmup', label: 'אירובי / חימום ושחרור', icon: '🔥', category: 'קרדיו', inputType: 'cardio' },
-  { id: 'static', label: 'תרגילים סטטיים', icon: '⏱️', category: 'בטן', inputType: 'hold' },
   { id: 'legs', label: 'רגליים', icon: '🦵', category: 'רגליים' },
   { id: 'shoulders', label: 'כתפיים', icon: 'icons/muscle-shoulders.svg', category: 'כתפיים' },
   { id: 'biceps', label: 'יד קדמית', icon: 'icons/muscle-biceps.svg', category: 'יד קדמית' },
@@ -4101,14 +4105,13 @@ function exerciseLibraryCount(count) {
 
 function exerciseLibraryGroup(ex) {
   if (ex.inputType === 'cardio' || ex.id === 'warmup' || ex.id === 'cooldown') return 'warmup';
-  if (ex.inputType === 'hold') return 'static';
-  const category = String(ex.category || '').trim();
+  const category = String(library.exerciseBrowseInfo(ex)?.muscles[0] || ex.category || '').trim();
   if (category.startsWith('רגליים') || ['ישבן', 'שוקיים'].includes(category)) return 'legs';
   if (category.startsWith('כתפיים')) return 'shoulders';
   if (category.startsWith('גב')) return 'back';
   if (category === 'מפרקי כף יד') return 'forearms';
   return EXERCISE_LIBRARY_CATEGORIES.find((group) =>
-    !['warmup', 'static', 'general'].includes(group.id) && group.category === category)?.id || 'general';
+    !['warmup', 'general'].includes(group.id) && group.category === category)?.id || 'general';
 }
 
 function myWorkoutExercises() {
@@ -5210,7 +5213,7 @@ function renderProfilePhotos() {
 }
 
 function applyProfileWording() {
-  i18n.setGender(profile.gender || 'general');
+  i18n.setGender(profile.gender || 'male');
   if (!appInitialized) return;
   renderBrand();
   renderHomeTab();
@@ -5571,14 +5574,14 @@ async function unlockWithBiometrics() {
 // Native-only bootstrap: sensitive iCloud recovery/export requires an explicit action.
 // Returning local users retain their existing Face ID gate.
 async function bootstrap() {
-  i18n.start(settings.language || 'he', profile.gender || 'general');
+  i18n.start(settings.language || 'he', profile.gender || 'male');
   wireLanguageControls();
   if (native.isNative()) {
     settings = db.getSettings();
     profile = db.getProfile();
     workouts = db.getWorkouts();
     activeSession = db.getActiveSession();
-    i18n.setGender(profile.gender || 'general');
+    i18n.setGender(profile.gender || 'male');
     i18n.setLanguage(settings.language || 'he');
 
     if (settings.faceIdEnabled !== false && (settings.onboardingComplete
@@ -5753,7 +5756,7 @@ function runOnboarding() {
         if (result?.erased) throw new Error(i18n.text('גיבוי קודם סומן למחיקה ולא ישוחזר.'));
         settings = db.getSettings();
         profile = db.getProfile();
-        i18n.setGender(profile.gender || 'general');
+        i18n.setGender(profile.gender || 'male');
         workouts = db.getWorkouts();
         activeSession = db.getActiveSession();
         if (settings.faceIdEnabled !== false) {

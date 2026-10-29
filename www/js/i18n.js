@@ -4,7 +4,7 @@ import { SEED_EXERCISES } from './seed.js';
 import { LIBRARY_EXERCISES, PLANNING_EXERCISES } from './exercise-library.js';
 
 let language = 'he';
-let gender = 'general';
+let gender = 'male';
 let observer;
 const originals = new WeakMap();
 const inputs = new WeakMap();
@@ -149,13 +149,13 @@ export function setLanguage(value) {
   refreshLocalizedDOM();
 }
 
-export function setGender(value = 'general') {
+export function setGender(value = 'male') {
   if (!['general', 'male', 'female'].includes(value)) throw new Error(`Unsupported gender: ${value}`);
   gender = value;
   refreshLocalizedDOM();
 }
 
-export function start(value, profileGender = 'general') {
+export function start(value, profileGender = 'male') {
   setGender(profileGender);
   setLanguage(value);
   if (observer || typeof MutationObserver === 'undefined') return;

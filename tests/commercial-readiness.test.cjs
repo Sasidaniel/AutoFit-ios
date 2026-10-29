@@ -334,7 +334,7 @@ test('profile wording defaults safely for legacy data and persists through save,
   const storage = memory(sample());
   const db = load('www/js/db.js', ['getProfile', 'saveProfile'], { localStorage: storage });
   const original = db.getProfile();
-  assert.equal(original.gender, '');
+  assert.equal(original.gender, 'male');
   db.saveProfile({ ...original, gender: 'female' });
   assert.equal(db.getProfile().gender, 'female');
   assert.equal(db.getProfile().name, original.name);

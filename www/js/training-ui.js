@@ -353,7 +353,7 @@ export function createTrainingUI(api) {
         <div class="training-equipment">${tools.PLAN_MUSCLES.map((muscle) =>
           `<label><input type="checkbox" name="muscles" value="${esc(muscle)}">${t(muscle)}</label>`).join('')}</div></fieldset>
       ${field('מיקום', `<select name="location" class="select" ${homeOnly ? 'disabled' : ''}>${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], 'home')}</select>`)}
-      <fieldset><legend>${t('ציוד זמין בפועל')}</legend><div class="training-equipment">${['כיסא יציב', 'TRX', 'משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן'].filter((item) => !homeOnly || item !== 'מכונה').map((item) =>
+      <fieldset><legend>${t('ציוד זמין בפועל')}</legend><div class="training-equipment">${['כיסא יציב', 'TRX', 'משקולות יד', 'גומייה', 'ספסל', 'מכונה', 'מוט', 'מתח', 'ספסל כומר', 'מדרגת אימון', 'גלגל בטן', 'כלוב בטיחות'].filter((item) => !homeOnly || item !== 'מכונה').map((item) =>
         `<label><input type="checkbox" name="equipment" value="${esc(item)}">${t(item)}</label>`).join('')}</div></fieldset>
       ${note('ללא בחירת ציוד יוצעו רק תרגילי משקל גוף, רצפה וקיר. כיסא אינו ספסל אימון. בלי ציוד משיכה מתאים, ייתכן שלא יהיה כיסוי מאומת לגב.')}
       <label class="checkbox-row plan-trx-confirm hidden"><input type="checkbox" name="trxAnchorChecked"><span>${t('הרצועות והעיגון מותקנים ונבדקו לפי הוראות היצרן. אבדוק אותם שוב לפני כל שימוש; אין עיגון מאולתר לרהיטים.')}</span></label>

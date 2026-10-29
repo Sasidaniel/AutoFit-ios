@@ -1,5 +1,31 @@
 # AutoFit release notes
 
+## Release candidate 1.0 (38) - full catalog audit and male profile default (2026-10-29)
+
+- Owner explicitly approved a new internal TestFlight release after auditing
+  all changes and fixing test failures. Do not equate upload with availability.
+- Audited all 134 definitions for identity, category, muscles, equipment,
+  environment and measurement. By-muscle browsing now puts assisted pull-ups
+  under back and holds under their actual primary muscle rather than a false
+  static-muscle category, without rewriting stored exercise categories.
+- Treadmill-specific warmup/cooldown are no longer listed outside; an explicit
+  outdoor choice is preserved. Machine cardio appears in both machine/cardio
+  filters. Barbell bench/back squats require a selected rack with safety bars;
+  the preference is supported in both filtering and plan generation.
+- Aligned Romanian-deadlift/hammer primary muscles between planning and guides.
+  Yoga/Pilates cards describe timed practice with optional notes, not aerobic
+  speed; new non-walking activities do not default to treadmill speed 6.
+- Male is the default for new/empty legacy profiles, both profile pickers and
+  localization. Explicit female/general choices and existing data remain intact.
+  Profile edits still apply only after successful storage.
+- All 623 JavaScript tests and syntax checks for 20 frontend modules passed.
+  Browser checks verified muscle placement, both male defaults, preservation
+  of saved wording, unsaved edits remaining unapplied and unchanged persisted
+  AutoFit keys across both review origins, without horizontal overflow at 385px.
+  Cache: `autofit-v94`. macOS Swift/archive/upload and Apple internal
+  availability must still be verified before reporting release success.
+- Detailed handoff: PRE-RELEASE-REVIEW sections 59-61.
+
 ## Unreleased - remove the unclassified equipment category (2026-10-29)
 
 - Removed the misleading unclassified-equipment category entirely, including

@@ -108,9 +108,10 @@ export function saveWorkouts(list) {
   write(KEYS.workouts, list);
 }
 
-export const DEFAULT_PROFILE = { name: '', gender: '', age: '', heightCm: '', weightKg: '', photoDataUrl: '', weightHistory: [] };
+export const DEFAULT_PROFILE = { name: '', gender: 'male', age: '', heightCm: '', weightKg: '', photoDataUrl: '', weightHistory: [] };
 export function getProfile() {
-  return { ...DEFAULT_PROFILE, ...read(KEYS.profile, {}) };
+  const profile = { ...DEFAULT_PROFILE, ...read(KEYS.profile, {}) };
+  return { ...profile, gender: profile.gender || 'male' };
 }
 export function saveProfile(profile) {
   write(KEYS.profile, profile);

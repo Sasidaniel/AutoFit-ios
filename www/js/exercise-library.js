@@ -364,8 +364,8 @@ const expandedGuide = (name, muscles, equipment, pose, movement, steps, options 
         'Schematic movement illustration. Check setup and positioning against the instructions and equipment manufacturer.'),
       ...options });
 const CATALOG_EXTENSION = {
-  barbellBench: expandedGuide(pair('לחיצת חזה עם מוט', 'Barbell bench press'), ['חזה', 'יד אחורית', 'כתפיים'], ['מוט', 'ספסל'], 'chest', 'horizontal-push', [
-    pair('כוון ספסל וכלוב עם מוט אבטחה או משגיח מיומן; הצב רגליים יציבות.', 'Set a bench inside a rack with safeties or a competent spotter; plant your feet.'),
+  barbellBench: expandedGuide(pair('לחיצת חזה עם מוט', 'Barbell bench press'), ['חזה', 'יד אחורית', 'כתפיים'], ['מוט', 'ספסל', 'כלוב בטיחות'], 'chest', 'horizontal-push', [
+    pair('כוון ספסל בתוך כלוב עם מוטות בטיחות בגובה מתאים; הצב רגליים יציבות.', 'Set a bench inside a rack with safeties at the appropriate height; plant your feet.'),
     pair('אחוז סימטרית והורד את המוט בשליטה לכיוון מרכז החזה.', 'Grip symmetrically and lower the bar under control toward the middle of your chest.'),
     pair('לחץ מעלה בלי להקפיץ מהחזה והחזר למתלים רק כשהמוט יציב.', 'Press up without bouncing off your chest and rerack only with the bar controlled.'),
   ], { compound: true }),
@@ -429,7 +429,7 @@ const CATALOG_EXTENSION = {
     pair('רד לאט כשהגב והאגן נתמכים והברכיים בכיוון האצבעות.', 'Lower slowly with your back and pelvis supported and knees tracking with your toes.'),
     pair('דחוף דרך כפות הרגליים וחזור בלי נעילת ברכיים בכוח; נעל את העגלה לפני יציאה.', 'Push through your feet without forcefully locking your knees; lock the sled before exiting.'),
   ], { compound: true }),
-  barbellSquat: expandedGuide(pair('סקוואט עם מוט על הגב', 'Barbell back squat'), ['רגליים', 'ישבן'], ['מוט'], 'backSquat', 'squat', [
+  barbellSquat: expandedGuide(pair('סקוואט עם מוט על הגב', 'Barbell back squat'), ['רגליים', 'ישבן'], ['מוט', 'כלוב בטיחות'], 'backSquat', 'squat', [
     pair('השתמש בכלוב עם מוטות בטיחות ובדוק את גובהם עם מוט קל תחילה.', 'Use a rack with safeties and check their height with a light bar first.'),
     pair('הנח מוט על הגב העליון ולא על הצוואר, ורד בשליטה כשהברכיים עוקבות אחר כפות הרגליים.', 'Rest the bar on your upper back, not your neck, and lower with knees tracking your feet.'),
     pair('עלה בגב יציב והחזר למתלים בשליטה; בקש הדרכה מעשית לפני ניסיון ראשון.', 'Stand with a stable back and rerack under control; get hands-on instruction before your first attempt.'),
@@ -821,7 +821,7 @@ export const LIBRARY_EXERCISES = [
   ...Object.entries(CATALOG_EXTENSION).map(([id, info]) => ({
     ...addition(`extended-${id}`, info.name.he, info.name.en, info.muscles[0], id, info.inputType || 'reps'),
     ...(info.inputType === 'cardio' ? { defaultSets: 0, defaultReps: '', restSeconds: 0,
-      durationMinutes: 5, pace: 'קצב נוח', location: info.places?.includes('home') ? 'home' : 'gym' } : {}),
+      durationMinutes: 5, pace: info.activityOnly ? '' : 'קצב נוח', location: info.places?.includes('home') ? 'home' : 'gym' } : {}),
   })),
 ];
 
@@ -863,7 +863,12 @@ export function exerciseGuide(exercise) {
 export function exerciseBrowseInfo(exercise) {
   if (UNSPECIFIED_VARIANTS.has(exercise.name)
     && (!exercise.catalogId || exercise.id?.startsWith('catalog:seed:'))) return null;
-  return exerciseGuide(exercise);
+  const info = exerciseGuide(exercise);
+  const treadmill = exercise.inputType === 'cardio' && !info?.activityOnly
+    && (exercise.location === 'treadmill'
+      || !exercise.location && ['warmup', 'cooldown'].includes(exercise.id)
+        && /הליכון|treadmill/i.test(exercise.pace || ''));
+  return info && treadmill ? { ...info, equipment: ['מכונה'], places: ['gym'] } : info;
 }
 
 export function expandedLibrary(exercises, { newOnly = false } = {}) {
@@ -929,11 +934,11 @@ export function matchesLibraryBrowse(exercise, place = '', equipmentGroup = 'all
   if (equipmentGroup === 'all') return true;
   if (equipmentGroup === 'cardio') return exercise.inputType === 'cardio';
   if (equipmentGroup === 'rope') return exercise.catalogId === 'jumpRope';
+  if (equipmentGroup === 'machines') return !!info?.equipment.includes('מכונה');
   if (!info || exercise.inputType === 'cardio') return false;
   if (equipmentGroup === 'bodyweight') return info.equipment.every((item) =>
     ['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר', 'ספסל', 'כיסא יציב'].includes(item));
   if (equipmentGroup === 'weights') return info.equipment.some((item) => ['משקולות יד', 'מוט'].includes(item));
-  if (equipmentGroup === 'machines') return info.equipment.includes('מכונה');
   if (equipmentGroup === 'stations') return info.equipment.some((item) => ['מתח', 'מקבילים'].includes(item));
   if (equipmentGroup === 'accessories') return info.equipment.some((item) =>
     ['גומייה', 'TRX', 'גלגל בטן', 'מדרגת אימון'].includes(item))

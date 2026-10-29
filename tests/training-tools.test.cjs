@@ -23,6 +23,28 @@ const insights = load('www/js/workout-insights.js', ['completedEntrySnapshot', '
 const catalog = plain(library.LIBRARY_EXERCISES);
 const find = (id) => plain(catalog.find((exercise) => exercise.catalogId === id));
 
+test('every explicit variant uses the same primary muscle in planning and its authored guide', () => {
+  const records = [...catalog, ...library.PLANNING_EXERCISES,
+    { catalogId: 'hammer', name: 'פטישים', category: 'אמות' }];
+  for (const exercise of records) {
+    const metadata = tools.trainingMetadata(exercise);
+    if (metadata) assert.equal(metadata.primary, library.exerciseGuide(exercise).muscles[0], exercise.name);
+  }
+});
+
+test('barbell bench and back squat require an explicitly selected safety rack, including at home', () => {
+  const withoutRack = tools.planCatalog(catalog, ['מוט', 'ספסל'], 'home');
+  const withRack = tools.planCatalog(catalog, ['מוט', 'ספסל', 'כלוב בטיחות'], 'home');
+  for (const id of ['barbellBench', 'barbellSquat']) {
+    assert.ok(!withoutRack.some((exercise) => exercise.catalogId === id), id);
+    assert.ok(withRack.some((exercise) => exercise.catalogId === id), id);
+  }
+  assert.doesNotThrow(() => tools.generatePlan({ goal: 'strength', experience: 'regular',
+    days: 1, minutes: 45, location: 'home', equipment: ['מוט', 'ספסל', 'כלוב בטיחות'] }, catalog));
+  assert.match(read('www/js/training-ui.js'), /'כלוב בטיחות'/);
+  assert.match(read('www/index.html'), /value="כלוב בטיחות"/);
+});
+
 for (const template of tools.READY_PLAN_TEMPLATES) {
   test(`ready plan ${template.id} is actionable in each advertised environment without mutating personal data`, () => {
     const before = JSON.stringify(catalog);

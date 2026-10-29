@@ -117,6 +117,44 @@ test('muscle SVG icons have explicit visible dimensions instead of collapsing to
   assert.match(read('www/css/style.css'), /\.exercise-category-icon img\s*\{[^}]*width: 40px;[^}]*height: 40px;[^}]*object-fit: contain/);
 });
 
+test('complete catalog has valid metadata, measurements and at least one truthful equipment group per verified variant', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const catalog = library.browsableLibrary([], seeds);
+  assert.equal(catalog.length, 134);
+  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, catalog.length);
+  for (const exercise of catalog) {
+    const guide = library.exerciseGuide(exercise);
+    assert.ok(guide?.name.he && guide?.name.en && guide.muscles.length && guide.steps.length, exercise.name);
+    const info = library.exerciseBrowseInfo(exercise);
+    if (info) {
+      assert.ok(info.equipment.length && info.places.length, exercise.name);
+      assert.ok(info.places.every((place) => ['gym', 'home', 'outside'].includes(place)), exercise.name);
+      assert.ok(library.LIBRARY_EQUIPMENT_GROUPS.some((group) => group.id !== 'all'
+        && library.matchesLibraryBrowse(exercise, '', group.id)), exercise.name);
+    }
+    if (exercise.inputType === 'cardio') {
+      assert.ok(exercise.durationMinutes > 0, exercise.name);
+      assert.equal(exercise.defaultSets, 0, exercise.name);
+    } else if (exercise.inputType === 'hold') assert.ok(exercise.holdSeconds > 0, exercise.name);
+    else assert.ok(exercise.defaultSets > 0 && exercise.defaultReps, exercise.name);
+  }
+});
+
+test('treadmill boundaries stay in gym and machine cardio appears under machines as well as cardio', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  for (const exercise of seeds.filter((item) => ['warmup', 'cooldown'].includes(item.id))) {
+    assert.equal(library.matchesLibraryBrowse(exercise, 'outside'), false);
+    assert.equal(library.matchesLibraryBrowse(exercise, 'gym', 'machines'), true);
+    assert.equal(library.matchesLibraryBrowse({ ...exercise, location: 'outside' }, 'outside'), true);
+  }
+  for (const id of ['stationaryBike', 'elliptical']) {
+    const exercise = library.LIBRARY_EXERCISES.find((item) => item.catalogId === id);
+    assert.equal(library.matchesLibraryBrowse(exercise, 'gym', 'machines'), true);
+    assert.equal(library.matchesLibraryBrowse(exercise, 'gym', 'cardio'), true);
+    assert.equal(library.matchesLibraryBrowse(exercise, 'outside'), false);
+  }
+});
+
 function statisticsFixture() {
   const exercise = library.LIBRARY_EXERCISES.find((value) => value.catalogId === 'goblet');
   const snapshot = (weight, reps) => insights.completedEntrySnapshot({ exerciseId: exercise.id,
@@ -792,6 +830,22 @@ test('cardio workout cards open the same media without starting or changing a ti
   assert.equal(JSON.stringify(entry), before);
 });
 
+test('Yoga and Pilates workout cards describe timed practice rather than aerobic speed or treadmill training', () => {
+  for (const catalogId of ['yogaPractice', 'pilatesPractice']) {
+    const exercise = library.LIBRARY_EXERCISES.find((item) => item.catalogId === catalogId);
+    const fixture = mediaController([exercise]);
+    const entry = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio',
+      durationSec: 1200, location: 'home', pace: '', startedAt: null };
+    const before = JSON.stringify(entry);
+    const card = fixture.context.renderCardioCard(entry, 1);
+    assert.match(card.innerHTML, /תרגול לפי זמן/);
+    assert.match(card.innerHTML, /הערות לתרגול/);
+    assert.doesNotMatch(card.innerHTML, /value="treadmill"|קצב\/מהירות/);
+    assert.match(card.innerHTML, /value="gym"/);
+    assert.equal(JSON.stringify(entry), before);
+  }
+});
+
 test('bridge holds explain the movement video and all new media UI has English translations', () => {
   const fixture = mediaController();
   fixture.context.openExerciseGuide({ catalogId: 'bridge', name: 'Bridge hold', inputType: 'hold' });
@@ -1128,7 +1182,7 @@ test('translation round trips preserve text node identity and use the latest ren
 
 test('female wording covers slogans, readiness, actions, guidance and encouragement but not object grammar', () => {
   const context = localizationContext();
-  assert.equal(context.getGender(), 'general');
+  assert.equal(context.getGender(), 'male');
   context.setGender('female');
   for (const [source, expected] of [
     ['אתה לא מתאמן לבד, אני איתך!', 'את לא מתאמנת לבד, אני איתך!'],
@@ -1808,7 +1862,7 @@ test('contact submission follows the chosen language without translating authore
 function exerciseLibraryContext(records, session = { entries: [], running: false }) {
   const saved = [], messages = [];
   const context = vm.createContext({
-    exercises: records, activeSession: session, settings: { programWeek: 3 }, workouts: [],
+    exercises: records, activeSession: session, settings: { programWeek: 3 }, workouts: [], library,
     db: { uid: () => 'draft', saveExercises: (data) => saved.push(JSON.stringify(data)) },
     renderExercisesTab() {}, renderWorkoutTab() {}, persistActiveSession() {},
     showToast: (message) => messages.push(message), getLastCompletedValuesByExercise: () => ({}),
@@ -1828,9 +1882,11 @@ test('exercise library groups every existing exercise without changing its muscl
   const { context: library } = exerciseLibraryContext(records);
   for (const record of records) {
     const group = library.exerciseLibraryGroup(record);
-    if (record.name === 'גרביטון') assert.equal(group, 'general');
-    else assert.notEqual(group, 'general', record.name);
-    if (record.inputType === 'hold') assert.equal(group, 'static');
+    assert.notEqual(group, 'general', record.name);
+    if (record.name === 'גרביטון') assert.equal(group, 'back');
+    if (record.name === 'החזקה סטטית במתח') assert.equal(group, 'forearms');
+    if (record.name === 'החזקה סטטית על מקבילים') assert.equal(group, 'triceps');
+    if (record.name === 'פלאנק') assert.equal(group, 'core');
     if (record.inputType === 'cardio') assert.equal(group, 'warmup');
   }
   assert.equal(library.exerciseLibraryGroup({ category: 'קטגוריה אישית' }), 'general');
@@ -2267,14 +2323,14 @@ function profileFieldsFixture() {
   return { root, fields, i18n, el: (id) => root.getElementById(id) };
 }
 
-test('both profile flows require an explicit gender choice and onboarding previews the selected wording', () => {
+test('both profile flows default to male while retaining valid gender choices and onboarding wording preview', () => {
   const { root, fields, i18n, el } = profileFieldsFixture();
   for (const prefix of ['profile', 'ob']) {
     fields.renderProfileFields(prefix, {}, root);
-    assert.equal(el(prefix + 'Gender').value, '');
+    assert.equal(el(prefix + 'Gender').value, 'male');
     assert.deepEqual(Array.from(el(prefix + 'Gender').options, (option) => option.value), ['', 'general', 'male', 'female']);
     assert.equal(el(prefix + 'Gender').options[0].disabled, true);
-    assert.throws(() => fields.readProfileGender(prefix, root), /בחר מין/);
+    assert.equal(fields.readProfileGender(prefix, root), 'male');
     el(prefix + 'Gender').value = 'general';
     assert.equal(fields.readProfileGender(prefix, root), 'general');
     el(prefix + 'Gender').value = 'female';
@@ -2288,6 +2344,32 @@ test('both profile flows require an explicit gender choice and onboarding previe
     assert.match(read('www/index.html'), new RegExp(`<select[^>]*id="${prefix}Gender"`));
     assert.match(read('www/index.html'), new RegExp(`<select[^>]*id="${prefix}Gender"[^>]*required`));
   }
+});
+
+test('saved female/general choices are not overwritten by male profile defaults', () => {
+  const { root, fields, el } = profileFieldsFixture();
+  for (const prefix of ['profile', 'ob']) {
+    for (const gender of ['female', 'general', 'male', '', undefined]) {
+      const profile = { gender, name: 'Preserved name' };
+      fields.renderProfileFields(prefix, profile, root);
+      assert.equal(el(prefix + 'Gender').value, gender || 'male');
+      assert.equal(profile.gender, gender);
+    }
+  }
+});
+
+test('profile storage defaults absent or legacy empty gender to male without writing or replacing saved choices', () => {
+  let saved = null, writes = 0;
+  const context = vm.createContext({ localStorage: { getItem: () => saved,
+    setItem: (key, value) => { saved = value; writes++; } } });
+  vm.runInContext(read('www/js/db.js').replace(/^export /gm, ''), context);
+  assert.equal(context.getProfile().gender, 'male');
+  for (const gender of ['', null, undefined, 'female', 'general', 'male']) {
+    saved = JSON.stringify({ gender, name: 'Preserved name' });
+    assert.equal(context.getProfile().gender, gender || 'male');
+    assert.equal(context.getProfile().name, 'Preserved name');
+  }
+  assert.equal(writes, 0);
 });
 
 test('profile and onboarding share optional native selections with exact age 12–120 boundaries', () => {
@@ -2366,6 +2448,7 @@ test('both body-weight pickers cap new selections at exactly 200 kg, including d
 
 function profileSaveFixture() {
   const fixture = profileFieldsFixture(), { el, root, fields } = fixture;
+  fixture.i18n.setGender('general');
   const messages = [], saved = [];
   const choices = { termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true, adultConfirmed: true };
   const context = nodeVM.createContext({ ...fields, legal, i18n: fixture.i18n, appInitialized: false,
@@ -2418,6 +2501,7 @@ test('empty gender prevents both profile saving and onboarding completion withou
   context.legal = { ...legal, hasCurrentConsent: () => true };
   context.finishOnboarding = () => { finished++; };
   fields.renderProfileFields('ob', {}, root);
+  el('obGender').value = '';
   nodeVM.runInContext(section("  el('btnOnboardingNext').addEventListener('click', async () => {",
     "  el('btnOnboardingFinish').addEventListener"), context);
   await el('btnOnboardingNext').listeners.click();
