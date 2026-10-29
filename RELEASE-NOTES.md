@@ -2,9 +2,8 @@
 
 ## Unreleased - device follow-up after 40 (new release approved)
 
-**Release paused at the owner's request.** No build 41 upload is confirmed.
-Do not dispatch another release during diagnosis. The latest candidate's widget
-padding change is not yet validated; successful code-level speech tests do not
+**Isolated diagnosis completed before resuming the approved build 41.**
+No build 41 upload is confirmed yet. Successful code-level speech tests do not
 prove that physical Apple Music/microphone behavior is fixed.
 
 - The owner reported that 40 still stopped counting after two, Music played for
@@ -64,6 +63,18 @@ prove that physical Apple Music/microphone behavior is fixed.
   validation, before signing/archive/upload. No replacement run was dispatched.
   Further diagnosis must use focused non-distribution checks and inspect the
   complete failure matrix and rendered images before considering release.
+- Isolated non-release validation
+  [40925742819](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40925742819)
+  passed all 144 actual SwiftUI renders at `d520ba63997c8e71bd19acef457455daa9fe7a83`.
+  Maximum Lock Screen height is **157 points** (limit 160); maximum expanded
+  island body height is **129 points** (limit 138). All 144 measurements and
+  representative Hebrew/English images were saved and inspected. The newest
+  padding change is now validated, superseding the earlier pending status.
+- Added a widget-only route to the non-release workflow: no npm installation,
+  application build, signing, upload or distribution. It collects the whole
+  matrix and images instead of revealing one failure per release attempt.
+  Stale completion receipts are removed before launching the test app.
+  The cancelled release is confirmed `completed / cancelled`, with upload skipped.
 
 ## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
