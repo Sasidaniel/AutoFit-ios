@@ -215,8 +215,34 @@ test('native audio validation cannot sign, archive, dispatch releases or upload 
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /xcodebuild build/);
   assert.match(workflow, /CODE_SIGNING_ALLOWED=NO/);
-  assert.match(workflow, /if: github.event_name == 'workflow_dispatch' \|\| contains\(github.event.head_commit.message, '\[validate-audio\]'\)/);
+  assert.match(workflow, /if: \(github.event_name == 'workflow_dispatch' && !inputs.widget_only\) \|\| contains\(github.event.head_commit.message, '\[validate-audio\]'\)/);
   assert.doesNotMatch(workflow, /secrets\.|xcodebuild archive|altool|upload-app|workflow run|build_number/);
+});
+
+test('isolated widget validation selects only the requested non-distribution job', () => {
+  const workflow = read('.github/workflows/ios-audio-validation.yml');
+  const guards = Object.fromEntries([...workflow.matchAll(/^  ([\w-]+):\r?\n    if: (.+)/gm)]
+    .map((match) => [match[1], match[2]]));
+  assert.deepEqual(Object.keys(guards), ['widget-layout', 'validate']);
+  const cases = [
+    ['workflow_dispatch', undefined, '', ['validate']],
+    ['workflow_dispatch', false, '', ['validate']],
+    ['workflow_dispatch', true, '', ['widget-layout']],
+    ['push', undefined, 'test [validate-audio]', ['validate']],
+    ['push', undefined, 'test [validate-widget]', ['widget-layout']],
+    ['push', undefined, 'docs [skip ci]', []],
+  ];
+  for (const [event, widgetOnly, message, expected] of cases) {
+    const selected = Object.entries(guards).filter(([, guard]) => nodeVM.runInNewContext(guard, {
+      github: { event_name: event, event: { head_commit: { message } } },
+      inputs: { widget_only: widgetOnly },
+      contains: (value, part) => value.includes(part),
+    })).map(([name]) => name);
+    assert.deepEqual(selected, expected, `${event}, widget_only=${widgetOnly}, ${message}`);
+  }
+  const widgetJob = workflow.slice(workflow.indexOf('  widget-layout:'), workflow.indexOf('  validate:'));
+  assert.match(widgetJob, /bash \.github\/scripts\/test-widget-layout\.sh/);
+  assert.doesNotMatch(widgetJob, /npm|xcodebuild|secrets\./);
 });
 
 test('progress browsing reuses library groups, keeps personal exercises and separates groups without mutating definitions', () => {

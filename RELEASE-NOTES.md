@@ -75,6 +75,12 @@ prove that physical Apple Music/microphone behavior is fixed.
   matrix and images instead of revealing one failure per release attempt.
   Stale completion receipts are removed before launching the test app.
   The cancelled release is confirmed `completed / cancelled`, with upload skipped.
+- The first resumed full check caught an outdated source assertion for the old
+  workflow guard, before native checks/signing/upload. Updated that assertion
+  for the widget-only input and added execution-based selection checks covering
+  manual default/full/widget modes and opt-in/ordinary pushes. All **653 local
+  regressions pass** before another CI run; production SwiftUI/audio code is
+  unchanged from the independently validated source.
 
 ## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
