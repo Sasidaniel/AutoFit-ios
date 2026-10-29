@@ -501,8 +501,8 @@ test('internal delivery refuses an inconsistent non-exempt encryption declaratio
 });
 
 test('expanded catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
-  assert.equal(library.LIBRARY_EXERCISES.length, 101);
-  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 101);
+  assert.equal(library.LIBRARY_EXERCISES.length, 103);
+  assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 103);
   const translation = localizationContext();
   translation.setLanguage('en');
   for (const exercise of library.LIBRARY_EXERCISES) {
@@ -533,12 +533,17 @@ test('every authored exercise has an offline illustration and selected instructi
   const translation = localizationContext();
   const seeds = nodeVM.runInContext('SEED_EXERCISES', translation);
   const exercises = [...seeds, ...library.LIBRARY_EXERCISES, ...library.PLANNING_EXERCISES];
-  assert.equal(exercises.length, 132);
+  assert.equal(exercises.length, 134);
   assert.equal(exercises.filter((exercise) => !(exercise.id || '').startsWith('library:extended-')).length, 57);
-  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 118);
+  assert.equal(Object.keys(library.EXERCISE_GUIDES).length, 120);
   for (const exercise of exercises) {
     const guide = library.exerciseGuide(exercise);
     assert.ok(guide, exercise.name);
+    if (guide.activityOnly) {
+      assert.equal(guide.videos.length, 0, 'Practice logging must not invent a reviewed instructional video');
+      assert.match(library.exerciseIllustration(guide), /תיעוד זמן פעילות/);
+      continue;
+    }
     assert.ok(guide.videos.length > 0, exercise.name);
     for (const video of guide.videos) {
       const url = new URL(video.href);
@@ -575,7 +580,10 @@ test('new instructional videos retain floor, support, grip, equipment and statio
     abWheelRollout: /watch\?v=2Uw8oDIF2AY$/,
     highPlank: /watch\?v=l8EbzIr2foA$/,
   };
-  for (const [id, guide] of Object.entries(guides)) assert.ok(guide.videos.length > 0, id);
+  for (const [id, guide] of Object.entries(guides)) {
+    if (guide.activityOnly) assert.equal(guide.videos.length, 0, id);
+    else assert.ok(guide.videos.length > 0, id);
+  }
   for (const [id, href] of Object.entries(selected)) assert.match(guides[id].videos[0].href, href, id);
   for (const [left, right] of [
     ['lyingTriceps', 'benchSkullcrusher'], ['kickback', 'supportedKickback'],
@@ -737,7 +745,7 @@ test('library expansion preserves originals and skips existing IDs and authored 
   const expanded = library.expandedLibrary(originals);
   assert.equal(expanded[0], originals[0]);
   assert.equal(expanded[1], originals[1]);
-  assert.equal(expanded.length, 101);
+  assert.equal(expanded.length, 103);
   assert.equal(JSON.stringify(originals), before);
   assert.equal(JSON.stringify(library.expandedLibrary(expanded)), JSON.stringify(expanded));
   assert.ok(expanded.slice(originals.length).every((exercise) => exercise.active === false));
@@ -749,7 +757,7 @@ test('library migration does not select additions, replace IDs or resurrect dele
   const selected = context.exercises.filter((exercise) => exercise.active !== false).map((exercise) => exercise.id);
   assert.equal(selected.length, 25);
   const added = context.exercises.filter((exercise) => exercise.id.startsWith('library:'));
-  assert.equal(added.length, 101);
+  assert.equal(added.length, 103);
   const removedId = added[0].id;
   added[1].name = 'My edited library exercise';
   added[1].notes = 'Leave this alone';
@@ -778,7 +786,7 @@ test('explicit additional-catalog installation preserves deleted legacy choices 
   ];
   const before = JSON.stringify(originals);
   const expanded = library.expandedLibrary(originals, { newOnly: true });
-  assert.equal(expanded.length, 77);
+  assert.equal(expanded.length, 79);
   assert.equal(JSON.stringify(expanded.slice(0, 2)), before);
   assert.ok(expanded.slice(2).every((exercise) => exercise.id.startsWith('library:extended-') && !exercise.active));
   assert.ok(!expanded.some((exercise) => exercise.id === 'library:pushup'));
@@ -817,7 +825,7 @@ test('library filters match both languages, combine constraints and preserve cus
   assert.match(read('www/index.html'), /value="מתחילים">מתחילים<\/option>/);
 });
 
-test('all 132 catalog definitions are browsable from a 51-entry library without installation or selection', () => {
+test('all 134 catalog definitions are browsable from a 51-entry library without installation or selection', () => {
   const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
   const stored = [
     ...Array.from(seeds, (exercise, index) => ({ ...exercise, id: exercise.id || `original:${index}`, active: true })),
@@ -826,8 +834,8 @@ test('all 132 catalog definitions are browsable from a 51-entry library without 
   assert.equal(stored.length, 51);
   const before = JSON.stringify(stored);
   const catalog = library.browsableLibrary(stored, seeds);
-  assert.equal(catalog.length, 132);
-  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, 132);
+  assert.equal(catalog.length, 134);
+  assert.equal(new Set(catalog.map((exercise) => exercise.id)).size, 134);
   assert.equal(JSON.stringify(stored), before);
   stored.forEach((exercise, index) => assert.equal(catalog[index], exercise));
   assert.equal(catalog.filter((exercise) => exercise.active !== false).length, 25);
@@ -836,7 +844,7 @@ test('all 132 catalog definitions are browsable from a 51-entry library without 
   const { context } = exerciseLibraryContext(stored);
   const categories = vm.runInContext('EXERCISE_LIBRARY_CATEGORIES', context);
   const counts = categories.map((group) => catalog.filter((exercise) => context.exerciseLibraryGroup(exercise) === group.id).length);
-  assert.equal(counts.reduce((sum, count) => sum + count, 0), 132);
+  assert.equal(counts.reduce((sum, count) => sum + count, 0), 134);
   assert.equal(context.exerciseLibraryGroup({ category: 'ישבן' }), 'legs');
   assert.equal(context.exerciseLibraryGroup({ category: 'שוקיים' }), 'legs');
 });
@@ -847,7 +855,7 @@ test('catalog browsing preserves renamed/custom records and deleted definitions 
   const custom = { id: 'custom', name: 'My own movement', active: true, defaultSets: 7 };
   const records = [renamed, custom], before = JSON.stringify(records);
   const catalog = library.browsableLibrary(records, seeds);
-  assert.equal(catalog.length, 133);
+  assert.equal(catalog.length, 135);
   assert.equal(catalog.find((exercise) => exercise.id === renamed.id), renamed);
   assert.equal(catalog.find((exercise) => exercise.id === custom.id), custom);
   assert.equal(JSON.stringify(records), before);
@@ -1773,6 +1781,34 @@ test('exercise categories have distinct icons and bundled muscle illustrations',
   }
 });
 
+test('muscle browsing returns to muscles, then environment equipment, then the library root without changing the program', () => {
+  const elements = new Map(), actions = [];
+  const el = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: '', listeners: {}, innerHTML: '',
+      addEventListener(name, handler) { this.listeners[name] = handler; }, scrollIntoView() {} });
+    return elements.get(id);
+  };
+  const context = vm.createContext({ el, qs: () => null, i18n: { text: (value) => value }, escapeHtml: (value) => value,
+    renderExercisesTab() {}, trainingUI: { ropeBuilder: (value) => actions.push(value), saveCurrentWorkout: () => actions.push('save') } });
+  vm.runInContext(section('const EXERCISE_LIBRARY_CATEGORIES =', 'function exerciseLibraryCount('), context);
+  vm.runInContext(section('function wireExercisesTab()', 'function openExerciseGuide('), context);
+  context.wireExercisesTab();
+  vm.runInContext("exerciseLibraryEnvironment='home';exerciseLibraryEquipment='muscles';exerciseLibraryCategory='chest'", context);
+  el('btnExerciseCategoryBack').listeners.click();
+  assert.equal(vm.runInContext('exerciseLibraryCategory', context), null);
+  assert.equal(vm.runInContext('exerciseLibraryEquipment', context), 'muscles');
+  assert.equal(el('libraryPlace').value, 'home');
+  el('btnExerciseCategoryBack').listeners.click();
+  assert.equal(vm.runInContext('exerciseLibraryEquipment', context), null);
+  assert.equal(vm.runInContext('exerciseLibraryEnvironment', context), 'home');
+  el('btnLibraryRopePlan').listeners.click();
+  assert.equal(actions[0].location, 'home');
+  el('btnSaveMyWorkout').listeners.click();
+  assert.equal(actions[1], 'save');
+  el('btnExerciseCategoryBack').listeners.click();
+  assert.equal(vm.runInContext('exerciseLibraryEnvironment', context), null);
+});
+
 test('workout ordering keeps a fixed-width field despite generic input styles', () => {
   const css = read('www/css/style.css');
   assert.match(css, /\.exercise-manage-main \.input\.exercise-order-input\s*\{[^}]*flex:\s*0 0 48px;[^}]*width:\s*48px;[^}]*margin-bottom:\s*0;/);
@@ -2578,7 +2614,7 @@ test('plan and goal actions are centralized without duplicate builders on primar
   assert.match(source, /getElementById\('plansPageContent'\)/);
   assert.match(source, /getElementById\('goalsPageContent'\)/);
   assert.doesNotMatch(source, /home-workout-hero|btnExercisePersonalPlan|btnExerciseHomePlan|btnExerciseRopePlan|btnExerciseSavedPlans/);
-  for (const id of ['btnPersonalPlan', 'btnHomePlan', 'btnRopePlan', 'btnSavedPlans', 'btnExerciseSaveCurrentWorkout',
+  for (const id of ['btnPersonalPlan', 'btnReadyPlans', 'btnSavedPlans',
     'btnProgressAdvice', 'btnWeeklyWork', 'btnMonthlyGoal']) {
     assert.equal((source.match(new RegExp(`button\\('${id}'`, 'g')) || []).length, 1, id);
     assert.match(source, new RegExp(`on\\('${id}'`));
@@ -5521,13 +5557,13 @@ test('workout stays concise without estimate explanations or browser microphone 
   assert.match(read('www/index.html'), /id="btnFinishWorkout"[^>]*btn-danger/);
 });
 
-test('requested explanatory copy is absent while exercise duration and privacy documents remain available', () => {
+test('requested explanatory copy and library duration are absent while plan estimates and privacy documents remain available', () => {
   const html = read('www/index.html');
   assert.doesNotMatch(html, /עברית היא שפת ברירת המחדל|התמונה נשמרת אוטומטית|הפרטים בטופס נשלחים ל-Formspree|מין \(לא חובה\)/);
   const ui = read('www/js/training-ui.js');
-  const programDuration = ui.slice(ui.indexOf('const programDuration ='), ui.indexOf("document.getElementById('exerciseCategoryGrid')"));
-  assert.match(programDuration, /trainingProgramDuration/);
-  assert.doesNotMatch(programDuration, /durationDetails|לפי בחירת התרגילים|<details/);
+  assert.doesNotMatch(ui, /const programDuration =|programDuration\.innerHTML/);
+  assert.doesNotMatch(html, /libraryBrowsePrompt|איפה מתאמנים\? בחר סביבה ואז ציוד/);
+  assert.match(ui, /אומדן עם מנוחות והכנה/);
   assert.match(ui, /const durationDetails =/);
   assert.match(read('www/js/legal.js'), /Formspree/);
 });

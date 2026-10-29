@@ -4200,7 +4200,10 @@ function wireExercisesTab() {
   });
   el('btnClearLibraryFilters').addEventListener('click', () => clearLibraryFilters(true));
   const backToCategories = () => {
-    if (exerciseLibraryCategory || exerciseLibraryEquipment !== null) {
+    if (exerciseLibraryCategory && exerciseLibraryEquipment === 'muscles') {
+      exerciseLibraryCategory = null;
+      clearLibraryFilters(true);
+    } else if (exerciseLibraryCategory || exerciseLibraryEquipment !== null) {
       exerciseLibraryCategory = null;
       exerciseLibraryEquipment = null;
       clearLibraryFilters(true);
@@ -4213,6 +4216,10 @@ function wireExercisesTab() {
   };
   el('btnBackExerciseCategories').addEventListener('click', backToCategories);
   el('btnExerciseCategoryBack').addEventListener('click', backToCategories);
+  el('btnLibraryRopePlan').addEventListener('click', () => trainingUI.ropeBuilder({
+    location: ['gym', 'home', 'outside'].includes(exerciseLibraryEnvironment) ? exerciseLibraryEnvironment : 'home',
+  }));
+  el('btnSaveMyWorkout').addEventListener('click', () => trainingUI.saveCurrentWorkout());
   el('btnAddExercise').addEventListener('click', () => {
     const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
     const draft = { id: db.uid(), name: '', category: group?.category || 'כללי', defaultSets: 3, defaultReps: '12',
@@ -4241,10 +4248,10 @@ function openExerciseGuide(exercise) {
     </div>
     <p class="about-desc"><span>שריר עיקרי</span>: <span>${escapeHtml(info.muscles[0])}</span>
       ${info.muscles.length > 1 ? `<br><span>שרירים מסייעים</span>: ${info.muscles.slice(1).map((muscle) => `<span>${escapeHtml(muscle)}</span>`).join(' · ')}` : ''}</p>
-    <h4>הווריאציה המודגמת</h4><p>${escapeHtml(info.name.he)}</p>
-    <figure class="exercise-technique">${library.exerciseIllustration(info, exercise.inputType === 'hold')}
-      <figcaption><span>איור הדרכה עם הדגשת שרירים</span>${info.view ? ` · <span>${escapeHtml(info.view.he)}</span>` : ''} · <span>${exercise.inputType === 'hold' ? 'עמדת החזקה' : 'התחלה ← סיום'}</span><br><span>הדגשת השרירים להמחשה בלבד</span></figcaption></figure>
-    <h4>איך מבצעים</h4><ol class="guide-steps">${info.steps.map((step) => `<li>${escapeHtml(step.he)}</li>`).join('')}</ol>
+    <h4>${info.activityOnly ? 'הפעילות המתועדת' : 'הווריאציה המודגמת'}</h4><p>${escapeHtml(info.name.he)}</p>
+    ${info.activityOnly ? '' : `<figure class="exercise-technique">${library.exerciseIllustration(info, exercise.inputType === 'hold')}
+      <figcaption><span>איור הדרכה עם הדגשת שרירים</span>${info.view ? ` · <span>${escapeHtml(info.view.he)}</span>` : ''} · <span>${exercise.inputType === 'hold' ? 'עמדת החזקה' : 'התחלה ← סיום'}</span><br><span>הדגשת השרירים להמחשה בלבד</span></figcaption></figure>`}
+    <h4>${info.activityOnly ? 'הכנה ותיעוד' : 'איך מבצעים'}</h4><ol class="guide-steps">${info.steps.map((step) => `<li>${escapeHtml(step.he)}</li>`).join('')}</ol>
     <h4>נשימה ודגשים</h4><p>${escapeHtml(info.cue.he)}</p>
     ${info.videos?.length ? `<h4>סרטוני הדרכה</h4>${info.videos.map((video) => `<a class="btn btn-secondary guide-video" href="${escapeAttr(video.href)}"
       target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"><span>צפייה בסרטון באתר המקור</span> ↗<small data-no-translate>${escapeHtml(video.publisher)} · ${escapeHtml(video.title)}</small></a>`).join('')}
@@ -4286,26 +4293,38 @@ function renderExercisesTab() {
   };
   const place = exerciseLibraryEnvironment && exerciseLibraryEnvironment !== 'all' ? exerciseLibraryEnvironment : filters.place;
   const filtering = !isMyWorkout && [filters.search, filters.type, filters.equipment, filters.level, el('libraryMuscle').value].some(Boolean);
-  const showList = isMyWorkout || !!exerciseLibraryCategory || exerciseLibraryEquipment !== null || filtering;
+  const showMuscles = exerciseLibraryEquipment === 'muscles';
+  const showList = isMyWorkout || !!exerciseLibraryCategory || exerciseLibraryEquipment !== null && !showMuscles || filtering;
   el('btnExerciseCategoryBack').classList.toggle('hidden', !exerciseLibraryEnvironment && !exerciseLibraryCategory && !filtering);
   el('exerciseLibraryFilters').classList.toggle('hidden', isMyWorkout);
   el('libraryAdvancedFilters').classList.toggle('hidden', !showList);
   el('btnClearLibraryFilters').classList.toggle('hidden', !filtering);
   const environment = LIBRARY_ENVIRONMENTS.find((item) => item.id === exerciseLibraryEnvironment);
   const equipmentGroup = library.LIBRARY_EQUIPMENT_GROUPS.find((item) => item.id === exerciseLibraryEquipment);
-  el('libraryBrowseTrail').textContent = isMyWorkout ? '' : [environment?.label, equipmentGroup?.label].filter(Boolean).map(i18n.text).join(' / ');
-  el('libraryBrowsePrompt').textContent = i18n.text(isMyWorkout ? 'ניהול התרגילים שנבחרו לאימון שלך.'
-    : showList ? 'אפשר לפתוח הדרכה או להוסיף תרגיל לאימון שלך.'
-      : environment ? 'איזה ציוד זמין? בחר קבוצה כדי לראות תרגילים.' : 'איפה מתאמנים? בחר סביבה ואז ציוד.');
+  const selectedMuscle = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
+  el('libraryBrowseTrail').textContent = isMyWorkout ? '' : [environment?.label,
+    showMuscles ? 'לפי שריר' : equipmentGroup?.label, selectedMuscle?.label].filter(Boolean).map(i18n.text).join(' / ');
+  el('btnSaveMyWorkout').classList.toggle('hidden', !isMyWorkout);
   const grid = el('exerciseCategoryGrid');
   grid.classList.add('library-browse-grid');
   grid.classList.toggle('hidden', showList);
-  grid.innerHTML = environment ? library.LIBRARY_EQUIPMENT_GROUPS.map((group) => ({
+  grid.innerHTML = environment && showMuscles ? EXERCISE_LIBRARY_CATEGORIES.filter((group) =>
+    !['my', 'supersets'].includes(group.id)).map((group) => ({
+      ...group, count: catalog.filter((ex) => exerciseLibraryGroup(ex) === group.id && library.matchesLibraryBrowse(ex, place)).length,
+    })).filter((group) => group.count > 0).map((group) => `
+      <button class="exercise-category-button" data-category="${group.id}">
+        <span class="exercise-category-icon" aria-hidden="true">${group.icon.endsWith('.svg') ? `<img src="${group.icon}" alt="">` : group.icon}</span>
+        <span class="exercise-category-label">${i18n.text(group.id === 'warmup' ? 'אירובי ותנועה' : group.label)}</span>
+        <span class="exercise-category-count">${i18n.text(exerciseLibraryCount(group.count))}</span>
+      </button>`).join('') : environment ? `
+    <button class="exercise-category-button" data-equipment-group="muscles">
+      <span class="exercise-category-icon" aria-hidden="true">💪</span><span class="exercise-category-label">לפי שריר</span>
+    </button>` + library.LIBRARY_EQUIPMENT_GROUPS.map((group) => ({
     ...group, count: catalog.filter((ex) => library.matchesLibraryBrowse(ex, place, group.id)).length,
   })).filter((group) => group.count > 0).map((group) => `
     <button class="exercise-category-button" data-equipment-group="${group.id}">
       <span class="exercise-category-icon" aria-hidden="true">${group.icon}</span>
-      <span class="exercise-category-label">${i18n.text(group.label)}</span>
+      <span class="exercise-category-label">${i18n.text(group.id === 'cardio' ? 'אירובי ותנועה' : group.label)}</span>
       <span class="exercise-category-count">${i18n.text(exerciseLibraryCount(group.count))}</span>
     </button>`).join('') + (trainingTools.SUPERSET_RECIPES.some((recipe) =>
     trainingTools.supersetExercises(recipe.id, exercises).every((part) => library.matchesLibraryBrowse(part, place))) ? `
@@ -4373,9 +4392,10 @@ function renderExercisesTab() {
   el('btnAddExercise').classList.remove('hidden');
   const visible = isMyWorkout ? selected : catalog.filter((ex) =>
     (!exerciseLibraryCategory || exerciseLibraryGroup(ex) === exerciseLibraryCategory)
-    && library.matchesLibraryBrowse(ex, place, exerciseLibraryEquipment || 'all')
+    && library.matchesLibraryBrowse(ex, place, showMuscles ? 'all' : exerciseLibraryEquipment || 'all')
     && library.matchesLibraryFilters(ex, { ...filters, place }, i18n.searchText));
-  el('exerciseLibraryTitle').textContent = i18n.text(isMyWorkout ? 'האימון שלי' : group?.label || equipmentGroup?.label || 'תוצאות החיפוש');
+  el('exerciseLibraryTitle').textContent = i18n.text(isMyWorkout ? 'האימון שלי'
+    : group?.id === 'warmup' || equipmentGroup?.id === 'cardio' ? 'אירובי ותנועה' : group?.label || equipmentGroup?.label || 'תוצאות החיפוש');
   el('exerciseLibraryCount').textContent = exerciseLibraryCount(visible.length);
   el('exerciseLibraryHint').textContent = isMyWorkout
     ? 'אלה התרגילים שנבחרו לטאב אימון. גרור בידית או שנה את מספר המיקום; חימום נשאר ראשון ושחרור אחרון. לעריכת סטים, חזרות ומנוחה לחץ על העיפרון. נתונים שכבר הוזנו באימון נשמרים גם אם התוכנית משתנה.'

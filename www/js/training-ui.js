@@ -41,7 +41,7 @@ export function refreshDurationEstimates(api, doc = document, { live = false } =
   if (program) write('trainingProgramDuration', `${i18n.text('זמן משוער לאימון שלי')}: ${durationEstimateText(program)}`);
   return { total, remaining, program };
 }
-const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ'], ['rope', 'קפיצה על חבל']];
+const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ'], ['rope', 'קפיצה על חבל'], ['yoga', 'יוגה'], ['pilates', 'פילאטיס']];
 const PLAN_SPLITS = [['full-body', 'פול בודי — כל הגוף בכל אימון'], ['ab', 'A/B — פלג גוף עליון / תחתון'], ['abc', 'A/B/C — דחיפה / משיכה / רגליים']];
 const ROPE_LEVELS = [['beginner', 'מתחילים'], ['intermediate', 'בינונית'], ['advanced', 'גבוהה']];
 const REASONS = {
@@ -92,8 +92,10 @@ const ACTION_ERRORS = {
 
 export function createTrainingUI(api) {
   const plans = document.getElementById('plansPageContent');
-  plans.innerHTML = `<section class="card training-hub"><h3>${t('בנייה ושמירה')}</h3>
-    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}${button('btnExerciseSaveCurrentWorkout', 'שמירת האימון שלי')}</div>
+  plans.innerHTML = `<section class="card training-hub">
+    <div class="training-actions">${button('btnReadyPlans', 'תוכניות מוכנות', true)}${button('btnSavedPlans', 'תוכניות שמורות שלי')}</div>
+    <details class="plan-custom-builder"><summary>${t('בנייה והתאמה אישית')}</summary>
+      ${button('btnPersonalPlan', 'בניית תוכנית אישית')}</details>
     <p id="trainingPlanStatus" class="field-hint" data-no-translate></p></section>`;
   const goals = document.getElementById('goalsPageContent');
   goals.innerHTML = `<section class="card training-hub">
@@ -107,16 +109,10 @@ export function createTrainingUI(api) {
     <p id="trainingSessionStatus" class="field-hint" data-no-translate></p>
     <div class="workout-focus" role="status" aria-live="polite" data-no-translate><strong id="trainingCurrent"></strong><span id="trainingTarget"></span><span id="trainingListening"></span></div>`;
   document.querySelector('.workout-header').appendChild(controls);
-  const programDuration = document.createElement('section');
-  programDuration.className = 'card training-duration';
-  programDuration.innerHTML = `<strong id="trainingProgramDuration" data-no-translate></strong>`;
-  document.getElementById('exerciseCategoryGrid').before(programDuration);
   const on = (id, handler) => document.getElementById(id).addEventListener('click', handler);
   on('btnPersonalPlan', () => planBuilder());
-  on('btnHomePlan', () => planBuilder({ homeOnly: true }));
-  on('btnRopePlan', ropeBuilder);
+  on('btnReadyPlans', readyPlans);
   on('btnSavedPlans', savedPlans);
-  on('btnExerciseSaveCurrentWorkout', saveCurrentWorkout);
   on('btnProgressAdvice', recommendations);
   on('btnWorkoutAdvice', recommendations);
   on('btnWeeklyWork', weeklyWork);
@@ -287,11 +283,48 @@ export function createTrainingUI(api) {
     }));
   }
 
-  function ropeBuilder() {
+  function readyPlans() {
+    const dialog = api.dialog(t('תוכניות מוכנות'), `
+      ${note('הצעות מקומיות לבדיקה, לא תוכניות שהופעלו או נשמרו עבורך. בחר רמה וסביבה, בדוק את הציוד והתרגילים, ורק אז שמור או הפעל.')}
+      <div class="ready-plan-filters">
+        ${field('רמה', `<select class="select" id="readyPlanLevel">${options([['', 'כל הרמות'], ['beginner', 'מתחילים'], ['regular', 'בעלי ניסיון']], '')}</select>`)}
+        ${field('סביבה', `<select class="select" id="readyPlanPlace">${options([['', 'בכל מקום'], ['gym', 'חדר כושר'], ['home', 'בית'], ['outside', 'מחוץ לבית']], '')}</select>`)}
+        ${field('סוג תוכנית', `<select class="select" id="readyPlanKind">${options([['', 'כל סוגי התוכניות'], ['strength', 'כוח'], ['movement', 'אירובי ותנועה']], '')}</select>`)}
+      </div><div id="readyPlanResults"></div>`);
+    const render = () => {
+      const location = dialog.querySelector('#readyPlanPlace').value;
+      const templates = tools.readyPlanTemplates({ location, experience: dialog.querySelector('#readyPlanLevel').value,
+        kind: dialog.querySelector('#readyPlanKind').value });
+      dialog.querySelector('#readyPlanResults').innerHTML = templates.length ? templates.map((template) => `
+        <section class="ready-plan-card"><h4>${esc(i18n.text(template.name))}</h4>
+          <p>${esc(i18n.text(template.experience === 'beginner' ? 'מתחילים' : 'בעלי ניסיון'))}
+            · ${template.minutes} ${i18n.text('דקות לאימון')}</p>
+          <p>${i18n.text('ציוד')}: ${template.equipment.map((item) => esc(i18n.text(item))).join(' · ') || i18n.text('ללא ציוד')}</p>
+          ${template.catalogId ? note('תיעוד זמן של תרגול מוכר, לא שיעור מודרך ולא מדד לעצימות אירובית.') : ''}
+          <button type="button" class="btn btn-primary btn-small" data-ready-plan="${template.id}">${t('בדיקת התוכנית')}</button></section>`).join('')
+        : note('אין תוכניות מתאימות לסינון הזה. אפשר לשנות רמה או סביבה.');
+      dialog.querySelectorAll('[data-ready-plan]').forEach((item) => item.onclick = () => safely(dialog, () => {
+        const template = templates.find((value) => value.id === item.dataset.readyPlan);
+        const place = location || template.locations[0];
+        if (template.goal === 'rope') {
+          ropeBuilder({ level: template.ropeLevel, location: place, minutes: template.minutes });
+          return;
+        }
+        const plan = tools.generateReadyPlan(template.id, api.getState().exercises, { location: place });
+        plan.id = api.uid();
+        plan.name = i18n.text(template.name);
+        planPreview(plan);
+      }));
+    };
+    dialog.querySelectorAll('.ready-plan-filters select').forEach((select) => select.onchange = render);
+    render();
+  }
+
+  function ropeBuilder({ level = 'beginner', location = 'home', minutes = 10 } = {}) {
     const dialog = api.dialog(t('בניית אימון קפיצה על חבל'), `<form id="ropePlanForm" class="training-form">
-      ${field('רמת קפיצה על חבל', `<select class="select" name="ropeLevel">${options(ROPE_LEVELS, 'beginner')}</select>`)}
-      ${field('דקות זמינות', `<select class="select" name="minutes">${options([[10, '10'], [15, '15'], [20, '20'], [30, '30']], 10)}</select>`)}
-      ${field('מיקום', `<select class="select" name="location">${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], 'home')}</select>`)}
+      ${field('רמת קפיצה על חבל', `<select class="select" name="ropeLevel">${options(ROPE_LEVELS, level)}</select>`)}
+      ${field('דקות זמינות', `<select class="select" name="minutes">${options([[10, '10'], [15, '15'], [20, '20'], [30, '30']], minutes)}</select>`)}
+      ${field('מיקום', `<select class="select" name="location">${options([['home', 'בבית'], ['gym', 'חדר כושר'], ['outside', 'בחוץ']], location)}</select>`)}
       ${note('מתחילים: 20 שניות קפיצה / 40 התאוששות. בינונית: 40 / 40. גבוהה: 60 / 30. בכל רמה שתי דקות הליכה לחימום ושתי דקות לשחרור. מספר הסבבים מותאם לזמן; אין צורך לקפוץ מהר יותר.')}
       ${note('בחר משטח יציב שאינו מחליק, נעליים מתאימות וחבל תקין. התחל במינון הקצר; אפשר לעצור או להאריך התאוששות. אם יש כאב, סחרחורת או קושי חריג, הפסק. קפיצה אינה מתאימה לכל אחד; זו אינה התאמה רפואית.')}
       <label class="checkbox-row"><input type="checkbox" name="ropeReady" required><span>${t('יש ברשותי חבל תקין ומרחב פנוי מעל הראש ומסביב לגוף.')}</span></label>
@@ -311,7 +344,7 @@ export function createTrainingUI(api) {
   function planBuilder({ homeOnly = false } = {}) {
     const dialog = api.dialog(t(homeOnly ? 'בניית אימון ביתי' : 'בניית תוכנית אישית'), `<form id="personalPlanForm" class="training-form">
       ${homeOnly ? note('בחר מה באמת נמצא בבית. כיסא מיועד לישיבה ותמיכה בלבד; TRX דורש עיגון תקין. ההצעה נבדקת ונשמרת לפני הפעלה, בלי להחליף את האימון הקיים.') : ''}
-      ${field('המטרה', `<select name="goal" class="select">${options(PLAN_GOALS.filter(([id]) => id !== 'rope' && (!homeOnly || id !== 'run')), 'fitness')}</select>`)}
+      ${field('המטרה', `<select name="goal" class="select">${options(PLAN_GOALS.filter(([id]) => !['rope', 'yoga', 'pilates'].includes(id) && (!homeOnly || id !== 'run')), 'fitness')}</select>`)}
       ${field('ניסיון', `<select name="experience" class="select">${options([['beginner', 'מתחילים'], ['regular', 'בעלי ניסיון']], 'beginner')}</select>`)}
       ${field('מספר אימונים בתוכנית', `<select name="days" class="select">${options([[1, 'אימון יחיד'], [2, '2'], [3, '3'], [4, '4'], [5, '5'], [6, '6']], 1)}</select>`)}
       ${field('חלוקת האימונים', `<select name="split" class="select">${options(PLAN_SPLITS, 'full-body')}</select>`)}
@@ -364,7 +397,8 @@ export function createTrainingUI(api) {
   function planPreview(original) {
     const plan = JSON.parse(JSON.stringify(original));
     const available = tools.planCatalog(tools.planningCatalog(api.getState().exercises), plan.options.equipment, plan.options.location);
-    const dialog = api.dialog(t('תוכנית מוצעת — בדיקה ועריכה'), `<p><span>${t(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || '')}</span>
+    const dialog = api.dialog(t('תוכנית מוצעת — בדיקה ועריכה'), `${plan.name ? `<h3 data-no-translate>${esc(plan.name)}</h3>` : ''}
+      <p><span>${t(PLAN_GOALS.find(([key]) => key === plan.options.goal)?.[1] || '')}</span>
       · ${plan.options.days} <span>${t('אימונים בתוכנית')}</span> · ${plan.options.minutes} <span>${t('דקות לאימון')}</span></p>
       ${plan.options.goal === 'rope' ? `<p><span>${t('רמת קפיצה על חבל')}</span>: <span>${t(ROPE_LEVELS.find(([key]) => key === plan.options.ropeLevel)[1])}</span></p>` : ''}
       ${PLAN_SPLITS.some(([key]) => key === plan.options.split) ? `<p>${t(PLAN_SPLITS.find(([key]) => key === plan.options.split)[1])}</p>` : ''}
@@ -375,6 +409,7 @@ export function createTrainingUI(api) {
       ${note('השאר ימים קלים או מנוחה בין אימונים לפי התחושה. זמני התוכנית הם אומדן; אין חובה לסיים בזמן.')}${durationDetails()}
       ${plan.options.equipment.includes('TRX') ? note('לפני כל שימוש ב-TRX בדוק שוב את הרצועות והעיגון לפי הוראות היצרן. ההצעה אינה מאשרת את בטיחות ההתקנה בפועל.') : ''}
       ${plan.options.goal === 'run' ? note('התחלה עדינה: הליכה נוחה ואחריה ריצה קצרה, ובסיום הליכה נוספת לפי הצורך. חזור על אותו מינון; רק כשהוא נוח בכמה אימונים שקול עוד דקה, לא העלאת קצב וזמן יחד.') : ''}
+      ${['yoga', 'pilates'].includes(plan.options.goal) ? note('תיעוד זמן של תרגול מוכר, לא שיעור מודרך ולא מדד לעצימות אירובית.') : ''}
       ${plan.omitted.length ? note('חלק מדפוסי התנועה לא נכללו בגלל הציוד, הניסיון או הזמן. ההצעה אינה מבטיחה כיסוי מלא לכל הגוף.') +
         `<p><span>${t('לא נכללו')}</span>: ${plan.omitted.map((movement) => `<span>${t(MOVEMENTS[movement] || movement)}</span>`).join(' · ')}</p>` : ''}
       ${plan.options.goal === 'rope' ? note('הטיימר עובר אוטומטית מחימום לסבבי קפיצה והתאוששות ולשחרור. הפסקת האימון או עצירת הטיימר מקפיאות את המיקום ברצף. בדפדפן יש להשאיר את הדף פתוח; הכרזות ברקע באייפון דורשות בדיקת מכשיר.') : ''}
@@ -383,6 +418,7 @@ export function createTrainingUI(api) {
         ${session.exercises.map((exercise, row) => `<div class="training-plan-row" data-row="${row}">
           <label><span class="sr-only">${t('בחירת תרגיל')}</span><select class="select plan-exercise" data-no-translate>${available.filter((candidate) => candidate.inputType === exercise.inputType)
             .filter((candidate) => !exercise.intervals || candidate.catalogId === 'jumpRope')
+            .filter((candidate) => !['yoga', 'pilates'].includes(plan.options.goal) || candidate.catalogId === `${plan.options.goal}Practice`)
             .filter((candidate) => !session.splitMuscles || session.splitMuscles.includes(tools.trainingMetadata(candidate)?.primary))
             .filter((candidate) => !plan.options.muscles?.length || tools.trainingMetadata(candidate)?.primary === tools.trainingMetadata(exercise)?.primary).map((candidate) =>
             `<option value="${esc(candidate.id)}" ${candidate.id === exercise.id ? 'selected' : ''}>${name(candidate)}</option>`).join('')}</select></label>
@@ -643,8 +679,8 @@ export function createTrainingUI(api) {
     }
     const plans = trainingSettings().plans || [];
     const canStart = api.canStartSavedPlan();
-    const dialog = api.dialog(t('תוכניות שמורות'), `${!canStart ? note('יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו, או בטל אותו במפורש במסך אימון, לפני התחלת אימון אחר. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
-      <p class="saved-plans-count" data-no-translate>${i18n.text('תוכניות שמורות')}: ${plans.length}</p>
+    const dialog = api.dialog(t('תוכניות שמורות שלי'), `${!canStart ? note('יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו, או בטל אותו במפורש במסך אימון, לפני התחלת אימון אחר. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
+      <p class="saved-plans-count" data-no-translate>${i18n.text('תוכניות שמורות שלי')}: ${plans.length}</p>
       ${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong data-no-translate>${index + 1}. ${esc(workoutTitle(plan))}</strong>
       <p>${plan.sessions.length} <span>${t('אימונים בתוכנית')}</span></p>
       ${plan.options.muscles?.length ? `<p>${plan.options.muscles.map((muscle) => `<span>${esc(t(muscle))}</span>`).join(' · ')}</p>` : ''}
@@ -655,14 +691,12 @@ export function createTrainingUI(api) {
       <button class="btn btn-secondary btn-small" data-rename-plan="${index}">${t('שינוי שם האימון')}</button>
       <button class="btn btn-secondary btn-small" data-delete-plan="${index}">${t('מחיקת התוכנית החלופית')}</button></div></section>`).join('') : note('עדיין אין תוכניות חלופיות שמורות.')}
       ${note('לשמירת תוכנית, פתח בניית תוכנית אישית, צור הצעה ולחץ בתחתית ההצעה על שמירה כתוכנית חלופית. שמירה אינה הפעלה.')}
-      ${button('btnSaveWorkoutFromPlans', 'שמירת האימון שלי')}
       ${button('btnCreateSavedPlan', 'יצירת תוכנית חדשה')}
       ${note('עד שמונה תוכניות חלופיות במכשיר. מחיקה כאן לא משנה אימון פעיל או את האימון שלי.')}
       ${trainingSettings().programBackup ? button('btnRestoreProgram', 'שחזור הבחירה שלפני התוכנית', true) : ''}`);
     dialog.classList.add('saved-plans-dialog');
     dialog.scrollTop = scrollTop;
     document.getElementById('btnCreateSavedPlan').onclick = () => planBuilder();
-    document.getElementById('btnSaveWorkoutFromPlans').onclick = () => saveCurrentWorkout();
     const openCurrent = document.getElementById('btnOpenCurrentWorkout');
     if (openCurrent) openCurrent.onclick = () => { dialog.close(); api.openCurrentWorkout(); };
     dialog.querySelectorAll('[data-start-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
@@ -818,5 +852,5 @@ export function createTrainingUI(api) {
     window.removeEventListener('touchmove', deferEstimates);
   }, { once: true });
   refresh();
-  return { refresh, refreshDuration };
+  return { refresh, refreshDuration, ropeBuilder, saveCurrentWorkout };
 }

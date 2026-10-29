@@ -616,6 +616,16 @@ const CATALOG_EXTENSION = {
     pair('סובב בעדינות מפרקי כף יד וקפוץ נמוך עם נחיתה רכה; שמור מרפקים קרוב לגוף.', 'Turn gently from your wrists and jump low with soft landings; keep elbows near your body.'),
     pair('עצור להתאוששות בין מקטעים. אפשר לחזור להליכה; הפסק אם יש כאב או סחרחורת.', 'Stop to recover between intervals. You can return to walking; stop if you have pain or dizziness.'),
   ], { inputType: 'cardio', level: 'מתחילים', places: ['home', 'gym', 'outside'] }),
+  yogaPractice: expandedGuide(pair('יוגה — תרגול מוכר', 'Yoga — familiar practice'), ['כללי'], ['מזרן'], 'standing', 'yoga-practice', [
+    pair('בחר רצף או שיעור שכבר למדת ומתאים לניסיון שלך, ומרחב יציב ופנוי עם מזרן.', 'Choose a sequence or class you have already learned and that suits your experience, with a mat and clear stable space.'),
+    pair('הפעל את טיימר הפעילות ותרגל בטווח נוח עם נשימה חופשית. אין צורך להשלים תנוחה או זמן שאינם נוחים.', 'Start the activity timer and practise within a comfortable range while breathing freely. You do not need to complete an uncomfortable pose or duration.'),
+    pair('עצור לפי הצורך ותעד רק את הזמן שביצעת. זהו רישום זמן, לא שיעור יוגה מודרך או מדד לעצימות אירובית.', 'Pause as needed and record only the time performed. This logs time; it is not a guided yoga class or an aerobic-intensity measure.'),
+  ], { inputType: 'cardio', activityOnly: true, level: 'מתחילים', places: ['home', 'gym', 'outside'] }),
+  pilatesPractice: expandedGuide(pair('פילאטיס — תרגול מוכר', 'Pilates — familiar practice'), ['כללי'], ['מזרן'], 'standing', 'pilates-practice', [
+    pair('בחר תרגול מזרן שכבר למדת ומתאים ליכולת שלך. אין כאן תוכנית מכשירים או הדרכה לרפורמר.', 'Choose mat practice you have already learned and that suits your ability. This is not a reformer or apparatus program.'),
+    pair('הפעל את הטיימר, עבוד בתנועה נשלטת ונשום בחופשיות. קח הפסקה במקום לכפות טווח או קצב.', 'Start the timer, move with control and breathe freely. Take a break rather than forcing range or pace.'),
+    pair('עצור אם מופיע כאב או סחרחורת ותעד את הזמן שביצעת. הטיימר אינו מחליף לימוד עם מדריך ואינו מסיק שיפור בכוח.', 'Stop if pain or dizziness occurs and log the time performed. The timer does not replace learning with an instructor or infer strength improvement.'),
+  ], { inputType: 'cardio', activityOnly: true, level: 'מתחילים', places: ['home', 'gym', 'outside'] }),
   elliptical: expandedGuide(pair('אליפטיקל בקצב נוח', 'Easy-paced elliptical'), ['רגליים'], ['מכונה'], 'elliptical', 'elliptical', [
     pair('עלה בזהירות כשהמכשיר יציב והחזק בידיות לפי הוראות היצרן.', 'Mount carefully with the machine stable and hold the handles as its manufacturer specifies.'),
     pair('התחל בהתנגדות קלה ובתנועה רציפה, בלי להישען עם כל הגוף על הידיות.', 'Start with light resistance and smooth movement without leaning your whole body weight onto the handles.'),
@@ -1040,6 +1050,7 @@ const poses = {
 };
 
 export function exerciseIllustration(info, isHold = false) {
+  if (info.activityOnly) return '<svg viewBox="0 0 160 160" role="img" aria-label="תיעוד זמן פעילות"><circle cx="80" cy="85" r="52" fill="none" stroke="currentColor" stroke-width="5"/><path d="M66 15h28M80 15v18M80 48v38l24 15" fill="none" stroke="currentColor" stroke-width="5"/></svg>';
   const positions = poses[info.pose];
   if (!positions) throw new Error(`Missing exercise illustration: ${info.pose}`);
   const [start, end] = positions;

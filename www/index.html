@@ -136,7 +136,7 @@
     <button type="button" data-page-link="guide">מדריך למשתמש</button>
     <button type="button" data-page-link="contact">יצירת קשר</button>
     <h3>האימונים שלי</h3>
-    <button type="button" data-page-link="plans">התוכניות שלי</button>
+    <button type="button" data-page-link="plans">תוכניות</button>
     <button type="button" data-page-link="goals">יעדים והתקדמות</button>
     <h3>אישי והגדרות</h3>
     <button type="button" data-page-link="profile">אישי</button>
@@ -170,7 +170,7 @@
       <button id="btnHomeStartWorkout" class="btn home-start-button"><span id="homeStartLabel">התחל אימון</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6l-6 6 6 6"/></svg></button>
       <button id="btnHomeEditWorkout" class="home-hero-link">התאמת התרגילים והסדר</button>
     </section>
-    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">התוכניות שלי</button>
+    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">תוכניות</button>
 
     <section class="card home-week-card" aria-labelledby="homeWeekTitle">
       <div class="home-section-heading"><h2 id="homeWeekTitle">השבוע שלך</h2><button id="btnHomeToDashboard" class="home-text-link">לסטטיסטיקה המלאה <span aria-hidden="true">←</span></button></div>
@@ -326,7 +326,6 @@
       <h2 class="section-title">ספריית תרגילים</h2>
     </div>
     <div class="field-hint" id="catalogSummary"></div>
-    <p id="libraryBrowsePrompt" class="about-desc">איפה מתאמנים? בחר סביבה ואז ציוד.</p>
     <details id="libraryUpdateCard" class="hidden">
       <summary>עדכון הספרייה השמורה</summary>
       <p class="field-hint">כל המאגר כבר זמין בקטגוריות. אפשר גם לשמור את התרגילים החדשים בספרייה שלך בלי לשנות את האימון הקיים.</p>
@@ -343,7 +342,7 @@
       <label><span class="field-label">קבוצת שרירים</span><select id="libraryMuscle" class="select"><option value="">כל קבוצות השרירים</option></select></label>
       <label><span class="field-label">סוג פעילות</span><select id="libraryType" class="select">
         <option value="">כל סוגי הפעילות</option><option value="reps">כוח</option>
-        <option value="hold">החזקות סטטיות</option><option value="cardio">אירובי</option>
+        <option value="hold">החזקות סטטיות</option><option value="cardio">אירובי ותנועה</option>
       </select></label>
       <label><span class="field-label">ציוד</span><select id="libraryEquipment" class="select">
         <option value="">כל הציוד</option><option value="משקל גוף">משקל גוף</option><option value="משקולות יד">משקולות יד</option>
@@ -365,7 +364,10 @@
     </div>
     <p id="libraryBrowseTrail" class="library-browse-trail"></p>
     <div id="exerciseCategoryGrid" class="exercise-category-grid" aria-label="קטגוריות תרגילים"></div>
-    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">התוכניות שלי</button>
+    <div class="training-actions">
+      <button id="btnLibraryRopePlan" type="button" class="btn btn-secondary">אימון קפיצה על חבל</button>
+      <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">תוכניות</button>
+    </div>
     <div id="exerciseLibraryPanel" class="hidden">
       <button id="btnBackExerciseCategories" class="btn btn-secondary exercise-library-back">חזרה</button>
       <div class="exercise-library-heading">
@@ -373,6 +375,7 @@
         <span id="exerciseLibraryCount" class="exercise-meta"></span>
       </div>
       <p id="exerciseLibraryHint" class="about-desc"></p>
+      <button id="btnSaveMyWorkout" type="button" class="btn btn-secondary hidden">שמירת האימון שלי</button>
       <button id="btnAddExercise" class="btn btn-secondary exercise-library-add">+ הוסף תרגיל חדש</button>
     </div>
     <div id="exerciseManageList" class="exercise-manage-list"></div>
@@ -506,7 +509,7 @@
   </section>
 
   <section id="tab-plans" class="tab-panel reading-page">
-    <h2 class="section-title">התוכניות שלי</h2>
+    <h2 class="section-title">תוכניות</h2>
     <div id="plansPageContent"></div>
   </section>
 
@@ -585,7 +588,7 @@
         <li>פותחים תרגיל, קוראים את ההדרכה ולוחצים על "הוסף לאימון שלי".</li>
         <li>בקטגוריית "האימון שלי" מסדרים את התרגילים ובוחרים סטים, חזרות ומנוחות.</li>
       </ol>
-      <p>רוצה להתחיל מהצעה? בתפריט פותחים "התוכניות שלי" ובוחרים "בניית תוכנית אישית". ממלאים את ההעדפות ובודקים את התוכנית לפני שמירה או הפעלה.</p>
+      <p>בתפריט פותחים "תוכניות" ובוחרים "תוכניות מוכנות", או פותחים "בנייה והתאמה אישית". בודקים את התוכנית לפני שמירה או הפעלה.</p>
       <button type="button" class="btn btn-secondary" data-page-link="exercises">לספריית התרגילים</button>
     </details>
     <details class="card guide-section">
@@ -597,7 +600,7 @@
     <details class="card guide-section">
       <summary>איך שומרים תוכנית וחוזרים אליה?</summary>
       <ol>
-        <li>בתפריט פותחים "התוכניות שלי", נכנסים ל"תוכניות שמורות" ובוחרים "שמירת האימון שלי".</li>
+        <li>בטאב תרגילים פותחים "האימון שלי" ובוחרים "שמירת האימון שלי". התוצאה מופיעה ב"תוכניות שמורות שלי".</li>
         <li>נותנים שם ושומרים. נשמרים התרגילים, הסדר והיעדים, ולא הביצועים הזמניים של אימון פעיל.</li>
         <li>כדי להתאמן בתוכנית שמורה, פותחים אותה, בודקים את האימון ומאשרים הפעלה. אם כבר התחלת אימון, יש לסיים או לבטל אותו קודם.</li>
       </ol>

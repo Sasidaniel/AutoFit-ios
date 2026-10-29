@@ -1,5 +1,36 @@
 # AutoFit release notes
 
+## Unreleased - focused Plans hub and muscle browsing in every environment (2026-10-29)
+
+- Added By muscle under gym, home, outside and all-library browsing, alongside
+  equipment groups. Counts and exercises respect the environment; Back returns
+  from exercises to muscles, then equipment, then the library root.
+- Renamed the page/shortcuts to Plans and personal storage to My saved plans.
+  The hub has two primary actions: ready-made plans and personal saved plans;
+  custom building is collapsed. Save my workout now lives in Exercises > My
+  workout. Existing plans, editing, explicit activation and restoration remain.
+- Added 15 reviewable local templates, filtered by experience, environment and
+  strength/movement: full-body levels, upper A, lower B, A/B, bodyweight/dumbbell
+  home, walking/running, three rope levels, Yoga and Pilates. They reuse catalog
+  identities and the real planning/interval engines; browsing never activates or
+  saves. Each template was exercised in every advertised environment.
+- Jump rope has a direct Exercises entry and ready-made templates, retaining
+  the equipment/space confirmation, editable dose and working interval timer.
+- Added Yoga/Pilates timed familiar-practice logging, NOT guided classes,
+  reformer instruction, invented pose demonstrations or aerobic/strength claims.
+  The optional 20-minute proposals can be reviewed and edited before use.
+  The catalog now has 134 definitions: 118 existing instructional guides plus
+  two preparation/logging guides across 120 distinct guide/activity definitions.
+- Removed the Exercises workout-duration card and the environment-instruction
+  sentence, including feminine wording. Estimates remain inside plan reviews,
+  saved plans and Workout. Browser checks covered all environments, English,
+  feminine Hebrew, explicit synthetic-plan saving without program changes and
+  a 385px view without overflow. The test-created saved plan was removed.
+- All 611 JavaScript regressions passed; no new native code in this phase.
+  Cache: `autofit-v91`. Detailed handoff: PRE-RELEASE-REVIEW sections 49–53.
+  Owner-authorized feature-branch backup only; no release/build workflow, PR,
+  main merge or TestFlight upload.
+
 ## Unreleased - focused listening, audio handoff and clearer browsing/statistics (2026-10-29)
 
 - Added explicit iPhone-only focused listening, entered by button or supported

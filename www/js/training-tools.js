@@ -107,6 +107,8 @@ const META = {
   wallSit: ['squat-hold', 'רגליים', [], false], farmer: ['grip-hold', 'אמות', ['טרפז'], false],
   walk: ['walk', 'רגליים', [], false], march: ['walk', 'רגליים', [], false],
   jog: ['jog', 'רגליים', [], false],
+  yogaPractice: ['yoga-practice', 'כללי', [], false],
+  pilatesPractice: ['pilates-practice', 'כללי', [], false],
   legPress: ['squat', 'רגליים', ['ישבן'], true],
   legCurl: ['knee-flexion', 'רגליים', [], false],
   chairStand: ['squat', 'רגליים', ['ישבן'], true],
@@ -885,6 +887,56 @@ export function generatePlan(options, catalog) {
   });
   if (sessions.some((session) => !session.exercises.length)) throw new Error('No suitable exercises for these preferences');
   return { options: copy(options), sessions, omitted: [...skipped] };
+}
+
+export const READY_PLAN_TEMPLATES = [
+  { id: 'full-body-start', name: 'פול בודי — מתחילים', goal: 'fitness', experience: 'beginner', days: 1, minutes: 30, split: 'full-body', equipment: ['מכונה'], locations: ['gym'] },
+  { id: 'full-body-regular', name: 'פול בודי — בעלי ניסיון', goal: 'muscle', experience: 'regular', days: 1, minutes: 60, split: 'full-body', equipment: ['מכונה', 'משקולות יד'], locations: ['gym'] },
+  { id: 'upper-a', name: 'A — פלג גוף עליון', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'auto', muscles: ['חזה', 'גב', 'כתפיים', 'יד קדמית', 'יד אחורית'], equipment: ['מכונה'], locations: ['gym'] },
+  { id: 'lower-b', name: 'B — פלג גוף תחתון', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'auto', muscles: ['רגליים', 'ישבן', 'שוקיים', 'בטן'], equipment: ['מכונה', 'משקולות יד'], locations: ['gym'] },
+  { id: 'upper-lower', name: 'A/B — עליון ותחתון', goal: 'muscle', experience: 'regular', days: 2, minutes: 45, split: 'ab', equipment: ['מכונה', 'משקולות יד'], locations: ['gym'] },
+  { id: 'home-start', name: 'בבית — משקל גוף למתחילים', goal: 'fitness', experience: 'beginner', days: 1, minutes: 30, split: 'full-body', equipment: [], locations: ['home', 'outside'] },
+  { id: 'home-dumbbells', name: 'בבית — משקולות יד', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'full-body', equipment: ['משקולות יד'], locations: ['home', 'outside'] },
+  { id: 'walking-start', name: 'הליכה — התחלה נוחה', goal: 'walk', experience: 'beginner', days: 1, minutes: 20, equipment: [], locations: ['home', 'gym', 'outside'] },
+  { id: 'running-start', name: 'ריצה — התחלה הדרגתית', goal: 'run', experience: 'beginner', days: 1, minutes: 20, equipment: [], locations: ['outside', 'gym'] },
+  { id: 'running-regular', name: 'הליכה וריצה — בעלי ניסיון', goal: 'run', experience: 'regular', days: 1, minutes: 30, equipment: [], locations: ['outside', 'gym'] },
+  ...['beginner', 'intermediate', 'advanced'].map((level, index) => ({
+    id: `rope-${level}`, name: ['חבל — מתחילים', 'חבל — רמה בינונית', 'חבל — רמה גבוהה'][index],
+    goal: 'rope', experience: index ? 'regular' : 'beginner', ropeLevel: level,
+    days: 1, minutes: index ? 15 : 10, equipment: ['חבל קפיצה'], locations: ['home', 'gym', 'outside'],
+  })),
+  { id: 'yoga-practice', name: 'יוגה — תרגול מוכר', goal: 'yoga', experience: 'beginner', days: 1, minutes: 20, equipment: ['מזרן'], locations: ['home', 'gym', 'outside'], catalogId: 'yogaPractice' },
+  { id: 'pilates-practice', name: 'פילאטיס — תרגול מוכר', goal: 'pilates', experience: 'beginner', days: 1, minutes: 20, equipment: ['מזרן'], locations: ['home', 'gym', 'outside'], catalogId: 'pilatesPractice' },
+];
+
+export function readyPlanTemplates({ experience = '', location = '', kind = '' } = {}) {
+  if (!['', 'beginner', 'regular'].includes(experience) || !['', 'home', 'gym', 'outside'].includes(location)
+    || !['', 'strength', 'movement'].includes(kind)) throw new Error('Invalid plan preferences');
+  return READY_PLAN_TEMPLATES.filter((template) => (!experience || template.experience === experience)
+    && (!location || template.locations.includes(location))
+    && (!kind || (kind === 'movement') === ['walk', 'run', 'rope', 'yoga', 'pilates'].includes(template.goal))).map(copy);
+}
+
+export function generateReadyPlan(id, catalog, { location, ropeReady = false } = {}) {
+  const template = READY_PLAN_TEMPLATES.find((item) => item.id === id);
+  if (!template || location && !template.locations.includes(location)) throw new Error('Invalid plan preferences');
+  const place = location || template.locations[0];
+  let plan;
+  if (template.goal === 'rope') {
+    if (!ropeReady) throw new Error('Confirm a jump rope and clear space');
+    plan = generateRopePlan(template.ropeLevel, template.minutes, catalog, place);
+  } else if (template.catalogId) {
+    const exercise = planningCatalog(catalog).find((item) => item.catalogId === template.catalogId);
+    if (!exercise) throw new Error('No suitable exercises for these preferences');
+    plan = { options: { goal: template.goal, experience: template.experience, days: 1,
+      minutes: template.minutes, equipment: [...template.equipment], location: place },
+      sessions: [{ label: '1', exercises: [{ ...planExercise(exercise), durationMinutes: template.minutes, location: place }] }], omitted: [] };
+  } else {
+    plan = generatePlan({ goal: template.goal, experience: template.experience, days: template.days,
+      minutes: template.minutes, split: template.split || 'full-body', equipment: [...template.equipment],
+      location: place, ...(template.muscles ? { muscles: [...template.muscles] } : {}) }, catalog);
+  }
+  return { ...plan, name: template.name };
 }
 
 const ROPE_LEVELS = {

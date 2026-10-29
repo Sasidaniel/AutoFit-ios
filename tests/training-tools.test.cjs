@@ -16,12 +16,65 @@ const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMusc
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'workoutEntryAnnouncement', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
   'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'rememberMissingWorkoutLoads', 'editSavedPlanExercise', 'replaceSavedPlan',
-  'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan',
+  'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan', 'READY_PLAN_TEMPLATES', 'readyPlanTemplates', 'generateReadyPlan',
   'removeWorkoutExercise', 'restoreWorkoutExercise', 'workoutHistoryEntries',
   'generateRopePlan', 'ropeIntervalSchedule', 'cardioIntervalPhase', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
 const insights = load('www/js/workout-insights.js', ['completedEntrySnapshot', 'progressRecommendation', 'compareEntries'], library);
 const catalog = plain(library.LIBRARY_EXERCISES);
 const find = (id) => plain(catalog.find((exercise) => exercise.catalogId === id));
+
+for (const template of tools.READY_PLAN_TEMPLATES) {
+  test(`ready plan ${template.id} is actionable in each advertised environment without mutating personal data`, () => {
+    const before = JSON.stringify(catalog);
+    for (const location of template.locations) {
+      const plan = tools.generateReadyPlan(template.id, catalog, { location, ropeReady: true });
+      assert.equal(plan.name, template.name);
+      assert.equal(plan.options.location, location);
+      assert.equal(plan.sessions.length, template.days);
+      if (['upper-a', 'lower-b'].includes(template.id)) assert.equal(plan.options.split, 'auto');
+      for (const day of plan.sessions) {
+        assert.ok(day.exercises.length);
+        assert.equal(new Set(day.exercises.map((exercise) => exercise.id)).size, day.exercises.length);
+        for (const exercise of day.exercises) {
+          assert.ok(library.exerciseGuide(exercise));
+          assert.ok(library.exerciseGuide(exercise).places.includes(location));
+          if (template.muscles) assert.ok(template.muscles.includes(tools.trainingMetadata(exercise).primary));
+        }
+        const activated = tools.activatePlanExercises(tools.planningCatalog(catalog), day.exercises);
+        assert.equal(activated.filter((exercise) => exercise.active).length, day.exercises.length);
+      }
+    }
+    assert.equal(JSON.stringify(catalog), before);
+  });
+}
+
+test('ready plans filter level, environment and activity independently and return detached metadata', () => {
+  const selected = tools.readyPlanTemplates({ experience: 'beginner', location: 'home', kind: 'movement' });
+  assert.ok(selected.some((item) => item.goal === 'rope'));
+  assert.ok(selected.some((item) => item.goal === 'yoga'));
+  assert.ok(selected.every((item) => item.experience === 'beginner' && item.locations.includes('home')));
+  assert.ok(!selected.some((item) => item.goal === 'run'));
+  selected[0].equipment.push('private');
+  assert.ok(!tools.READY_PLAN_TEMPLATES.some((item) => item.equipment.includes('private')));
+  assert.throws(() => tools.readyPlanTemplates({ experience: 'made-up' }), /Invalid/);
+  assert.throws(() => tools.generateReadyPlan('running-start', catalog, { location: 'home' }), /Invalid/);
+  assert.throws(() => tools.generateReadyPlan('unknown', catalog), /Invalid/);
+  assert.throws(() => tools.generateReadyPlan('rope-beginner', catalog), /Confirm/);
+});
+
+test('Yoga and Pilates proposals log timed familiar practice without invented instruction or strength sets', () => {
+  for (const id of ['yoga-practice', 'pilates-practice']) {
+    const exercise = tools.generateReadyPlan(id, catalog).sessions[0].exercises[0];
+    assert.equal(exercise.inputType, 'cardio');
+    assert.equal(exercise.durationMinutes, 20);
+    assert.equal(exercise.defaultSets, 0);
+    const guide = library.exerciseGuide(exercise);
+    assert.equal(guide.activityOnly, true);
+    assert.equal(guide.videos.length, 0);
+    assert.doesNotMatch(library.exerciseIllustration(guide), /exercise-muscle/);
+  }
+});
+
 const set = (weightKg = '', reps = '', completed = false, extra = {}) => ({ weightKg, reps, completed, ...extra });
 function entry(exercise, sets = [set(), set()]) {
   return { exerciseId: exercise.id, exerciseName: exercise.name, targetReps: 12, sets };
@@ -605,10 +658,10 @@ test('paused hold measurements and rope interval recipes survive removal, reload
     sets: [{ ...hold.sets[0], holdStartedAt: 123 }] }]), 'hold'), /Pause/);
 });
 
-test('75 additional exercises have distinct trusted muscle, movement and real-equipment metadata', () => {
+test('77 additional exercises and activities have distinct trusted movement and real-equipment metadata', () => {
   const additions = catalog.filter((exercise) => exercise.id.startsWith('library:extended-'));
-  assert.equal(additions.length, 75);
-  assert.equal(new Set(additions.map((exercise) => exercise.catalogId)).size, 75);
+  assert.equal(additions.length, 77);
+  assert.equal(new Set(additions.map((exercise) => exercise.catalogId)).size, 77);
   for (const exercise of additions) {
     const metadata = tools.trainingMetadata(exercise);
     assert.ok(metadata, exercise.name);
@@ -640,8 +693,8 @@ test('the PDF exercise variants are real distinct library choices with correct m
 test('the built-in catalog counter is separate from installed custom exercises and selected workout membership', () => {
   const seed = load('www/js/seed.js', ['SEED_EXERCISES']).SEED_EXERCISES;
   const data = [{ id: 'mine:1', name: 'Custom', active: true }, { ...find('chairStand'), active: false }];
-  assert.deepEqual(plain(library.catalogStats(data, seed)), { builtIn: 132, stored: 2, selected: 1 });
-  assert.deepEqual(plain(library.catalogStats([], seed)), { builtIn: 132, stored: 0, selected: 0 });
+  assert.deepEqual(plain(library.catalogStats(data, seed)), { builtIn: 134, stored: 2, selected: 1 });
+  assert.deepEqual(plain(library.catalogStats([], seed)), { builtIn: 134, stored: 0, selected: 0 });
 });
 
 test('all authored diagrams render and new equipment variants have appropriate distinct movement poses', () => {

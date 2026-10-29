@@ -765,6 +765,13 @@ input[type="tel"].input, input[type="email"].input, input[type="number"].input {
 .workout-tab.active .workout-nav-icon { box-shadow: 0 0 0 2px var(--gold); }
 
 /* Toast */
+.ready-plan-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.ready-plan-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-block: 12px; }
+.ready-plan-card h4 { margin: 0 0 8px; }
+.ready-plan-card p { margin-block: 6px; }
+.plan-custom-builder { margin-top: 16px; }
+.plan-custom-builder summary { cursor: pointer; margin-bottom: 12px; }
+
 .toast {
   position: fixed; bottom: calc(104px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   background: var(--text); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px;
