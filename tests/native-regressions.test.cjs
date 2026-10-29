@@ -3591,6 +3591,21 @@ test('rewritten and concatenated numeric transcripts count twelve actual reps in
   }
 });
 
+if (process.env.AUTOFIT_NATIVE_COUNT_STREAM) {
+  test('native streaming contract preserves twelve real Swift-emitted counts through automatic set completion', () => {
+    const frames = JSON.parse(fs.readFileSync(process.env.AUTOFIT_NATIVE_COUNT_STREAM, 'utf8'));
+    assert.deepEqual(frames.map((frame) => frame.count), Array.from({ length: 13 }, (_, index) => index));
+    const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ reps: '12', weightKg: 40, completed: false }] };
+    const { context } = voiceContext([entry]);
+    for (const { transcript, count } of frames) {
+      context.handleVoiceTranscript(transcript);
+      if (count > 0) assert.equal(entry.sets[0].reps, count, transcript);
+      assert.equal(entry.sets[0].completed, count === 12, transcript);
+      assert.equal(entry.sets[0].weightKg, 40);
+    }
+  });
+}
+
 test('direct numeric counts above two and explicit performance reports retain their original meaning', () => {
   const { context } = voiceContext();
   assert.equal(context.parseSpokenRepCount('12', 11), 12);
@@ -3598,6 +3613,8 @@ test('direct numeric counts above two and explicit performance reports retain th
   assert.equal(context.parseSpokenRepCount('1 2 3 4', 3), 4);
   assert.equal(context.parseSpokenRepCount('123456789101112131415', 14), 15);
   assert.equal(context.parseSpokenRepCount('12', 1), 2);
+  assert.equal(context.parseSpokenRepCount('12', 5), 12);
+  assert.equal(context.parseSpokenRepCount('123', 5), 5);
   assert.equal(context.parseSpokenNumber('12'), 12);
 });
 

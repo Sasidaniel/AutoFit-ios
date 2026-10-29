@@ -2297,7 +2297,10 @@ function parseSpokenRepCount(text, previous = 0) {
     let sequence = '';
     for (let count = 1; count <= 100; count++) {
       sequence += count;
-      if (sequence === last && previous <= count) return count;
+      if (sequence === last) {
+        if (last === '12' && previous > 2) return 12;
+        return Math.max(previous, count);
+      }
       if (!last.startsWith(sequence)) break;
     }
   }

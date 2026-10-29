@@ -37,6 +37,11 @@ jobs:
           "$RUNNER_TEMP/activity-tests"
           swiftc ios/App/App/ScheduledWorkoutAnnouncement.swift tests/ScheduledWorkoutAnnouncementTests.swift -o "$RUNNER_TEMP/announcement-tests"
           "$RUNNER_TEMP/announcement-tests"
+      - name: Test real Swift transcript stream through the JavaScript workout controller
+        run: |
+          set -e
+          "$RUNNER_TEMP/speech-tests" --count-stream > "$RUNNER_TEMP/count-stream.json"
+          AUTOFIT_NATIVE_COUNT_STREAM="$RUNNER_TEMP/count-stream.json" node --test --test-name-pattern="native streaming contract" tests/native-regressions.test.cjs
       - name: Compile app and widget for simulator without signing or distribution
         run: |
           set -e

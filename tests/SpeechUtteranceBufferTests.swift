@@ -3,6 +3,23 @@ import Foundation
 @main
 struct SpeechUtteranceBufferTests {
     static func main() {
+        if CommandLine.arguments.contains("--count-stream") {
+            var buffer = SpeechUtteranceBuffer()
+            var frames: [[String: Any]] = []
+            if let text = buffer.update("לחיצת חזה", isFinal: true, at: 0) {
+                frames.append(["transcript": text, "count": 0])
+            }
+            for count in 1...12 {
+                let numbers = (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")
+                guard let text = buffer.update("לחיצת חזה " + numbers, isFinal: false, at: Double(count)) else {
+                    preconditionFailure("Native stream lost count \(count)")
+                }
+                frames.append(["transcript": text, "count": count])
+            }
+            let data = try! JSONSerialization.data(withJSONObject: frames, options: [.sortedKeys])
+            print(String(data: data, encoding: .utf8)!)
+            return
+        }
         var buffer = SpeechUtteranceBuffer()
         precondition(buffer.flush(at: 10) == nil)
         precondition(buffer.update("התחל", isFinal: false, at: 1) == nil)

@@ -28,6 +28,8 @@
 - All 650 JS tests pass and 20 modules parse. Added Swift rewrite/30-count
   sequences and exact watchdog threshold cases. A separate manual macOS workflow
   runs tests and unsigned app/widget Simulator compilation, never distribution.
+  The native job also sends the real Swift buffer's emitted count stream through
+  the JS workout controller, checking all twelve counts and exact completion.
   Execution and physical iPhone/Apple Music acceptance remain pending.
 - Detailed handoff: PRE-RELEASE-REVIEW sections 66-67.
 
