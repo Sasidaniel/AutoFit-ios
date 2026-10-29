@@ -1,6 +1,6 @@
 # AutoFit release notes
 
-## Unreleased - approved TestFlight 39 candidate (2026-10-29)
+## 1.0 (39) - verified internal TestFlight release (2026-10-29)
 
 - Shortened audio recovery to “Retry listening”; retained automatic workout
   listening and separate focused listening without promising player recovery.
@@ -31,9 +31,22 @@
   separate pages, prestart warmup, final button colors and 385px layout.
   A separate mocked-player frame verified floating music control layout and
   completion checks; that is not physical Apple Music validation.
-- The owner explicitly approved a new TestFlight build after these checks.
-  macOS compilation and Apple availability are still pending. No new upload
-  has yet occurred. Detailed handoff: PRE-RELEASE-REVIEW sections 63-64.
+- The owner explicitly approved this new TestFlight release. Source:
+  `e83bf3cfc18da34e7a58e373af499e8812de9a33`, backed up on the work branch.
+- [Build/upload run 40886688555](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40886688555)
+  passed all 639 JS tests, four Swift suites, app/widget compilation including
+  the new MusicBridgePlugin, archive, export and one binary upload. Its overall
+  conclusion is failure because the Apple availability request timed out after
+  the build reached VALID; it is not an all-green workflow.
+- [Existing-build verification run 40887746363](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40887746363)
+  passed and confirmed **VALID / IN_BETA_TESTING** at 14:03:47 UTC.
+  Apple build ID: `5c023638-f4a0-4182-9560-30dfca092640`.
+- Exactly one build dispatch and binary upload; verification reused that
+  binary. No main merge, external beta or App Store publication. Update to
+  1.0 (39) without uninstalling. Physical iPhone/Apple Music, permissions,
+  calls, headphones and background/foreground checks remain owner acceptance.
+  This approval does not authorize another release.
+  Detailed handoff: PRE-RELEASE-REVIEW sections 63-65.
 
 ## 1.0 (38) - verified internal TestFlight release (2026-10-29)
 
