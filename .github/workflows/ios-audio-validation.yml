@@ -26,7 +26,7 @@ jobs:
         run: npx cap sync ios
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
-      - name: Test native speech and audio policies
+      - name: Test native speech buffer and audio policies
         run: |
           set -e
           swiftc ios/App/App/SpeechUtteranceBuffer.swift tests/SpeechUtteranceBufferTests.swift -o "$RUNNER_TEMP/speech-tests"

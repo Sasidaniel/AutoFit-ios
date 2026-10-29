@@ -65,21 +65,6 @@ struct SpeechUtteranceBufferTests {
             if !prefix.isEmpty {
                 precondition(buffer.update(prefix, isFinal: true, at: 0) == "התחל סט")
             }
-            for separator in [",", ".", ":", "-"] {
-                buffer = SpeechUtteranceBuffer()
-                precondition(buffer.update("1 2", isFinal: false, at: 0) == "1 2")
-                for count in 3...12 {
-                    let digits = (1...count).map(String.init).joined()
-                    let text = digits.enumerated().map {
-                        $0.offset > 0 && $0.offset.isMultiple(of: 3) ? separator + String($0.element) : String($0.element)
-                    }.joined()
-                    precondition(buffer.update(text, isFinal: false, at: Double(count)) == text,
-                                 "Lost formatted numeric run: \(text)")
-                }
-            }
-            buffer = SpeechUtteranceBuffer()
-            precondition(buffer.update("אחת שתיים", isFinal: false, at: 0) == "אחת שתיים")
-            precondition(buffer.update("אחת,שתיים,שלוש", isFinal: false, at: 1) == "אחת,שתיים,שלוש")
             precondition(buffer.update(prefix + "1 2", isFinal: false, at: 1) == "1 2")
             precondition(buffer.update(prefix + "123", isFinal: false, at: 2) == "123")
             precondition(buffer.update(prefix + "1 2 3 4", isFinal: false, at: 3) == "1 2 3 4")
@@ -87,6 +72,21 @@ struct SpeechUtteranceBufferTests {
             precondition(buffer.update(prefix + "12345 סיימתי", isFinal: true, at: 5) == "סיימתי")
             precondition(buffer.flush(at: 6) == nil)
         }
+        for separator in [",", ".", ":", "-"] {
+            buffer = SpeechUtteranceBuffer()
+            precondition(buffer.update("1 2", isFinal: false, at: 0) == "1 2")
+            for count in 3...12 {
+                let digits = (1...count).map(String.init).joined()
+                let text = digits.enumerated().map {
+                    $0.offset > 0 && $0.offset.isMultiple(of: 3) ? separator + String($0.element) : String($0.element)
+                }.joined()
+                precondition(buffer.update(text, isFinal: false, at: Double(count)) == text,
+                             "Lost formatted numeric run: \(text)")
+            }
+        }
+        buffer = SpeechUtteranceBuffer()
+        precondition(buffer.update("אחת שתיים", isFinal: false, at: 0) == "אחת שתיים")
+        precondition(buffer.update("אחת,שתיים,שלוש", isFinal: false, at: 1) == "אחת,שתיים,שלוש")
         buffer = SpeechUtteranceBuffer()
         for count in 1...30 {
             let text = (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")
