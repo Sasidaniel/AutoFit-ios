@@ -86,7 +86,7 @@ private struct WorkoutSummary: View {
                 WorkoutControls(state: state, sessionID: sessionID)
             }
         }
-        .padding(island ? 0 : 12)
+        .padding(island ? 0 : 10)
         .foregroundStyle(.white)
         .environment(\.layoutDirection, state.isEnglish ? .leftToRight : .rightToLeft)
     }

@@ -171,5 +171,5 @@ jobs:
           name: ios-build-output
           path: |
             ${{ runner.temp }}/export
-            ${{ runner.temp }}/widget-layout.png
+            ${{ runner.temp }}/widget-layout*.png
           retention-days: 5
