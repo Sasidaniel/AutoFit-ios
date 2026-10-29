@@ -2,6 +2,11 @@ name: iOS audio validation (no release)
 
 on:
   workflow_dispatch:
+    inputs:
+      widget_only:
+        description: 'Measure only the production SwiftUI views; no app build or release'
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/workflows/ios-audio-validation.yml'
@@ -10,8 +15,28 @@ permissions:
   contents: read
 
 jobs:
+  widget-layout:
+    if: (github.event_name == 'workflow_dispatch' && inputs.widget_only) || contains(github.event.head_commit.message, '[validate-widget]')
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: Measure all 144 production widget layouts without building or releasing the app
+        run: bash .github/scripts/test-widget-layout.sh
+      - name: Preserve measurements and rendered views
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-layout
+          path: |
+            ${{ runner.temp }}/widget-layout*.png
+            ${{ runner.temp }}/layout-measurements.txt
+            ${{ runner.temp }}/layout-result.txt
+          retention-days: 3
   validate:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[validate-audio]')
+    if: (github.event_name == 'workflow_dispatch' && !inputs.widget_only) || contains(github.event.head_commit.message, '[validate-audio]')
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

@@ -35,18 +35,24 @@ read -r DEVICE STATE < <(xcrun simctl list devices available --json | python3 -c
 if [[ "$STATE" != "Booted" ]]; then xcrun simctl boot "$DEVICE"; fi
 xcrun simctl bootstatus "$DEVICE" -b
 xcrun simctl install "$DEVICE" "$APP"
-xcrun simctl launch --terminate-running-process "$DEVICE" com.autofit.layoutchecks
 CONTAINER="$(xcrun simctl get_app_container "$DEVICE" com.autofit.layoutchecks data)"
 RESULT="$CONTAINER/Documents/layout-result.txt"
+rm -f "$RESULT" "$CONTAINER/Documents/layout-measurements.txt"
+xcrun simctl launch --terminate-running-process "$DEVICE" com.autofit.layoutchecks
 for ((attempt=0; attempt<60; attempt++)); do
   if [[ -f "$RESULT" ]]; then
+    cp "$RESULT" "$RUNNER_TEMP/layout-result.txt"
     if grep -q 'LAYOUT_CHECKS_PASSED' "$RESULT"; then
       cat "$RESULT"
+      cp "$CONTAINER/Documents/layout-measurements.txt" "$RUNNER_TEMP/"
       cp "$CONTAINER"/Documents/widget-layout-*.png "$RUNNER_TEMP/"
       exit 0
     fi
     if grep -q 'LAYOUT_FAILED' "$RESULT"; then
       cat "$RESULT"
+      if [[ -f "$CONTAINER/Documents/layout-measurements.txt" ]]; then
+        cp "$CONTAINER/Documents/layout-measurements.txt" "$RUNNER_TEMP/"
+      fi
       if [[ -f "$CONTAINER/Documents/widget-layout.png" ]]; then
         cp "$CONTAINER/Documents/widget-layout.png" "$RUNNER_TEMP/widget-layout.png"
       fi

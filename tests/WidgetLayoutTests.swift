@@ -21,6 +21,7 @@ struct WidgetLayoutTestApp: App {
         let now = Date().timeIntervalSince1970 * 1000
         var checks = 0
         var failures: [String] = []
+        var measurements: [String] = []
         var maximumLockHeight = 0.0
         var maximumIslandHeight = 0.0
         for language in ["he", "he-female", "en"] {
@@ -48,6 +49,7 @@ struct WidgetLayoutTestApp: App {
                                 exit(1)
                             }
                             let size = image.size
+                            measurements.append("\(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
                             let maximum = island ? 138.0 : 160.0
                             if size.height > maximum || size.width > width + 0.5 {
                                 let clock = ImageRenderer(content: ActivityClock(state: state).font(.system(size: 26, weight: .bold)))
@@ -77,8 +79,11 @@ struct WidgetLayoutTestApp: App {
                 }
             }
         }
+        let measurementsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("layout-measurements.txt")
+        try! measurements.joined(separator: "\n").write(to: measurementsURL, atomically: true, encoding: .utf8)
         if !failures.isEmpty {
-            report(failures.joined(separator: "\n"))
+            report("LAYOUT_FAILED \(failures.count)/\(checks) cases; maximum Lock Screen height \(maximumLockHeight), island body height \(maximumIslandHeight)\n" + failures.joined(separator: "\n"))
             exit(1)
         }
         report("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts; maximum Lock Screen height \(maximumLockHeight), island body height \(maximumIslandHeight)")
