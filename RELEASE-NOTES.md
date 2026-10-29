@@ -1,5 +1,33 @@
 # AutoFit release notes
 
+## Unreleased - corrected exercise placement, visible icons and focused library root (2026-10-29)
+
+- Removed the separate Jump-rope workout button from the library root as
+  requested. Full interval workouts remain in Plans; a dedicated Jump rope
+  exercise category is available inside Home and other supported environments.
+- Fixed loaded muscle SVG images rendering at 0x0: all seven now render at
+  40x40. Verified their actual dimensions and a 385px view without overflow.
+- Replaced the accessory group's negative exclusion rule with an explicit
+  accessory allowlist. Mats, benches, dumbbell presses and static station holds
+  no longer appear as accessories; pull-up bars/parallel bars have their own
+  group. Bodyweight bench/chair movements remain under bodyweight.
+- Outdoor placement is explicitly curated, not inferred from portable equipment.
+  Audited all 134 definitions and actual browser results: no dumbbell reverse
+  fly, weight bench or machine exercises outside; six actual accessory entries.
+  The dumbbell-home template is no longer advertised outdoors.
+- Shared the existing unspecified-variation set between browsing and insights.
+  Mixed legacy entries keep names, media, workout membership and history, but
+  do not gain guessed equipment metadata or synthetic trusted catalog identity.
+- Removed estimate-explanation expanders and obsolete translations from both
+  plan review and time-budget dialogs. Estimates and calculation policy remain.
+- The 134 total already includes 132 earlier definitions plus Yoga/Pilates;
+  running/rope already existed and the 15 templates reuse catalog exercises.
+- All 615 JavaScript regressions passed. Browser checks confirmed root-button
+  removal, Home rope access, actual icon sizes, accessory/outdoor lists,
+  remaining rope templates and unchanged exercises/settings/history/session in
+  both review origins. Cache: `autofit-v92`; handoff sections 54-57.
+  Feature-branch backup only; no release workflow, main merge or TestFlight.
+
 ## Unreleased - focused Plans hub and muscle browsing in every environment (2026-10-29)
 
 - Added By muscle under gym, home, outside and all-library browsing, alongside

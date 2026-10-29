@@ -1,6 +1,8 @@
 import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
+  'מתח ומקבילים': 'Pull-up bars and parallel bars',
+  'ללא סיווג ציוד מאומת': 'Without verified equipment classification',
   'תוכניות': 'Plans',
   'תוכניות שמורות שלי': 'My saved plans',
   'תוכניות מוכנות': 'Ready-made plans',
@@ -248,7 +250,6 @@ export const EN = {
   'יש להשאיר את שני חלקי הסופר סט יחד': 'Keep superset exercises together',
   'לא נמצא גיבוי ללחיצת הרגליים המקורית': 'No original leg press backup',
   'הצמד אינו מלא באימון הזה. התרגיל ממשיך עם מנוחה רגילה.': 'This pair is incomplete in this workout. The exercise continues with normal rest.',
-  'בסופר סט מלא המנוחה מחושבת לאחר שני החלקים, לא ביניהם. בהצעת קיצור זמן הצמד נשאר יחד והאומדן שמרני.': 'For a complete superset, rest is estimated after both parts, not between them. Time-budget proposals keep the pair together and use a conservative estimate.',
   'האימון נשמר בהיסטוריה, אך סגירת מסך האימון נכשלה. בדוק את ההיסטוריה לפני ניסיון נוסף.': 'Your workout was saved in history, but closing the workout failed. Check history before retrying.',
   'בהשלמת כל הסטים ומקטעי האירובי, האימון מסתיים ונשמר אוטומטית ללא אישור. לפני ההשלמה עדיין אפשר לסיים ידנית עם אישור. את דירוג הסט האחרון אפשר לכלול בדיווח הקולי או לערוך בהיסטוריה.': 'When all sets and cardio segments are complete, the workout finishes and saves automatically without confirmation. You can still finish early manually with confirmation. Include the final set rating in a voice report or edit it in history.',
   'שינויים במסך אימון חלים רק על האימון הנוכחי. לאחר הסיום התרגילים, הסטים והיעדים חוזרים להגדרות התוכנית והביצוע בפועל נשמר בהיסטוריה. אם אין משקל יעד קבוע, משקל תקין מהסט הראשון שהושלם נשמר אוטומטית כמשקל בסיס; משקל קבוע קיים או משקל שנוקה במפורש אינם מוחלפים.': 'Changes on Workout apply only to the current session. After finishing, exercises, sets and targets return to the program defaults and actual performance stays in history. If there is no fixed load target, a valid load from the first completed set is remembered automatically as a baseline; an existing fixed load or an explicitly cleared load is not replaced.',
@@ -489,7 +490,6 @@ export const EN = {
   'זמן משוער שנותר מעכשיו': 'Estimated time remaining from now',
   'זמן משוער לאימון שלי': 'Estimated time for My Workout',
   'טווח משוער בלבד, לא זמן סיום מובטח.': 'Approximate range only, not a guaranteed finish time.',
-  'על מה מבוסס האומדן?': 'What is the estimate based on?',
   'יש לי שעה': 'I have an hour',
   'יש לי שעה וחצי': 'I have 90 minutes',
   'יש לי 60 דקות': 'I have 60 minutes',
@@ -507,7 +507,6 @@ export const EN = {
   'נשלחה בקשת פתיחת Shortcuts. אי אפשר לאמת כאן שמירה בבריאות.': 'A request to open Shortcuts was sent. A Health save cannot be verified here.',
   'כפתור Shortcuts מבקש לפתוח את הקיצור עם משך האימון והתאריך. רק קיצור שהוגדר ופעל בהצלחה יכול לרשום בבריאות; AutoFit בדפדפן לא מקבל אישור מסירה. בדוק בבריאות לפני שליחה חוזרת כדי למנוע כפילות. בבחירת כמה אימונים יחד נשלח התאריך של הראשון.': 'The Shortcuts button requests opening your shortcut with the workout duration and date. Only a correctly configured shortcut that runs successfully can write to Health; AutoFit in a browser receives no delivery confirmation. Check Health before resending to avoid duplicates. For a batch, the first workout date is used.',
   'האומדן עשוי לעבור את התקציב': 'The estimate may exceed your budget',
-  'מוצג הממוצע של אומדן קצר וארוך, לא ממוצע של אימונים קודמים. כולל מנוחה מלאה אחרי כל סט, גם האחרון; 2–3 שניות לחזרה (לפחות 15–25 שניות עבודה לסט חזרות), 15–30 שניות הכנה ומעבר לתרגיל כוח או החזקה, ו-10–30 שניות הכנה לאירובי. זמני החזקה ואירובי לפי ההגדרה. בתרגילי צד מאומתים מחושבים שני הצדדים. כשאין יעד חזרות מספרי, מניחים 8–15 חזרות. זו אינה הנחיה למהר; המתנה לציוד והפסקות נוספות עשויות להאריך את האימון.': 'Shows the average of shorter and longer estimates, not an average of past workouts. Includes full rest after every set, including the last; 2–3 seconds per rep (at least 15–25 seconds of work per rep set), 15–30 seconds of setup/transition per strength or hold exercise, and 10–30 seconds of cardio setup. Hold/cardio times follow the prescription. Both sides count for verified per-side exercises. Without a numeric rep target, 8–15 reps are assumed. This is not an instruction to rush; equipment queues and extra breaks may extend the workout.',
   'עדכון באפליקציית בריאות': 'Apple Health delivery',
   'בדיקת הרשאה וניסיון סנכרון נוסף': 'Check permission and retry sync',
   'האימון עודכן באפליקציית בריאות — התקבל אישור שמירה מ-Apple Health.': 'Workout written to Apple Health — Apple Health confirmed the save.',

@@ -10,7 +10,7 @@ function load(file, names, values = {}) {
   vm.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
-const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
+const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'workoutEntryAnnouncement', 'setEquipmentBusy',

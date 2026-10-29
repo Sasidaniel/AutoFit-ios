@@ -1,13 +1,6 @@
-import { EXERCISE_GUIDES } from './exercise-library.js';
+import { EXERCISE_GUIDES, UNSPECIFIED_VARIANTS } from './exercise-library.js';
 
 export const DIFFICULTY_LABELS = { easy: 'קל', right: 'בינוני', hard: 'קשה' };
-// These original program entries explicitly combine multiple equipment or movement variants.
-const UNSPECIFIED_VARIANTS = new Set([
-  'לחיצת חזה', 'משיכה לפנים בפולי עליון', 'פרפר חזה', 'הרחקה אופקית (פרפר הפוך)',
-  'חתירה צרה לבטן', 'זוקפי גב — פשיטת גב', 'פשיטת מרפקים בפולי עליון',
-  'כפיפת מרפקים בישיבה', 'כפיפה ופשיטה של שורש כף היד', 'הרחקה לצדדים',
-  'לחיצת רגליים', 'סקוואט', 'כפיפות בטן',
-]);
 
 export function completedEntrySnapshot(entry, exercise) {
   const inputType = !exercise ? null : exercise.inputType === 'hold' ? 'hold' : 'reps';

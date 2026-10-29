@@ -2,9 +2,7 @@
 const pair = (he, en) => ({ he, en });
 const guide = (name, muscles, equipment, pose, steps, cue, options = {}) => ({
   name, muscles, equipment, pose, steps, cue, level: 'מתחילים',
-  places: equipment.includes('מכונה') ? ['gym']
-    : equipment.every((item) => ['משקל גוף', 'ללא ציוד', 'מזרן', 'משקולות יד', 'גומייה', 'חבל קפיצה', 'קיר'].includes(item))
-      ? ['home', 'gym', 'outside'] : ['home', 'gym'],
+  places: equipment.includes('מכונה') ? ['gym'] : ['home', 'gym'],
   ...options,
 });
 
@@ -634,6 +632,14 @@ const CATALOG_EXTENSION = {
 };
 Object.assign(EXERCISE_GUIDES, CATALOG_EXTENSION);
 
+// Outdoor placement is authored explicitly, never inferred from portable equipment alone.
+for (const id of ['squat', 'lunge', 'bridge', 'pushup', 'back', 'plank', 'sidePlank',
+  'deadbug', 'birdDog', 'crunch', 'sideCrunch', 'march', 'stepTouch', 'singleBridge',
+  'clamShell', 'heelTap', 'reverseCrunch', 'kneeSidePlank', 'kneePushup', 'closePushup',
+  'highPlank', 'bandRow', 'bandBentRow', 'hang', 'pullup', 'dipHold']) {
+  EXERCISE_GUIDES[id].places = [...new Set([...EXERCISE_GUIDES[id].places, 'outside'])];
+}
+
 const videoLink = (href, publisher, title) => ({ href, publisher, title, reviewedOn: '2026-10-21' });
 const youtube = (id, publisher, title) => videoLink(`https://www.youtube.com/watch?v=${id}`, publisher, title);
 const muscleAndStrength = (slug, title) => videoLink(`https://www.muscleandstrength.com/exercises/${slug}`, 'Muscle & Strength', title);
@@ -843,8 +849,21 @@ const SEED_GUIDE_IDS = {
   'פלאנק': 'plank', 'חימום-הליכה': 'walk', 'שחרור-הליכה': 'walk',
 };
 
+export const UNSPECIFIED_VARIANTS = new Set([
+  'לחיצת חזה', 'משיכה לפנים בפולי עליון', 'פרפר חזה', 'הרחקה אופקית (פרפר הפוך)',
+  'חתירה צרה לבטן', 'זוקפי גב — פשיטת גב', 'פשיטת מרפקים בפולי עליון',
+  'כפיפת מרפקים בישיבה', 'כפיפה ופשיטה של שורש כף היד', 'הרחקה לצדדים',
+  'לחיצת רגליים', 'סקוואט', 'כפיפות בטן',
+]);
+
 export function exerciseGuide(exercise) {
   return EXERCISE_GUIDES[exercise.catalogId || (exercise.loadKind === 'assistance' ? 'assisted' : SEED_GUIDE_IDS[exercise.name])] || null;
+}
+
+export function exerciseBrowseInfo(exercise) {
+  if (UNSPECIFIED_VARIANTS.has(exercise.name)
+    && (!exercise.catalogId || exercise.id?.startsWith('catalog:seed:'))) return null;
+  return exerciseGuide(exercise);
 }
 
 export function expandedLibrary(exercises, { newOnly = false } = {}) {
@@ -861,7 +880,7 @@ export function browsableLibrary(exercises, seed) {
     ...seed.filter((exercise) => !exercises.some((stored) => (exercise.id && stored.id === exercise.id)
       || stored.name === exercise.name)).map((exercise) => ({
       ...exercise, id: exercise.id || `catalog:seed:${SEED_GUIDE_IDS[exercise.name]}`,
-      catalogId: SEED_GUIDE_IDS[exercise.name],
+      ...(!UNSPECIFIED_VARIANTS.has(exercise.name) ? { catalogId: SEED_GUIDE_IDS[exercise.name] } : {}),
     })),
     ...LIBRARY_EXERCISES, ...PLANNING_EXERCISES,
   ].filter((exercise) => !ids.has(exercise.id));
@@ -878,14 +897,14 @@ export function catalogStats(exercises, seed) {
 
 export function matchesLibraryFilters(exercise, filters, translate = (value) => value) {
   const info = exerciseGuide(exercise);
+  const placement = exerciseBrowseInfo(exercise);
   const type = exercise.inputType === 'cardio' ? 'cardio' : exercise.inputType === 'hold' ? 'hold' : 'reps';
   if (filters.type && type !== filters.type) return false;
   if (filters.equipment === 'ללא ציוד') {
-    if (!info || info.equipment.some((item) => !['משקל גוף', 'מזרן', 'ללא ציוד'].includes(item))) return false;
-  } else if (filters.equipment && !info?.equipment.includes(filters.equipment)) return false;
-  if (filters.level && info?.level !== filters.level) return false;
-  const places = info?.places || (info?.equipment.includes('מכונה') ? ['gym'] : ['home', 'gym']);
-  if (filters.place && (!info || !places.includes(filters.place))) return false;
+    if (!placement || placement.equipment.some((item) => !['משקל גוף', 'מזרן', 'ללא ציוד'].includes(item))) return false;
+  } else if (filters.equipment && !placement?.equipment.includes(filters.equipment)) return false;
+  if (filters.level && placement?.level !== filters.level) return false;
+  if (filters.place && (!placement || !placement.places.includes(filters.place))) return false;
   const words = String(filters.search || '').normalize('NFKC').toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   const searchable = [exercise.name, translate(exercise.name), exercise.category, translate(exercise.category),
     info?.name.he, info?.name.en, ...(info?.muscles || []), ...(info?.equipment || [])];
@@ -898,24 +917,29 @@ export const LIBRARY_EQUIPMENT_GROUPS = [
   { id: 'bodyweight', label: 'משקל גוף', icon: '🧍' },
   { id: 'weights', label: 'משקולות ומוטות', icon: '🏋️' },
   { id: 'machines', label: 'מכשירים ופולי', icon: '⚙️' },
+  { id: 'stations', label: 'מתח ומקבילים', icon: '🏗️' },
   { id: 'accessories', label: 'גומיות ואביזרים', icon: '🔗' },
+  { id: 'rope', label: 'קפיצה על חבל', icon: '➰' },
   { id: 'cardio', label: 'אירובי', icon: '🚶' },
-  { id: 'personal', label: 'תרגילים אישיים ללא סיווג', icon: '✏️' },
+  { id: 'personal', label: 'ללא סיווג ציוד מאומת', icon: '✏️' },
 ];
 
 export function matchesLibraryBrowse(exercise, place = '', equipmentGroup = 'all') {
   if (!matchesLibraryFilters(exercise, { place })) return false;
-  const info = exerciseGuide(exercise);
+  const info = exerciseBrowseInfo(exercise);
   if (equipmentGroup === 'all') return true;
   if (equipmentGroup === 'personal') return !info;
   if (equipmentGroup === 'cardio') return exercise.inputType === 'cardio';
+  if (equipmentGroup === 'rope') return exercise.catalogId === 'jumpRope';
   if (!info || exercise.inputType === 'cardio') return false;
   if (equipmentGroup === 'bodyweight') return info.equipment.every((item) =>
-    ['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר'].includes(item));
+    ['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר', 'ספסל', 'כיסא יציב'].includes(item));
   if (equipmentGroup === 'weights') return info.equipment.some((item) => ['משקולות יד', 'מוט'].includes(item));
   if (equipmentGroup === 'machines') return info.equipment.includes('מכונה');
+  if (equipmentGroup === 'stations') return info.equipment.some((item) => ['מתח', 'מקבילים'].includes(item));
   if (equipmentGroup === 'accessories') return info.equipment.some((item) =>
-    !['משקל גוף', 'ללא ציוד', 'משקולות יד', 'מוט', 'מכונה'].includes(item));
+    ['גומייה', 'TRX', 'גלגל בטן', 'מדרגת אימון'].includes(item))
+    && !info.equipment.some((item) => ['משקולות יד', 'מוט', 'מכונה', 'מתח', 'מקבילים'].includes(item));
   return false;
 }
 

@@ -9,12 +9,13 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
 function loadPhaseOneModule(file, exports, values = {}) {
-  const context = nodeVM.createContext({ ...(file.endsWith('workout-insights.js') ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES } : {}), ...values });
+  const context = nodeVM.createContext({ ...(file.endsWith('workout-insights.js')
+    ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES, UNSPECIFIED_VARIANTS: library.UNSPECIFIED_VARIANTS } : {}), ...values });
   nodeVM.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return nodeVM.runInContext(`({ ${exports.join(', ')} })`, context);
 }
 const library = loadPhaseOneModule('www/js/exercise-library.js', [
-  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'browsableLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'matchesLibraryBrowse', 'LIBRARY_EQUIPMENT_GROUPS', 'exerciseIllustration', 'catalogStats',
+  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'exerciseBrowseInfo', 'expandedLibrary', 'browsableLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'matchesLibraryBrowse', 'LIBRARY_EQUIPMENT_GROUPS', 'exerciseIllustration', 'catalogStats',
 ]);
 const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary', 'statisticsHistory', 'statisticsOverview', 'exerciseProgress',
@@ -44,6 +45,60 @@ test('environment browsing uses authored locations, supports portable outdoor ex
       assert.equal(library.matchesLibraryBrowse(exercise, 'outside'), false, exercise.name);
     }
   }
+});
+
+test('all catalog accessory results require actual training accessories rather than a mat, bench or exercise station', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const catalog = library.browsableLibrary([], seeds);
+  const before = JSON.stringify(catalog);
+  const selected = catalog.filter((exercise) => library.matchesLibraryBrowse(exercise, '', 'accessories'));
+  assert.ok(selected.some((exercise) => exercise.catalogId === 'bandRow'));
+  assert.ok(selected.some((exercise) => exercise.catalogId === 'trxRow'));
+  assert.ok(selected.some((exercise) => exercise.catalogId === 'abWheelRollout'));
+  for (const exercise of selected) {
+    const equipment = library.exerciseBrowseInfo(exercise).equipment;
+    assert.ok(equipment.some((item) => ['גומייה', 'TRX', 'גלגל בטן', 'מדרגת אימון'].includes(item)), exercise.name);
+    assert.ok(!equipment.some((item) => ['משקולות יד', 'מוט', 'מכונה', 'מתח', 'מקבילים'].includes(item)), exercise.name);
+  }
+  for (const id of ['chest', 'dumbbellPress', 'plank', 'sidePlank', 'hang', 'dipHold']) {
+    const exercise = library.LIBRARY_EXERCISES.find((item) => item.catalogId === id)
+      || { name: library.EXERCISE_GUIDES[id].name.he, catalogId: id, inputType: 'hold' };
+    assert.equal(library.matchesLibraryBrowse(exercise, '', 'accessories'), false, id);
+  }
+  assert.equal(JSON.stringify(catalog), before);
+});
+
+test('outdoor browse audits the complete catalog and excludes dumbbell, barbell, machine and unspecified variants', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const catalog = library.browsableLibrary([], seeds);
+  const outdoor = catalog.filter((exercise) => library.matchesLibraryBrowse(exercise, 'outside'));
+  assert.ok(outdoor.some((exercise) => exercise.catalogId === 'jumpRope'));
+  assert.ok(outdoor.some((exercise) => exercise.catalogId === 'jog'));
+  for (const exercise of outdoor) {
+    assert.ok(library.exerciseBrowseInfo(exercise).equipment.every((item) =>
+      !['משקולות יד', 'מוט', 'מכונה', 'ספסל', 'כיסא יציב', 'TRX'].includes(item)), exercise.name);
+    assert.ok(!library.UNSPECIFIED_VARIANTS.has(exercise.name), exercise.name);
+  }
+  for (const exercise of seeds.filter((item) => library.UNSPECIFIED_VARIANTS.has(item.name))) {
+    assert.equal(library.matchesLibraryBrowse(exercise, 'home'), false, exercise.name);
+    assert.equal(library.matchesLibraryBrowse(exercise, '', 'weights'), false, exercise.name);
+    assert.equal(library.matchesLibraryBrowse(exercise, '', 'personal'), true, exercise.name);
+    assert.equal(library.matchesLibraryBrowse(exercise), true, exercise.name);
+    assert.ok(library.exerciseGuide(exercise), 'Existing media remains available');
+  }
+});
+
+test('home has a dedicated jump-rope exercise category while full interval workouts remain in Plans', () => {
+  const rope = library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === 'jumpRope');
+  assert.ok(library.LIBRARY_EQUIPMENT_GROUPS.some((group) => group.id === 'rope'));
+  assert.equal(library.matchesLibraryBrowse(rope, 'home', 'rope'), true);
+  assert.equal(library.matchesLibraryBrowse(rope, 'home', 'cardio'), true);
+  assert.doesNotMatch(read('www/index.html'), /btnLibraryRopePlan/);
+  assert.match(read('www/js/training-ui.js'), /template.goal === 'rope'[\s\S]*ropeBuilder/);
+});
+
+test('muscle SVG icons have explicit visible dimensions instead of collapsing to zero size', () => {
+  assert.match(read('www/css/style.css'), /\.exercise-category-icon img\s*\{[^}]*width: 40px;[^}]*height: 40px;[^}]*object-fit: contain/);
 });
 
 function statisticsFixture() {
@@ -1789,7 +1844,7 @@ test('muscle browsing returns to muscles, then environment equipment, then the l
     return elements.get(id);
   };
   const context = vm.createContext({ el, qs: () => null, i18n: { text: (value) => value }, escapeHtml: (value) => value,
-    renderExercisesTab() {}, trainingUI: { ropeBuilder: (value) => actions.push(value), saveCurrentWorkout: () => actions.push('save') } });
+    renderExercisesTab() {}, trainingUI: { saveCurrentWorkout: () => actions.push('save') } });
   vm.runInContext(section('const EXERCISE_LIBRARY_CATEGORIES =', 'function exerciseLibraryCount('), context);
   vm.runInContext(section('function wireExercisesTab()', 'function openExerciseGuide('), context);
   context.wireExercisesTab();
@@ -1801,10 +1856,8 @@ test('muscle browsing returns to muscles, then environment equipment, then the l
   el('btnExerciseCategoryBack').listeners.click();
   assert.equal(vm.runInContext('exerciseLibraryEquipment', context), null);
   assert.equal(vm.runInContext('exerciseLibraryEnvironment', context), 'home');
-  el('btnLibraryRopePlan').listeners.click();
-  assert.equal(actions[0].location, 'home');
   el('btnSaveMyWorkout').listeners.click();
-  assert.equal(actions[1], 'save');
+  assert.equal(actions[0], 'save');
   el('btnExerciseCategoryBack').listeners.click();
   assert.equal(vm.runInContext('exerciseLibraryEnvironment', context), null);
 });
@@ -5564,7 +5617,8 @@ test('requested explanatory copy and library duration are absent while plan esti
   assert.doesNotMatch(ui, /const programDuration =|programDuration\.innerHTML/);
   assert.doesNotMatch(html, /libraryBrowsePrompt|איפה מתאמנים\? בחר סביבה ואז ציוד/);
   assert.match(ui, /אומדן עם מנוחות והכנה/);
-  assert.match(ui, /const durationDetails =/);
+  assert.doesNotMatch(ui, /durationDetails|DURATION_ASSUMPTIONS|על מה מבוסס האומדן|על מה מתבסס האומדן/);
+  assert.doesNotMatch(html, /btnLibraryRopePlan/);
   assert.match(read('www/js/legal.js'), /Formspree/);
 });
 

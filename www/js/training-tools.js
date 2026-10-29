@@ -896,7 +896,7 @@ export const READY_PLAN_TEMPLATES = [
   { id: 'lower-b', name: 'B — פלג גוף תחתון', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'auto', muscles: ['רגליים', 'ישבן', 'שוקיים', 'בטן'], equipment: ['מכונה', 'משקולות יד'], locations: ['gym'] },
   { id: 'upper-lower', name: 'A/B — עליון ותחתון', goal: 'muscle', experience: 'regular', days: 2, minutes: 45, split: 'ab', equipment: ['מכונה', 'משקולות יד'], locations: ['gym'] },
   { id: 'home-start', name: 'בבית — משקל גוף למתחילים', goal: 'fitness', experience: 'beginner', days: 1, minutes: 30, split: 'full-body', equipment: [], locations: ['home', 'outside'] },
-  { id: 'home-dumbbells', name: 'בבית — משקולות יד', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'full-body', equipment: ['משקולות יד'], locations: ['home', 'outside'] },
+  { id: 'home-dumbbells', name: 'בבית — משקולות יד', goal: 'muscle', experience: 'regular', days: 1, minutes: 45, split: 'full-body', equipment: ['משקולות יד'], locations: ['home'] },
   { id: 'walking-start', name: 'הליכה — התחלה נוחה', goal: 'walk', experience: 'beginner', days: 1, minutes: 20, equipment: [], locations: ['home', 'gym', 'outside'] },
   { id: 'running-start', name: 'ריצה — התחלה הדרגתית', goal: 'run', experience: 'beginner', days: 1, minutes: 20, equipment: [], locations: ['outside', 'gym'] },
   { id: 'running-regular', name: 'הליכה וריצה — בעלי ניסיון', goal: 'run', experience: 'regular', days: 1, minutes: 30, equipment: [], locations: ['outside', 'gym'] },

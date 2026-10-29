@@ -521,7 +521,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 }
 .exercise-category-button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); }
 .exercise-category-icon { font-size: 24px; line-height: 1; }
-.exercise-category-icon img { display: block; }
+.exercise-category-icon img { display: block; width: 40px; height: 40px; object-fit: contain; }
 .exercise-category-label { font-size: 13px; font-weight: 700; }
 .exercise-category-count { color: var(--text-muted); font-size: 11px; }
 .exercise-category-button.my-workout {

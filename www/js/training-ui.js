@@ -11,8 +11,6 @@ const button = (id, label, primary = false) => `<button type="button" id="${id}"
 const field = (label, content) => `<label class="training-field"><span>${t(label)}</span>${content}</label>`;
 const options = (items, selected) => items.map(([value, label]) => `<option value="${esc(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${t(label)}</option>`).join('');
 const note = (text) => `<p class="field-hint">${t(text)}</p>`;
-const DURATION_ASSUMPTIONS = 'מוצג הממוצע של אומדן קצר וארוך, לא ממוצע של אימונים קודמים. כולל מנוחה מלאה אחרי כל סט, גם האחרון; 2–3 שניות לחזרה (לפחות 15–25 שניות עבודה לסט חזרות), 15–30 שניות הכנה ומעבר לתרגיל כוח או החזקה, ו-10–30 שניות הכנה לאירובי. זמני החזקה ואירובי לפי ההגדרה. בתרגילי צד מאומתים מחושבים שני הצדדים. כשאין יעד חזרות מספרי, מניחים 8–15 חזרות. זו אינה הנחיה למהר; המתנה לציוד והפסקות נוספות עשויות להאריך את האימון.';
-const durationDetails = () => `<details class="field-hint"><summary>${t('על מה מבוסס האומדן?')}</summary><p>${t(DURATION_ASSUMPTIONS)}</p><p>${t('בסופר סט מלא המנוחה מחושבת לאחר שני החלקים, לא ביניהם. בהצעת קיצור זמן הצמד נשאר יחד והאומדן שמרני.')}</p></details>`;
 export function durationEstimateText(estimate) {
   const totalMinutes = Math.max(0, Math.round((estimate.lowSeconds + estimate.highSeconds) / 120));
   const hours = Math.floor(totalMinutes / 60);
@@ -169,7 +167,7 @@ export function createTrainingUI(api) {
       `<button type="button" class="btn btn-secondary btn-small" data-budget-preset="${value}">${value} <span>${t('דקות')}</span></button>`).join('')}</div>
       ${field('דקות זמינות מעכשיו', `<input id="budgetMinutes" class="input" type="number" min="10" max="180" value="${minutes}">`)}
       ${note('אומדן גס הכולל עבודה, הכנה ומנוחות מלאות. זה אינו זמן סיום מובטח. תרגילים עם נתונים או התרגיל הנוכחי מוגנים.')}
-      ${durationDetails()}${button('btnEstimateBudget', 'הצג הצעה')}<div id="budgetProposal"></div>`);
+      ${button('btnEstimateBudget', 'הצג הצעה')}<div id="budgetProposal"></div>`);
     function propose() {
       safely(dialog, () => {
         const state = api.getState();
@@ -406,7 +404,7 @@ export function createTrainingUI(api) {
         ${note('כל קבוצה שנבחרה נשמרת בחלק המתאים בתוכנית. שרירים משניים עשויים להשתתף, אך אינם מחליפים כיסוי עיקרי. לא ממלאים זמן בתרגילים מיותרים.')}` : ''}
       <p><span>${t('מיקום')}</span>: <span>${t({ home: 'בבית', gym: 'חדר כושר', outside: 'בחוץ' }[plan.options.location])}</span>
         · <span>${t('ציוד')}</span>: ${(plan.options.equipment.length ? plan.options.equipment : ['ללא ציוד']).map((item) => `<span>${t(item)}</span>`).join(' · ')}</p>
-      ${note('השאר ימים קלים או מנוחה בין אימונים לפי התחושה. זמני התוכנית הם אומדן; אין חובה לסיים בזמן.')}${durationDetails()}
+      ${note('השאר ימים קלים או מנוחה בין אימונים לפי התחושה. זמני התוכנית הם אומדן; אין חובה לסיים בזמן.')}
       ${plan.options.equipment.includes('TRX') ? note('לפני כל שימוש ב-TRX בדוק שוב את הרצועות והעיגון לפי הוראות היצרן. ההצעה אינה מאשרת את בטיחות ההתקנה בפועל.') : ''}
       ${plan.options.goal === 'run' ? note('התחלה עדינה: הליכה נוחה ואחריה ריצה קצרה, ובסיום הליכה נוספת לפי הצורך. חזור על אותו מינון; רק כשהוא נוח בכמה אימונים שקול עוד דקה, לא העלאת קצב וזמן יחד.') : ''}
       ${['yoga', 'pilates'].includes(plan.options.goal) ? note('תיעוד זמן של תרגול מוכר, לא שיעור מודרך ולא מדד לעצימות אירובית.') : ''}
@@ -852,5 +850,5 @@ export function createTrainingUI(api) {
     window.removeEventListener('touchmove', deferEstimates);
   }, { once: true });
   refresh();
-  return { refresh, refreshDuration, ropeBuilder, saveCurrentWorkout };
+  return { refresh, refreshDuration, saveCurrentWorkout };
 }

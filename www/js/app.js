@@ -4216,9 +4216,6 @@ function wireExercisesTab() {
   };
   el('btnBackExerciseCategories').addEventListener('click', backToCategories);
   el('btnExerciseCategoryBack').addEventListener('click', backToCategories);
-  el('btnLibraryRopePlan').addEventListener('click', () => trainingUI.ropeBuilder({
-    location: ['gym', 'home', 'outside'].includes(exerciseLibraryEnvironment) ? exerciseLibraryEnvironment : 'home',
-  }));
   el('btnSaveMyWorkout').addEventListener('click', () => trainingUI.saveCurrentWorkout());
   el('btnAddExercise').addEventListener('click', () => {
     const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
