@@ -58,7 +58,7 @@ private struct WorkoutSummary: View {
                     Label("AutoFit", systemImage: "dumbbell.fill").font(.caption).foregroundStyle(accent)
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 Text(phaseTitle).font(.caption).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
                 ActivityClock(state: state)
                     .font(.system(size: 26, weight: .bold)).frame(width: 108, alignment: .leading)

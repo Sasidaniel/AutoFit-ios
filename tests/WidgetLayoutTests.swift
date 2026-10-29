@@ -20,6 +20,8 @@ struct WidgetLayoutTestApp: App {
         report("LAYOUT_CHECKS_STARTED")
         let now = Date().timeIntervalSince1970 * 1000
         var checks = 0
+        var maximumLockHeight = 0.0
+        var maximumIslandHeight = 0.0
         for language in ["he", "he-female", "en"] {
             for phase in ["ready", "workout", "rest", "hold", "cardio", "paused"] {
                 for width in [320.0, 393.0] {
@@ -39,19 +41,22 @@ struct WidgetLayoutTestApp: App {
                             let view = WorkoutSummary(state: state, sessionID: "layout-test", island: island)
                                 .environment(\.dynamicTypeSize, largeText ? .xLarge : .large)
                             let host = UIHostingController(rootView: view)
+                            host.safeAreaRegions = []
                             let size = host.sizeThatFits(in: CGSize(width: width, height: 1000))
                             let maximum = island ? 138.0 : 160.0
                             guard size.height <= maximum, size.width <= width + 0.5 else {
                                 report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
                                 exit(1)
                             }
+                            if island { maximumIslandHeight = max(maximumIslandHeight, size.height) }
+                            else { maximumLockHeight = max(maximumLockHeight, size.height) }
                             checks += 1
                         }
                     }
                 }
             }
         }
-        report("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts fit Lock Screen and expanded-island budgets")
+        report("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts; maximum Lock Screen height \(maximumLockHeight), island body height \(maximumIslandHeight)")
         exit(0)
     }
 }
