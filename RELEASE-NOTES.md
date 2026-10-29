@@ -1,5 +1,43 @@
 # AutoFit release notes
 
+## Unreleased - device follow-up after 40 (new release approved)
+
+- The owner reported that 40 still stopped counting after two, Music played for
+  half a second and paused, and the widget was too small/clipped. The prior
+  checks did not establish physical-device success. Fresh explicit authorization:
+  "תתקן ותוציא גרסה בלי לשאול אותי". This approves the next internal TestFlight
+  release after validation, not an unrestricted sequence of releases.
+- Fixed another reproducible numeric cursor failure: internal punctuation in
+  formatted numeric runs was classified as nonnumeric at an already-committed
+  cursor, suppressing subsequent updates. Native numeric classification now
+  accepts numeric punctuation groups, including joined Hebrew count words.
+  JS live counting decodes the complete formatted ascending run, not only its
+  final group. The explicit performance-report parser remains unchanged.
+- Music play now leaves already-mixed capture alone. When leaving focused or
+  inactive capture, it prepares mixed listening **before** play, rather than
+  force-starting the microphone after the player confirms success. Counts survive
+  the handoff; hidden/off-tab/paused/disabled safeguards remain. Native play
+  confirmation requires six consecutive playing observations over one second,
+  not a momentary state that can immediately pause. It never repeatedly sends
+  play or replaces the music queue.
+- Echo-cancellation configuration now checks the requested preference rather
+  than the route-dependent enabled state. An unsupported route must not cause
+  the preference to be applied again on every recognition-task restart.
+- Lock Screen summary rows were consolidated; expanded Dynamic Island uses a
+  separate compact composition without duplicate header/padding. Small-family
+  views retain completion progress; controls, pending/error feedback and
+  Hebrew/English/gender-aware wording remain. The floating web bar prevents
+  compression of its timer, percentage and Music action.
+- New regressions failed before the fixes. All 652 JS tests now pass and 20
+  frontend modules parse. Browser geometry checks pass in Hebrew/English at
+  320/375/393 pixels, including hour-long time, 100% and busy Music labels.
+  Added a Simulator harness that measures the **actual production SwiftUI views**
+  across phases, wording, widths and text sizes before signing/upload; native
+  validation results are pending. The release workflow also runs the real
+  Swift-buffer-to-JS counting contract with punctuated number groups.
+- Cache: `autofit-v98`. Physical iPhone/Apple Music acceptance remains unverified;
+  no claim that these code-level reproductions identify every device failure.
+
 ## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
 - Treat music plus hands-free commands/counting as the highest-priority product

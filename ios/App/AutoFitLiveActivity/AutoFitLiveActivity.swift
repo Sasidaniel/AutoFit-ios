@@ -26,6 +26,8 @@ private struct ActivityClock: View {
             }
         }
         .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
         .environment(\.layoutDirection, .leftToRight)
     }
 }
@@ -33,6 +35,7 @@ private struct ActivityClock: View {
 private struct WorkoutSummary: View {
     let state: WorkoutActivityState
     let sessionID: String
+    var island = false
 
     private var phaseTitle: String {
         switch state.phase {
@@ -46,37 +49,41 @@ private struct WorkoutSummary: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("AutoFit", systemImage: "dumbbell.fill").foregroundStyle(accent)
-                Spacer()
-                Text("\(state.completedSets) / \(state.totalSets) \(state.isEnglish ? "sets" : "סטים")")
-                    .font(.caption).monospacedDigit()
-            }
-            Text(state.exerciseName).font(.headline).lineLimit(1).privacySensitive()
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(phaseTitle).font(.caption).foregroundStyle(.secondary)
-                    ActivityClock(state: state).font(.system(size: 30, weight: .bold))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(state.exerciseName).font(.headline).lineLimit(1)
+                    .minimumScaleFactor(0.8).layoutPriority(1).privacySensitive()
+                if !island {
+                    Spacer(minLength: 0)
+                    Label("AutoFit", systemImage: "dumbbell.fill").font(.caption).foregroundStyle(accent)
                 }
-                if state.phase != .workout && state.phase != .ready && state.phase != .paused {
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption).foregroundStyle(.secondary)
-                        ActivityClock(state: state, elapsed: true).font(.title3)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(phaseTitle).font(.caption).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
+                ActivityClock(state: state)
+                    .font(.system(size: 26, weight: .bold)).frame(width: 108, alignment: .leading)
+                Spacer(minLength: 0)
+                if !island && state.phase != .workout && state.phase != .ready && state.phase != .paused {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption2).foregroundStyle(.secondary)
+                        ActivityClock(state: state, elapsed: true).font(.headline).frame(width: 88, alignment: .trailing)
                     }
                 }
             }
-            ProgressView(value: Double(state.completedSets), total: Double(max(1, state.totalSets)))
-                .tint(accent)
-            if let index = state.setIndex, state.phase != .ready {
-                Text("\(state.isEnglish ? "Set" : "סט") \(index + 1)").font(.caption)
+            HStack(spacing: 8) {
+                if let index = state.setIndex, state.phase != .ready {
+                    Text("\(state.isEnglish ? "Set" : "סט") \(index + 1)").font(.caption2)
+                }
+                Text("\(state.completedSets) / \(state.totalSets) \(state.isEnglish ? "sets" : "סטים")")
+                    .font(.caption2).monospacedDigit().lineLimit(1)
+                ProgressView(value: Double(state.completedSets), total: Double(max(1, state.totalSets)))
+                    .tint(accent)
             }
             if #available(iOS 17.0, *) {
                 WorkoutControls(state: state, sessionID: sessionID)
             }
         }
-        .padding(14)
+        .padding(island ? 0 : 12)
         .foregroundStyle(.white)
         .environment(\.layoutDirection, state.isEnglish ? .leftToRight : .rightToLeft)
     }
@@ -111,10 +118,15 @@ private struct WorkoutControls: View {
                     }
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
+                .font(.caption)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .disabled(state.actionPending == true)
             }
             if let message = state.actionMessage {
-                Text(message).font(.caption2).lineLimit(2)
+                Text(message).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
+                    .accessibilityLabel(message)
             }
         }
     }
@@ -129,11 +141,17 @@ private struct AdaptiveWorkoutSummary: View {
         if family == .small {
             VStack(alignment: .leading, spacing: 3) {
                 Text(context.state.exerciseName).font(.caption).lineLimit(1).privacySensitive()
-                HStack {
+                HStack(spacing: 4) {
                     ActivityClock(state: context.state).font(.headline)
-                    if let index = context.state.setIndex {
+                    if let index = context.state.setIndex, context.state.phase != .ready {
                         Text("\(context.state.isEnglish ? "Set" : "סט") \(index + 1)").font(.caption2)
                     }
+                }
+                HStack(spacing: 6) {
+                    Text("\(context.state.completedSets)/\(context.state.totalSets)")
+                        .font(.caption2).monospacedDigit()
+                    ProgressView(value: Double(context.state.completedSets), total: Double(max(1, context.state.totalSets)))
+                        .tint(accent)
                 }
                 WorkoutControls(state: context.state, sessionID: context.attributes.sessionID, compact: true)
             }
@@ -199,7 +217,7 @@ struct AutoFitLiveActivity: Widget {
                         .font(.headline).frame(width: 90)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    WorkoutSummary(state: context.state, sessionID: context.attributes.sessionID)
+                    WorkoutSummary(state: context.state, sessionID: context.attributes.sessionID, island: true)
                 }
             } compactLeading: {
                 Image(systemName: context.state.phase == .rest ? "timer" : "dumbbell.fill")

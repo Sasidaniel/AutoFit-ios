@@ -492,7 +492,7 @@ function focusedVoiceFixture() {
   return { context, calls, messages };
 }
 
-test('explicit Music play releases capture before playback and restores mixed listening without discarding counts', async () => {
+test('explicit Music play prepares mixed capture before playback without restarting it after confirmation', async () => {
   for (const fail of [false, true]) {
     const { context, calls } = focusedVoiceFixture();
     await context.setFocusedListening(true);
@@ -508,14 +508,31 @@ test('explicit Music play releases capture before playback and restores mixed li
     const pending = context.setWorkoutMusicPlayback(true);
     await new Promise(setImmediate);
     await context.updateVoiceListeningState(true);
-    assert.deepEqual(calls, [['release'], ['play']]);
+    assert.deepEqual(calls, [['release'], ['start', false], ['play']]);
     assert.equal(context.voiceCountingState.count, 2);
     finish();
     if (fail) await assert.rejects(pending, /Music unavailable/);
     else assert.equal((await pending).state, 'playing');
-    assert.deepEqual(calls, [['release'], ['play'], ['start', false]]);
+    assert.deepEqual(calls, [['release'], ['start', false], ['play']]);
     assert.equal(context.voiceCountingState.count, 2);
   }
+});
+
+test('Music stays playing when capture activation would pause a previously playing system player', async () => {
+  const { context, calls } = focusedVoiceFixture();
+  await context.setFocusedListening(true);
+  context.voiceCountingState = { count: 2 };
+  let playing = false;
+  const start = context.native.voiceStartListening;
+  context.native.voiceStartListening = async (...args) => { playing = false; return start(...args); };
+  context.native.musicSetPlayback = async () => { playing = true; return { state: 'playing' }; };
+  await context.setWorkoutMusicPlayback(true);
+  assert.equal(playing, true, 'No capture activation may follow the confirmed play request');
+  assert.equal(context.voiceCountingState.count, 2);
+  calls.length = 0;
+  await context.setWorkoutMusicPlayback(true);
+  assert.deepEqual(calls, [], 'Already mixed listening must not release or reactivate audio');
+  assert.equal(playing, true);
 });
 
 test('Music pause does not release capture; playback never enables disabled listening or restarts it off-screen', async () => {
@@ -534,7 +551,9 @@ test('Music pause does not release capture; playback never enables disabled list
       return { state: 'playing' };
     };
     await context.setWorkoutMusicPlayback(true);
-    assert.deepEqual(calls, [['release'], ['play']]);
+    assert.deepEqual(calls, mode === 'disabled' ? [['release'], ['play']]
+      : mode === 'hidden' ? [['release'], ['start', false], ['play']]
+        : [['release'], ['start', false], ['play'], ['stop']]);
   }
 });
 
@@ -3591,6 +3610,25 @@ test('rewritten and concatenated numeric transcripts count twelve actual reps in
   }
 });
 
+test('formatted number groups and punctuation preserve each count through twelve instead of freezing or completing early', () => {
+  for (const separator of [',', '.', ':', '-']) {
+    const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ reps: '12', weightKg: 40, completed: false }] };
+    const { context } = voiceContext([entry]);
+    context.handleVoiceTranscript('לחיצת חזה');
+    for (let count = 1; count <= 12; count++) {
+      const digits = Array.from({ length: count }, (_, index) => String(index + 1)).join('');
+      const text = digits.match(/.{1,3}/g).join(separator);
+      context.handleVoiceTranscript(text);
+      assert.equal(entry.sets[0].reps, count, text);
+      assert.equal(entry.sets[0].completed, count === 12, text);
+      assert.equal(entry.sets[0].weightKg, 40);
+    }
+  }
+  const { context } = voiceContext();
+  assert.equal(context.parseSpokenRepCount('1, 23', 2), 3);
+  assert.equal(context.parseSpokenRepCount('1 2', 5), 5, 'An old formatted prefix must not become an absolute twelve');
+});
+
 if (process.env.AUTOFIT_NATIVE_COUNT_STREAM) {
   test('native streaming contract preserves twelve real Swift-emitted counts through automatic set completion', () => {
     const frames = JSON.parse(fs.readFileSync(process.env.AUTOFIT_NATIVE_COUNT_STREAM, 'utf8'));
@@ -4670,7 +4708,8 @@ test('music routing keeps HFP opt-in only and capability-gates microphone enhanc
   assert.match(swift, /setCategory\(category, mode: .default/);
   assert.doesNotMatch(swift, /bluetoothHighQualityRecording|highQualityRecording/);
   assert.match(swift, /case .builtIn: preferred = inputs.first \{ \$0.portType == .builtInMic \}/);
-  assert.match(swift, /#available\(iOS 18.2, \*\), session.isEchoCancelledInputAvailable/);
+  assert.match(swift, /#available\(iOS 18.2, \*\), session.isEchoCancelledInputAvailable, !session.prefersEchoCancelledInput/);
+  assert.doesNotMatch(swift, /!session.isEchoCancelledInputEnabled/);
   assert.match(swift, /setPrefersEchoCancelledInput\(true\)/);
   assert.match(swift, /if !ownership.active \|\| changed/);
   assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /WorkoutAudioSession.wasInterrupted/);

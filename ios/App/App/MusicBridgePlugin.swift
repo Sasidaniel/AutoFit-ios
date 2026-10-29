@@ -92,11 +92,11 @@ public class MusicBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             let request = UUID()
             self.pendingRequest = request
             if playing { player.play() } else { player.pause() }
-            self.confirmPlayback(call, playing: playing, request: request, attempts: 40)
+            self.confirmPlayback(call, playing: playing, request: request, attempts: 40, stableSamples: 0)
         }
     }
 
-    private func confirmPlayback(_ call: CAPPluginCall, playing: Bool, request: UUID, attempts: Int) {
+    private func confirmPlayback(_ call: CAPPluginCall, playing: Bool, request: UUID, attempts: Int, stableSamples: Int) {
         guard pendingRequest == request else { return }
         guard let player = authorizedPlayer() else {
             pendingRequest = nil
@@ -105,14 +105,15 @@ public class MusicBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let confirmed = playing ? player.playbackState == .playing
             : player.playbackState == .paused || player.playbackState == .stopped
-        if confirmed {
+        let samples = confirmed ? stableSamples + 1 : 0
+        if confirmed && (!playing || samples >= 6) {
             pendingRequest = nil
             let state = snapshot()
             notifyListeners("musicChanged", data: state)
             call.resolve(state)
         } else if attempts > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                self.confirmPlayback(call, playing: playing, request: request, attempts: attempts - 1)
+                self.confirmPlayback(call, playing: playing, request: request, attempts: attempts - 1, stableSamples: samples)
             }
         } else {
             pendingRequest = nil

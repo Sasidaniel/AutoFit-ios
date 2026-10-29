@@ -386,11 +386,11 @@ html[dir="ltr"] .card-hint { text-align: left; }
   padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px;
   background: var(--surface); box-shadow: var(--shadow);
 }
-.workout-quick-status > span:first-child { display: flex; align-items: center; gap: 12px; }
-.workout-quick-status strong { font-variant-numeric: tabular-nums; font-size: 19px; }
-.workout-quick-status .progress-overall { width: 40px; height: 40px; font-size: 12px; }
+.workout-quick-status > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; min-width: 0; }
+.workout-quick-status strong { font-variant-numeric: tabular-nums; font-size: 19px; white-space: nowrap; flex-shrink: 0; }
+.workout-quick-status .progress-overall { width: 40px; height: 40px; font-size: 12px; flex-shrink: 0; }
 .workout-music-controls { margin-block: 10px; }
-.workout-quick-status [data-music-toggle] { min-height: 40px; max-width: 120px; padding: 6px 8px; }
+.workout-quick-status [data-music-toggle] { min-height: 40px; max-width: 120px; padding: 6px 8px; flex-shrink: 0; }
 .workout-quick-status:has([data-music-toggle]:not(.hidden)) { gap: 8px; }
 .btn-start::before { content: '▶' / ''; margin-inline-end: 8px; }
 .btn-pause::before { content: 'Ⅱ' / ''; margin-inline-end: 8px; font-weight: 900; }

@@ -2292,16 +2292,17 @@ function parseSpokenNumber(text) {
 
 // Decode joined ascending counts ("123" -> third rep), not explicit performance reports.
 function parseSpokenRepCount(text, previous = 0) {
-  const last = normalizeVoiceText(text).split(' ').at(-1);
-  if (/^\d{2,}$/.test(last)) {
+  const normalized = normalizeVoiceText(text);
+  const digits = /^\d+(?: \d+)*$/.test(normalized) ? normalized.replace(/ /g, '') : '';
+  if (digits.length >= 2) {
     let sequence = '';
     for (let count = 1; count <= 100; count++) {
       sequence += count;
-      if (sequence === last) {
-        if (last === '12' && previous > 2) return 12;
+      if (sequence === digits) {
+        if (normalized === '12' && previous > 2) return 12;
         return Math.max(previous, count);
       }
-      if (!last.startsWith(sequence)) break;
+      if (!digits.startsWith(sequence)) break;
     }
   }
   return parseSpokenNumber(text);
@@ -2963,22 +2964,25 @@ async function setFocusedListening(focused) {
 async function setWorkoutMusicPlayback(playing) {
   if (!playing) return native.musicSetPlayback(false);
   if (document.visibilityState !== 'visible') throw new Error('Music playback requires the app to be active');
+  const mixedCaptureReady = voiceListeningActive && !voiceFocusedRequested;
   voicePlaybackHandoff = true;
-  ++voiceListeningRevision;
-  voiceFocusedRequested = false;
-  voiceListeningRequested = false;
-  voiceListeningActive = false;
-  voiceActivationPending = false;
-  pendingVoiceFinish = null;
-  updateVoiceBadgeForListeningState();
   try {
-    const result = await native.voiceRecoverAudio();
-    if (!result.released) throw new Error(result.reason || 'Microphone audio release was not confirmed');
+    if (!mixedCaptureReady) {
+      ++voiceListeningRevision;
+      voiceFocusedRequested = false;
+      voiceListeningRequested = false;
+      voiceListeningActive = false;
+      voiceActivationPending = false;
+      pendingVoiceFinish = null;
+      updateVoiceBadgeForListeningState();
+      const result = await native.voiceRecoverAudio();
+      if (!result.released) throw new Error(result.reason || 'Microphone audio release was not confirmed');
+      await updateVoiceListeningState(false, true);
+    }
     return await native.musicSetPlayback(true);
   } finally {
     voicePlaybackHandoff = false;
-    if (currentTab === 'workout' && settings.voiceCommandsEnabled && !activeSession.paused
-      && document.visibilityState === 'visible') await updateVoiceListeningState(true);
+    await updateVoiceListeningState();
   }
 }
 
@@ -3021,8 +3025,8 @@ function handleVoiceListeningChanged(data) {
   updateVoiceBadgeForListeningState();
 }
 
-async function updateVoiceListeningState(force = false) {
-  if (!native.isNative() || voicePlaybackHandoff) return;
+async function updateVoiceListeningState(force = false, preparingMusic = false) {
+  if (!native.isNative() || voicePlaybackHandoff && !preparingMusic) return;
   const requested = currentTab === 'workout'
     && !activeSession.paused
     && settings.voiceCommandsEnabled === true;

@@ -72,7 +72,7 @@ enum WorkoutAudioSession {
                 userInfo: [NSLocalizedDescriptionKey: "No microphone is available without lowering music quality"])
         }
         if session.preferredInput?.uid != preferred.uid { try session.setPreferredInput(preferred) }
-        if #available(iOS 18.2, *), session.isEchoCancelledInputAvailable, !session.isEchoCancelledInputEnabled {
+        if #available(iOS 18.2, *), session.isEchoCancelledInputAvailable, !session.prefersEchoCancelledInput {
             try session.setPrefersEchoCancelledInput(true)
         }
     }
