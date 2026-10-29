@@ -14,7 +14,8 @@ struct SpeechUtteranceBufferTests {
                 let numbers = count.isMultiple(of: 3)
                     ? digits.enumerated().map { $0.offset > 0 && $0.offset.isMultiple(of: 3) ? "," + String($0.element) : String($0.element) }.joined()
                     : (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")
-                guard let text = buffer.update("לחיצת חזה " + numbers, isFinal: false, at: Double(count)) else {
+                let formatted = count.isMultiple(of: 3) ? "\u{2068}" + numbers + "\u{2069}" : numbers
+                guard let text = buffer.update("לחיצת חזה " + formatted, isFinal: false, at: Double(count)) else {
                     preconditionFailure("Native stream lost count \(count)")
                 }
                 frames.append(["transcript": text, "count": count])
@@ -87,6 +88,10 @@ struct SpeechUtteranceBufferTests {
         buffer = SpeechUtteranceBuffer()
         precondition(buffer.update("אחת שתיים", isFinal: false, at: 0) == "אחת שתיים")
         precondition(buffer.update("אחת,שתיים,שלוש", isFinal: false, at: 1) == "אחת,שתיים,שלוש")
+        buffer = SpeechUtteranceBuffer()
+        precondition(buffer.update("1 2", isFinal: false, at: 0) == "1 2")
+        precondition(buffer.update("\u{2068}123,4\u{2069}", isFinal: false, at: 1) == "\u{2068}123,4\u{2069}")
+        precondition(buffer.update("\u{200F}123,45", isFinal: false, at: 2) == "\u{200F}123,45")
         buffer = SpeechUtteranceBuffer()
         for count in 1...30 {
             let text = (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")

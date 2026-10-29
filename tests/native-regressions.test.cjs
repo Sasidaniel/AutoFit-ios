@@ -3604,6 +3604,7 @@ test('rewritten and concatenated numeric transcripts count twelve actual reps in
   for (let count = 1; count <= 12; count++) {
     const text = Array.from({ length: count }, (_, index) => String(index + 1)).join(count % 2 ? ' ' : '');
     context.handleVoiceTranscript(text);
+    context.handleVoiceTranscript(`\u2068${text}\u2069`);
     assert.equal(entry.sets[0].reps, count, text);
     assert.equal(entry.sets[0].completed, count === 12, text);
     assert.equal(entry.sets[0].weightKg, 40);

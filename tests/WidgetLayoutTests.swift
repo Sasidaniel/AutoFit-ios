@@ -1,20 +1,23 @@
 import UIKit
 
 @main
-final class WidgetLayoutTestApp: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-
-    func application(_ application: UIApplication,
-                     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = UIViewController()
-        window.makeKeyAndVisible()
-        self.window = window
-        DispatchQueue.main.async { self.checkLayouts() }
-        return true
+struct WidgetLayoutTestApp: App {
+    var body: some Scene {
+        WindowGroup {
+            Color.black.onAppear { DispatchQueue.main.async { Self.checkLayouts() } }
+        }
     }
 
-    private func checkLayouts() {
+    @MainActor private static func report(_ message: String) {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("layout-result.txt")
+        try! message.write(to: url, atomically: true, encoding: .utf8)
+        print(message)
+        fflush(stdout)
+    }
+
+    @MainActor private static func checkLayouts() {
+        report("LAYOUT_CHECKS_STARTED")
         let now = Date().timeIntervalSince1970 * 1000
         var checks = 0
         for language in ["he", "he-female", "en"] {
@@ -39,8 +42,7 @@ final class WidgetLayoutTestApp: UIResponder, UIApplicationDelegate {
                             let size = host.sizeThatFits(in: CGSize(width: width, height: 1000))
                             let maximum = island ? 138.0 : 160.0
                             guard size.height <= maximum, size.width <= width + 0.5 else {
-                                print("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
-                                fflush(stdout)
+                                report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
                                 exit(1)
                             }
                             checks += 1
@@ -49,8 +51,7 @@ final class WidgetLayoutTestApp: UIResponder, UIApplicationDelegate {
                 }
             }
         }
-        print("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts fit Lock Screen and expanded-island budgets")
-        fflush(stdout)
+        report("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts fit Lock Screen and expanded-island budgets")
         exit(0)
     }
 }

@@ -62,7 +62,8 @@ struct SpeechUtteranceBuffer {
     }
 
     private static func isNumberToken(_ value: String) -> Bool {
-        let word = value.lowercased().trimmingCharacters(in: .punctuationCharacters)
+        let word = value.components(separatedBy: .controlCharacters).joined()
+            .lowercased().trimmingCharacters(in: .punctuationCharacters)
         let components = word.components(separatedBy: .punctuationCharacters).filter { !$0.isEmpty }
         if components.count > 1 { return components.allSatisfy(isNumberToken) }
         if !word.isEmpty && word.allSatisfy({ $0.isNumber }) { return true }

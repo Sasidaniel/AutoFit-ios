@@ -10,7 +10,7 @@
 - Fixed another reproducible numeric cursor failure: internal punctuation in
   formatted numeric runs was classified as nonnumeric at an already-committed
   cursor, suppressing subsequent updates. Native numeric classification now
-  accepts numeric punctuation groups, including joined Hebrew count words.
+  accepts numeric punctuation groups and direction controls, including joined Hebrew count words.
   JS live counting decodes the complete formatted ascending run, not only its
   final group. The explicit performance-report parser remains unchanged.
 - Music play now leaves already-mixed capture alone. When leaving focused or
