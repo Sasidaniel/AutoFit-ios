@@ -324,6 +324,8 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .reading-page p:last-child { margin-bottom: 0; }
 .reading-page .about-credit, .page-intro { color: var(--text-muted); }
 .page-shortcut { width: 100%; margin-bottom: 16px; }
+#tab-home .home-plans-button { background: var(--ink-black) !important; color: #facc15 !important; border: 2px solid var(--ink-black); font-size: 16px; min-height: 48px; }
+.home-plans-button:focus-visible { outline: 3px solid var(--ink-black); outline-offset: 3px; }
 .guide-section summary { cursor: pointer; min-height: 44px; padding-block: 10px; font-size: 16px; font-weight: 600; }
 .guide-section ol { padding-inline-start: 22px; }
 .guide-section li { padding-inline-start: 3px; margin-bottom: 10px; }
@@ -376,6 +378,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .workout-muscle-heading h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .workout-muscle-count { color: var(--text-muted); font-size: 12px; }
 .workout-muscle-heading.done .workout-muscle-count { color: var(--success); }
+.workout-muscle-heading.done h2::before { content: '✓' / ''; color: var(--success); font-weight: 900; margin-inline-end: 8px; }
 .workout-quick-status {
   position: fixed; top: calc(var(--app-header-height, 65px) + 6px);
   left: 12px; right: 12px; z-index: 19; max-width: 720px; margin: 0 auto;
@@ -386,6 +389,9 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .workout-quick-status > span:first-child { display: flex; align-items: center; gap: 12px; }
 .workout-quick-status strong { font-variant-numeric: tabular-nums; font-size: 19px; }
 .workout-quick-status .progress-overall { width: 40px; height: 40px; font-size: 12px; }
+.workout-music-controls { margin-block: 10px; }
+.workout-quick-status [data-music-toggle] { min-height: 40px; max-width: 120px; padding: 6px 8px; }
+.workout-quick-status:has([data-music-toggle]:not(.hidden)) { gap: 8px; }
 .btn-start::before { content: '▶' / ''; margin-inline-end: 8px; }
 .btn-pause::before { content: 'Ⅱ' / ''; margin-inline-end: 8px; font-weight: 900; }
 .btn-cancel::before { content: '✕' / ''; margin-inline-end: 8px; color: #b91c1c; background: #fff; padding: 1px 4px; border-radius: 4px; }
@@ -413,6 +419,12 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .exercise-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; max-width: 48%; }
 .exercise-card:has(.workout-card-toggle) { position: relative; }
 .exercise-card:has(.workout-card-toggle) .exercise-card-head { padding-right: 42px; }
+#exerciseList .exercise-card.done:has(.workout-card-toggle) .exercise-card-head { padding-right: 76px; }
+#exerciseList .exercise-card.done:has(.workout-card-toggle)::after {
+  content: '✓' / ''; position: absolute; right: 56px; top: 18px;
+  display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--success); color: #fff; font-weight: 900; pointer-events: none;
+}
 .workout-card-toggle { position: absolute; right: 8px; top: 8px; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--primary-soft); color: var(--text); font-size: 26px; cursor: pointer; }
 .workout-card-toggle:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 .workout-card-summary { font-size: 12px; color: var(--text-muted); margin: 4px 0 0; }

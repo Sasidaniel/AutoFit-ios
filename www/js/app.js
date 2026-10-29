@@ -12,6 +12,7 @@ import * as trainingTools from './training-tools.js';
 import * as legal from './legal.js';
 import { createPrivacyUI, consentFormHTML } from './privacy-ui.js';
 import { createCommerceUI } from './commerce-ui.js';
+import { createMusicControls } from './music-controls.js';
 import { renderProfileFields, readProfileGender } from './profile-fields.js';
 
 const KG_TO_LBS = 2.20462;
@@ -51,6 +52,7 @@ let workouts = db.getWorkouts();
 let trainingUI = null;
 let privacyUI = null;
 let commerceUI = null;
+let musicControls = null;
 let privacyErasing = false;
 // transient (not persisted) running hold-timers for hold-type exercises (e.g. plank), keyed by "exerciseId:setIdx"
 const holdTimers = new Map();
@@ -485,6 +487,10 @@ function init() {
   renderProfileTab();
   renderHomeTab();
   if (typeof createTrainingUI === 'function' && !trainingUI) trainingUI = createTrainingUI(trainingAPI());
+  if (typeof createMusicControls === 'function' && !musicControls) musicControls = createMusicControls({
+    native, toast: showToast,
+    beforePlay: async () => { if (voiceFocusedRequested) await setFocusedListening(false); },
+  });
 
   // keep the phone screen on the whole time the site is open, not just during a workout.
   // Also re-assert on a repeating interval (not just on init/click/visibilitychange) as
@@ -616,7 +622,7 @@ function switchTab(tab, { back = false, scrollY = 0 } = {}) {
     console.warn('Unknown application tab', tab);
     return;
   }
-  const secondary = ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy'].includes(tab);
+  const secondary = ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy', 'data'].includes(tab);
   if (!back && tab !== currentTab) {
     if (secondary) pageBackStack.push({ tab: currentTab, scrollY: window.scrollY });
     else pageBackStack.length = 0;
@@ -631,6 +637,8 @@ function switchTab(tab, { back = false, scrollY = 0 } = {}) {
   if (tab === 'history') renderHistoryTab();
   if (tab === 'home') renderHomeTab();
   if (tab === 'workout') refreshWorkoutMuscleHeadings();
+  if (tab === 'workout' && typeof musicControls !== 'undefined') musicControls?.refresh();
+  if (tab === 'goals' && typeof trainingUI !== 'undefined') trainingUI?.refresh();
   currentTab = tab;
   updateVoiceListeningState();
   window.scrollTo(0, scrollY);
@@ -1249,11 +1257,22 @@ function trainingAPI() {
       exercises = next;
       showToast('היעד נשמר לאימונים הבאים. נתונים שכבר תועדו לא השתנו.');
     },
-    acceptAdvice(id, decision, targetWeightKg) {
-      const nextExercises = exercises.map((exercise) => exercise.id === id && targetWeightKg !== undefined
-        ? { ...exercise, targetWeightKg } : exercise);
+    acceptAdvice(id, decision, targetWeightKg, targets = {}) {
+      const exercise = exercises.find((item) => item.id === id);
+      const hasTarget = targetWeightKg !== undefined || Object.keys(targets).length > 0;
+      if (!exercise || hasTarget && (exercise.inputType === 'cardio' || exercise.inputType === 'hold')
+        || Object.keys(targets).some((key) => !['targetReps', 'defaultSets'].includes(key))
+        || Object.entries(targets).some(([key, value]) => !Number.isInteger(value) || value < 1 || value > (key === 'targetReps' ? 100 : 20))
+        || targetWeightKg !== undefined && (!Number.isFinite(targetWeightKg) || targetWeightKg < 0 || targetWeightKg > 1000)
+        || decision.decision !== 'accept' && hasTarget) {
+        throw new RangeError('Invalid progress target');
+      }
+      const nextExercises = exercises.map((item) => item.id === id
+        ? { ...item, ...targets, ...(targetWeightKg !== undefined ? { targetWeightKg } : {}) } : item);
       const training = settings.training || {};
-      const nextSettings = { ...settings, training: { ...training, decisions: { ...training.decisions, [id]: decision } } };
+      const nextSettings = { ...settings, training: { ...training, decisions: {
+        ...training.decisions, [id]: { ...training.decisions?.[id], ...decision },
+      } } };
       db.saveProgramState(nextExercises, nextSettings, activeSession);
       exercises = nextExercises;
       settings = nextSettings;
@@ -1266,7 +1285,10 @@ function trainingAPI() {
       });
       const training = settings.training || {};
       const decisions = { ...training.decisions };
-      delete decisions[id];
+      if (decisions[id]?.targetReps || decisions[id]?.defaultSets) {
+        const { targetWeightKg, ...remaining } = decisions[id];
+        decisions[id] = remaining;
+      } else delete decisions[id];
       const nextSettings = { ...settings, training: { ...training, decisions } };
       db.saveProgramState(next, nextSettings, activeSession);
       exercises = next;
@@ -1569,7 +1591,7 @@ function renderWorkoutTab() {
     exerciseNumber += 1;
 
     const card = document.createElement('div');
-    card.className = 'exercise-card' + (entry.sets.every((s) => s.completed) ? ' done' : '');
+    card.className = 'exercise-card' + (isEntryDone(entry) ? ' done' : '');
     card.dataset.entryIndex = entryIndex;
 
     const head = document.createElement('div');
@@ -2541,7 +2563,8 @@ function matchVoiceExercise(text) {
 }
 
 function refreshVoiceSelection() {
-  const current = activeSession.entries[voiceTargetEntryIndex()];
+  const current = trainingTools.workoutHasStarted(activeSession) ? activeSession.entries[voiceTargetEntryIndex()]
+    : trainingTools.currentWorkoutEntry(activeSession, exercises);
   qsa('.exercise-card[data-entry-index]', el('exerciseList')).forEach((card) => {
     card.classList.toggle('voice-selected',
       activeSession.entries[Number(card.dataset.entryIndex)] === current);
@@ -2927,11 +2950,11 @@ async function recoverWorkoutAudio() {
     if (!result.released) throw new Error(result.reason || 'Audio release was not confirmed');
     voiceListeningError = '';
     await updateVoiceListeningState();
-    showToast('האודיו שוחרר. אם המוזיקה עדיין מושהית, יש להמשיך אותה בנגן.');
+    showToast('בוצע ניסיון לחידוש ההאזנה. אם המוזיקה עדיין מושהית, המשך אותה בנגן.');
   } catch (error) {
     console.error('Workout audio recovery failed', error);
     voiceListeningError = String(error.message || error);
-    showToast('שחרור האודיו נכשל — ' + voiceListeningError);
+    showToast('לא ניתן לחדש את ההאזנה — ' + voiceListeningError);
   } finally {
     button.disabled = false;
     updateVoiceBadgeForListeningState();
@@ -4931,6 +4954,7 @@ function wireLanguageControls() {
       i18n.setLanguage(settings.language);
       privacyUI?.refresh();
       commerceUI?.render();
+      if (typeof musicControls !== 'undefined') musicControls?.render();
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       announcementPlanKey = '';
       activitySnapshotKey = '';
@@ -5215,6 +5239,7 @@ function renderProfilePhotos() {
 function applyProfileWording() {
   i18n.setGender(profile.gender || 'male');
   if (!appInitialized) return;
+  if (typeof musicControls !== 'undefined') musicControls?.render();
   renderBrand();
   renderHomeTab();
   updateVoiceBadgeForListeningState();

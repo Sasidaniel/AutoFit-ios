@@ -15,6 +15,17 @@ function unavailableReason(name) {
   return isNative() ? `Native plugin missing: ${name}. Update the app build.` : 'not-native';
 }
 
+/* ---------------- Apple Music playback ---------------- */
+function music() {
+  const bridge = plugin('MusicBridge');
+  if (!bridge) throw new Error(unavailableReason('MusicBridge'));
+  return bridge;
+}
+export async function musicStatus() { return music().status(); }
+export async function musicRequestAuthorization() { return music().requestAuthorization(); }
+export async function musicSetPlayback(playing) { return music().setPlayback({ playing }); }
+export function onMusicChanged(callback) { return music().addListener('musicChanged', callback); }
+
 /* ---------------- StoreKit subscriptions ---------------- */
 function commerce() {
   const bridge = plugin('CommerceBridge');

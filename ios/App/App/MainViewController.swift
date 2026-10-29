@@ -18,5 +18,6 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(ShareBridgePlugin())
         bridge?.registerPluginInstance(LiveActivityBridgePlugin())
         bridge?.registerPluginInstance(CommerceBridgePlugin())
+        bridge?.registerPluginInstance(MusicBridgePlugin())
     }
 }

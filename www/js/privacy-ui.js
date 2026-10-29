@@ -24,7 +24,7 @@ export function consentFormHTML() {
       <label class="checkbox-row"><input type="checkbox" name="guardianConfirmed" disabled><span>${t('אני הורה או אפוטרופוס של המשתמש/ת בגיל 12–17, נוכח/ת ומאשר/ת את השימוש ואת עיבוד הנתונים האופציונליים לפי הטיוטה.')}</span></label>
       <p class="field-hint">${t('זו הצהרה בלבד, לא אימות זהות או הורות. תוכניות כלליות אינן מותאמות במיוחד לילדים; נדרשת הכוונה מקצועית ופיקוח מבוגר.')}</p>
     </div>
-    <p class="field-hint">${t('אין הסכמה לשיווק ואין רכישה באישור זה. אפשר לייצא או למחוק נתונים דרך ״פרטיות והנתונים שלי״ בתפריט.')}</p>
+    <p class="field-hint">${t('אין הסכמה לשיווק ואין רכישה באישור זה. אפשר לייצא או למחוק נתונים דרך ״הנתונים שלי״ בתפריט.')}</p>
     <p class="privacy-form-status" role="alert"></p>
     <button type="submit" class="btn btn-primary">${t('אישור והמשך ללא רכישה')}</button>
     <div class="training-actions">
@@ -38,6 +38,7 @@ export function createPrivacyUI(api) {
   let busy = false;
   const documentDialogs = new Set();
   const root = document.getElementById('privacySettingsCard');
+  const dataRoot = document.getElementById('dataSettingsCard');
 
   function openDocument(kind) {
     const dialog = api.dialog(t(kind === 'terms' ? 'תנאי שימוש' : 'מדיניות פרטיות'),
@@ -157,9 +158,9 @@ export function createPrivacyUI(api) {
     status.textContent = hasCurrentConsent(settings)
       ? `${t('אישור טיוטה שמור במכשיר')}: ${POLICY_VERSION} · ${new Date(settings.legalConsent.acceptedAt).toLocaleString(i18n.locale())}`
       : t('הטיוטה החדשה טרם אושרה. נתונים קיימים לא נמחקים. גיבוי רגיש חדש ל-iCloud מושהה.');
-    const cloudButton = root.querySelector('.privacy-cloud-export');
+    const cloudButton = dataRoot.querySelector('.privacy-cloud-export');
     cloudButton.disabled = busy || !api.isNative();
-    root.querySelector('.privacy-cloud-status').textContent = t(!api.isNative()
+    dataRoot.querySelector('.privacy-cloud-status').textContent = t(!api.isNative()
       ? 'בדפדפן הנתונים מקומיים. iCloud ו-Apple Health דורשים את אפליקציית האייפון.'
       : 'גיבוי רגיש חדש ל-iCloud מושהה לפי כללי Apple. עותקים קודמים לא נמחקו; אפשר לייצא אותם בקריאה בלבד.');
     for (const { dialog, kind } of documentDialogs) {
@@ -170,14 +171,14 @@ export function createPrivacyUI(api) {
   root.querySelectorAll('[data-legal-doc]').forEach((button) =>
     button.addEventListener('click', () => openDocument(button.dataset.legalDoc)));
   root.querySelector('.privacy-review').addEventListener('click', reviewConsent);
-  const exportButton = root.querySelector('.privacy-export');
+  const exportButton = dataRoot.querySelector('.privacy-export');
   exportButton.addEventListener('click', () => operation(exportButton, api.exportData));
-  const cloudButton = root.querySelector('.privacy-cloud-export');
+  const cloudButton = dataRoot.querySelector('.privacy-cloud-export');
   cloudButton.addEventListener('click', async () => {
     if (!hasCurrentConsent(api.getSettings()) && !await reviewConsent()) return;
     await operation(cloudButton, api.exportCloudData);
   });
-  root.querySelector('.privacy-delete').addEventListener('click', requestDeletion);
+  dataRoot.querySelector('.privacy-delete').addEventListener('click', requestDeletion);
   document.querySelectorAll('[data-open-privacy]').forEach((button) => button.addEventListener('click', () => openDocument('privacy')));
   refresh();
   return { openDocument, bindConsentForm, reviewConsent, refresh };

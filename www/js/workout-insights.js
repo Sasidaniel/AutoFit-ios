@@ -113,11 +113,12 @@ export function exerciseProgress(history, exerciseId, now = new Date()) {
   return comparison ? { ...comparison, evidence } : insufficient('conditions');
 }
 
-export function progressRecommendation(exercise, history, now = new Date()) {
+export function progressRecommendation(exercise, history, now = new Date(), focus = 'weight') {
+  if (!['weight', 'reps', 'sets'].includes(focus)) throw new RangeError('Invalid progress focus');
   const current = completedEntrySnapshot({ exerciseId: exercise.id, exerciseName: exercise.name, sets: [] }, exercise);
   const seen = new Set();
   const records = history.filter((workout) => {
-    if (!workout.id || seen.has(workout.id) || !Number.isFinite(Date.parse(workout.dateISO))
+    if (!workout.id || seen.has(workout.id) || !Array.isArray(workout.entries) || !Number.isFinite(Date.parse(workout.dateISO))
       || Date.parse(workout.dateISO) > now.getTime()) return false;
     seen.add(workout.id);
     return true;
@@ -126,10 +127,11 @@ export function progressRecommendation(exercise, history, now = new Date()) {
     .map((workout) => ({ dateISO: workout.dateISO, entry: workout.entries.find((entry) => entry.exerciseId === exercise.id) }))
     .filter((record) => record.entry);
   const evidence = records.slice(0, 2);
-  const result = (kind, reason) => ({ kind, reason, evidence });
+  const result = (kind, reason) => ({ kind, reason, evidence, historyCount: records.length, focus });
   if (exercise.inputType === 'cardio') return result('insufficient', 'cardio');
   if (exercise.inputType === 'hold') return result('insufficient', 'hold');
-  if (!Object.hasOwn(EXERCISE_GUIDES, exercise.catalogId || '') || !current.comparisonKey || evidence.length < 2) return result('insufficient', 'history');
+  if (evidence.length < 2) return result('insufficient', 'history');
+  if (!Object.hasOwn(EXERCISE_GUIDES, exercise.catalogId || '') || !current.comparisonKey) return result('insufficient', 'identity');
   const [latest, previous] = evidence.map((record) => record.entry);
   if (current.comparisonKey !== latest.comparisonKey || current.loadKind !== latest.loadKind
     || latest.catalogId !== exercise.catalogId || previous.catalogId !== exercise.catalogId
@@ -143,12 +145,21 @@ export function progressRecommendation(exercise, history, now = new Date()) {
   }
   if (sets.some((set) => !['easy', 'right'].includes(set.difficulty))) return result('hold', 'rating');
   if (sets.some((set) => Number(set.reps) < target)) return result('reps', 'reps');
-  if (!EXERCISE_GUIDES[exercise.catalogId].equipment.some((item) => ['משקולות יד', 'מכונה'].includes(item))) {
+  if (focus === 'weight' && !EXERCISE_GUIDES[exercise.catalogId].equipment.some((item) => ['משקולות יד', 'מכונה'].includes(item))) {
     return result('hold', 'load');
   }
   const weights = sets.map((set) => Number(set.weightKg));
-  if (new Set(weights).size !== 1 || weights[0] <= 0 || compareEntries(latest, previous)?.kind !== 'same') {
+  if (new Set(weights).size !== 1 || focus === 'weight' && weights[0] <= 0 || compareEntries(latest, previous)?.kind !== 'same') {
     return result('hold', 'mixed');
+  }
+  if (focus === 'reps') {
+    const targetReps = Math.max(target, ...sets.map((set) => Number(set.reps))) + 1;
+    return targetReps <= 100 ? { ...result('increase-reps', 'reps-ready'), targetReps } : result('hold', 'limit');
+  }
+  if (focus === 'sets') {
+    const targetSets = measuredSets(latest).length + 1;
+    if (Number(exercise.defaultSets) !== targetSets - 1) return result('hold', 'set-target');
+    return targetSets <= 20 ? { ...result('increase-sets', 'sets-ready'), targetSets } : result('hold', 'limit');
   }
   return { ...result('increase', 'top'), weightKg: weights[0], targetReps: target };
 }

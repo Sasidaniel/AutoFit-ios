@@ -1,5 +1,40 @@
 # AutoFit release notes
 
+## Unreleased - approved TestFlight 39 candidate (2026-10-29)
+
+- Shortened audio recovery to “Retry listening”; retained automatic workout
+  listening and separate focused listening without promising player recovery.
+- Added green completion checks on exercise cards and muscle headings using
+  actual completion/undo state. Prestart focus and highlighting prefer the
+  warmup without discarding started-session progress or explicit voice actions.
+- Moved Plans above exercise categories. The final owner-selected home button
+  uses a black background and yellow text, replacing the initial yellow trial.
+- Split Privacy (documents/consent) from My data (exports/cloud recovery/deletion),
+  retaining the same safeguards and independent one-step back navigation.
+- Goals show recorded workouts, recent completed sets, monthly progress and
+  saved exercise targets. Legacy completed performances without the modern
+  completion flag count honestly; unknown variations are not retroactively guessed.
+- Weight/reps/sets recommendation focus is explicitly selected. Suggestions
+  retain shared comparison safeguards and show exercise-specific evidence.
+  Manual rep/set goals remain available when comparison metadata is missing.
+  Confirmed targets affect future workouts only; separate targets survive
+  focus changes, dismissals and clearing only the load target.
+- Added an optional native Apple Music controller and synchronized playback
+  buttons in the workout header and floating timer/progress bar. The public
+  system music player API reads playback state, never song/library metadata,
+  never replaces the queue, and never starts playback just for granting access.
+  Permission is user initiated; rejected/unconfirmed operations remain visible.
+  Playback notifications reconcile external changes and stale reads are ignored.
+  Browser controls stay hidden, rather than faking native playback.
+- All 639 JS regressions passed; 20 frontend modules parsed, permission plist
+  and diff checks passed. Browser checks cover actual target saving/display,
+  separate pages, prestart warmup, final button colors and 385px layout.
+  A separate mocked-player frame verified floating music control layout and
+  completion checks; that is not physical Apple Music validation.
+- The owner explicitly approved a new TestFlight build after these checks.
+  macOS compilation and Apple availability are still pending. No new upload
+  has yet occurred. Detailed handoff: PRE-RELEASE-REVIEW sections 63-64.
+
 ## 1.0 (38) - verified internal TestFlight release (2026-10-29)
 
 - Binary source: `d82a6be08a591d1d273d81ed09a9bfb7ae8cdecb`.

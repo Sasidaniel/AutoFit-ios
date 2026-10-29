@@ -1,5 +1,5 @@
 import * as tools from './training-tools.js';
-import { progressRecommendation } from './workout-insights.js';
+import { progressRecommendation, statisticsOverview } from './workout-insights.js';
 import * as i18n from './i18n.js';
 
 // Keep authored Hebrew in DOM templates so the shared translator can reverse a language switch.
@@ -42,10 +42,12 @@ export function refreshDurationEstimates(api, doc = document, { live = false } =
 const PLAN_GOALS = [['strength', 'כוח'], ['muscle', 'בניית שריר'], ['fitness', 'כושר כללי / ניהול משקל'], ['walk', 'מתחילים ללכת'], ['run', 'מתחילים לרוץ'], ['rope', 'קפיצה על חבל'], ['yoga', 'יוגה'], ['pilates', 'פילאטיס']];
 const PLAN_SPLITS = [['full-body', 'פול בודי — כל הגוף בכל אימון'], ['ab', 'A/B — פלג גוף עליון / תחתון'], ['abc', 'A/B/C — דחיפה / משיכה / רגליים']];
 const ROPE_LEVELS = [['beginner', 'מתחילים'], ['intermediate', 'בינונית'], ['advanced', 'גבוהה']];
+const PROGRESS_FOCUSES = [['', 'בחר מיקוד להמלצות'], ['weight', 'הגדלת משקל'], ['reps', 'הגדלת חזרות'], ['sets', 'הגדלת סטים']];
 const REASONS = {
   cardio: 'אירובי נמדד בזמן ובקצב; אין כאן המלצה לשינוי משקל.',
   hold: 'החזקות נמדדות בשניות; אין להסיק התקדמות ממשקל וחזרות.',
   history: 'נדרשים לפחות שני אימונים עם וריאציה מוגדרת ומדידה תואמת.',
+  identity: 'יש היסטוריה, אך לתרגיל הזה אין זהות וריאציה מאומתת להשוואת עומסים. התיעוד נשמר ומוצג; לא מנחשים ציוד או משנים היסטוריה.',
   variation: 'הווריאציה, סוג המדידה, מספר הסטים או המדידות אינם תואמים להשוואה בטוחה.',
   hard: 'תועד דירוג קשה. שמור על העומס ואל תמהר להעלות.',
   assistance: 'בגרביטון יותר משקל הוא יותר סיוע. אין כאן המלצה להפוך את כיוון העומס.',
@@ -55,8 +57,13 @@ const REASONS = {
   mixed: 'העומסים או החזרות משתנים. שמור על ההגדרות עד שתצטבר השוואה תואמת.',
   load: 'משקל גוף או מתח גומייה אינם עומס ציוד מתועד בר השוואה בקילוגרמים. אין כאן הצעה להעלאת משקל.',
   top: 'בשני אימונים תואמים הושג היעד בכל הסטים באותו משקל, עם דירוג קל או בינוני.',
+  'reps-ready': 'בשני אימונים תואמים הושג היעד עם דירוג קל או בינוני. אפשר לשקול חזרה נוספת באותו משקל, בלי להוסיף גם סטים.',
+  'sets-ready': 'בשני אימונים תואמים הושג היעד עם דירוג קל או בינוני. אפשר לשקול סט נוסף באותו משקל ובאותן חזרות. זו תוספת עבודה וזמן, לא הוכחה לעלייה בכוח.',
+  'set-target': 'מספר הסטים שבוצע אינו תואם להגדרה הנוכחית. אפשר לבחור יעד ידני; אין הצעה אוטומטית להוסיף סט.',
+  limit: 'היעד כבר בגבול כלי ההמלצות. אין כאן הצעה להגדיל אותו.',
 };
-const RECOMMENDATIONS = { insufficient: 'אין מספיק מידע', hold: 'שמירה על העומס', reps: 'התמקדות בחזרות', increase: 'אפשר לשקול העלאה קטנה' };
+const RECOMMENDATIONS = { insufficient: 'עדיין אין בסיס להצעה אוטומטית', hold: 'שמירה על ההגדרות', reps: 'השלמת יעד החזרות הקיים',
+  increase: 'אפשר לשקול העלאת משקל קטנה', 'increase-reps': 'אפשר לשקול חזרה נוספת', 'increase-sets': 'אפשר לשקול סט נוסף' };
 const MOVEMENTS = { squat: 'סקוואט', lunge: 'מכרע', hinge: 'תנועת ירך',
   'horizontal-push': 'דחיפה אופקית', 'horizontal-pull': 'משיכה אופקית', 'vertical-push': 'דחיפה מעל הראש',
   'hip-extension': 'פשיטת ירך', 'core-control': 'שליטה בגו', 'elbow-flexion': 'כפיפת מרפקים' };
@@ -97,8 +104,15 @@ export function createTrainingUI(api) {
     <p id="trainingPlanStatus" class="field-hint" data-no-translate></p></section>`;
   const goals = document.getElementById('goalsPageContent');
   goals.innerHTML = `<section class="card training-hub">
-    <div class="training-actions">${button('btnProgressAdvice', 'יעדים אישיים והמלצות')}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
+    <p id="progressHistoryStatus" data-no-translate></p>
+    ${field('במה תרצה להתקדם?', `<select class="select" id="progressFocus">${options(PROGRESS_FOCUSES, '')}</select>`)}
+    ${note('בחירת מיקוד אינה משנה את האימון. ההמלצות והיעדים נשמרים רק באישור שלך.')}
+    <div class="training-actions">${button('btnProgressAdvice', 'יעדים אישיים והמלצות', true)}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
     <p id="monthlyGoalStatus" data-no-translate></p></section>`;
+  const savedTargets = document.createElement('section');
+  savedTargets.className = 'card';
+  savedTargets.innerHTML = `<h3>${t('יעדים לתרגילים')}</h3><div id="progressSavedTargets" data-no-translate></div>`;
+  goals.appendChild(savedTargets);
   const controls = document.createElement('div');
   controls.className = 'training-workout-tools';
   controls.innerHTML = `<section class="training-duration"><strong id="trainingDurationTotal" data-no-translate></strong>
@@ -111,8 +125,12 @@ export function createTrainingUI(api) {
   on('btnPersonalPlan', () => planBuilder());
   on('btnReadyPlans', readyPlans);
   on('btnSavedPlans', savedPlans);
-  on('btnProgressAdvice', recommendations);
-  on('btnWorkoutAdvice', recommendations);
+  on('btnProgressAdvice', () => recommendations());
+  on('btnWorkoutAdvice', () => recommendations());
+  document.getElementById('progressFocus').addEventListener('change', () => {
+    const dialog = goals;
+    safely(dialog, () => saveTraining({ progressFocus: document.getElementById('progressFocus').value }));
+  });
   on('btnWeeklyWork', weeklyWork);
   on('btnMonthlyGoal', monthlyGoal);
   on('btnTimeBudget', () => timeBudget(30));
@@ -133,7 +151,7 @@ export function createTrainingUI(api) {
       message.className = 'training-action-error';
       message.setAttribute('role', 'alert');
       message.textContent = i18n.text(ACTION_ERRORS[error.message] || (error instanceof RangeError ? 'בדוק את הטווחים והבחירה ונסה שוב.' : 'לא ניתן לבצע את השינוי. בדוק את הבחירה או את האחסון ונסה שוב.'));
-      dialog.querySelector('.training-dialog-body').prepend(message);
+      (dialog.querySelector('.training-dialog-body') || dialog).prepend(message);
       return null;
     }
   }
@@ -235,49 +253,78 @@ export function createTrainingUI(api) {
     sessionNotice(dialog);
   }
 
-  function recommendations() {
+  function recommendations(scope = 'program') {
     const state = api.getState();
-    const chosen = state.exercises.filter((exercise) => exercise.active !== false);
-    const records = chosen.map((exercise) => ({ exercise, advice: progressRecommendation(exercise, state.history) }));
-    const dialog = api.dialog(t('יעדים אישיים והמלצות'), `${note('לא הוראה רפואית ולא שינוי אוטומטי. נפח אינו כוח. שינוי עומס דורש בחירה ואישור שלך לאימונים הבאים.')}
+    const focus = trainingSettings().progressFocus || '';
+    const history = statisticsOverview(state.history).records;
+    const recordedIds = new Set(history.flatMap((record) => record.entries.map((entry) => entry.exerciseId)));
+    const chosen = state.exercises.filter((exercise) => scope === 'history' ? recordedIds.has(exercise.id) : exercise.active !== false);
+    const records = focus ? chosen.map((exercise) => ({ exercise, advice: progressRecommendation(exercise, state.history, new Date(), focus) })) : [];
+    const dialog = api.dialog(t('יעדים אישיים והמלצות'), `
+      <p data-no-translate>${i18n.text('אימונים בהיסטוריה')}: ${history.length}</p>
+      ${field('במה תרצה להתקדם?', `<select class="select" id="adviceFocus">${options(PROGRESS_FOCUSES, focus)}</select>`)}
+      ${field('תרגילים להצגה', `<select class="select" id="adviceScope">${options([['program', 'האימון שלי'], ['history', 'תרגילים מההיסטוריה']], scope)}</select>`)}
+      ${note('יעדים אינם נוצרים אוטומטית מההיסטוריה. אפשר לבחור יעד אישי גם כשחסרים פרטים להשוואה בטוחה.')}
+      ${note('לא הוראה רפואית ולא שינוי אוטומטי. נפח אינו כוח. שינוי עומס דורש בחירה ואישור שלך לאימונים הבאים.')}
+      ${!focus ? note('בחר תחילה אם להתמקד במשקל, בחזרות או בסטים.') : !records.length ? note('אין תרגילים שמורים בבחירה הזאת. ההיסטוריה המקורית נשארת בטאב היסטוריה.') : ''}
       ${records.map(({ exercise, advice }, index) => `<section class="training-advice">
         <h4 data-no-translate>${name(exercise)}</h4><strong>${t(RECOMMENDATIONS[advice.kind])}</strong><p>${t(REASONS[advice.reason])}</p>
+        <p class="field-hint" data-no-translate>${i18n.text('אימונים שתועדו לתרגיל')}: ${advice.historyCount}</p>
         ${advice.evidence.map(({ dateISO, entry }) => `<p class="field-hint" data-no-translate>${esc(new Date(dateISO).toLocaleDateString(i18n.locale()))}: ${entry.type === 'cardio' ? `${Math.round(entry.durationSec / 60)} ${i18n.text('דקות')}` : (entry.sets || []).map((set) =>
           `${esc(set.weightKg)} ${i18n.text('ק"ג')} × ${esc(set.reps)} ${i18n.text(entry.inputType === 'hold' ? 'שניות' : 'חזרות')}${set.difficulty ? ` (${i18n.text({ easy: 'קל', right: 'מתאים', hard: 'קשה' }[set.difficulty] || '')})` : ''}`).join(' · ')}</p>`).join('')}
-        ${exercise.inputType !== 'cardio' && exercise.inputType !== 'hold' ? `<div class="training-inline">${field('יעד חזרות עליון להמשך', `<input class="input advice-target" type="number" min="1" max="100" value="${Number(exercise.targetReps) || ''}">`)}
+        ${exercise.inputType !== 'cardio' && exercise.inputType !== 'hold' && focus !== 'reps' ? `<div class="training-inline">${field('יעד חזרות עליון להמשך', `<input class="input advice-target" type="number" min="1" max="100" value="${Number(exercise.targetReps) || ''}">`)}
           <button class="btn btn-secondary btn-small" data-target="${index}">${t('שמירת יעד מפורש')}</button></div>` : ''}
         ${advice.kind === 'increase' ? field('משקל שבחרת לאימון הבא (ק"ג)', '<input class="input advice-load" type="number" min="0" step="0.1" placeholder="—">') +
-          note('בחר בעצמך צעד קטן הזמין בציוד שלך. אין תוספת קבועה המתאימה לכל מכשיר. השאר ריק כדי לשמור כוונה בלבד.') : ''}
+          note('בחר בעצמך צעד קטן הזמין בציוד שלך. אין תוספת קבועה המתאימה לכל מכשיר.') : ''}
+        ${exercise.inputType !== 'cardio' && exercise.inputType !== 'hold' && ['reps', 'sets'].includes(focus)
+          ? field(focus === 'reps' ? 'יעד חזרות לבחירתך' : 'יעד סטים לבחירתך',
+            `<input class="input advice-dose" type="number" min="1" max="${focus === 'reps' ? 100 : 20}" value="${focus === 'reps' ? advice.targetReps || Number(exercise.targetReps) || '' : advice.targetSets || Number(exercise.defaultSets) || ''}">`)
+            + note('השמירה תחול באימונים הבאים בלבד. האימון הנוכחי וההיסטוריה לא ישתנו.') : ''}
         ${exercise.targetWeightKg != null ? `<p><span>${t('יעד משקל עתידי שנבחר')}</span>: ${Number(exercise.targetWeightKg)} <span>${t('ק"ג')}</span></p>
           <button class="btn btn-secondary btn-small" data-clear-load="${index}">${t('ביטול יעד המשקל העתידי')}</button>` : ''}
-        <div class="training-actions"><button class="btn btn-secondary btn-small" data-advice="${index}" data-decision="accept">${t('אישור ושמירת הכוונה')}</button>
+        <div class="training-actions">${advice.kind === 'increase' || exercise.inputType !== 'cardio' && exercise.inputType !== 'hold' && ['reps', 'sets'].includes(focus)
+          ? `<button class="btn btn-primary btn-small" data-advice="${index}" data-decision="accept">${t('שמירת היעד לאימונים הבאים')}</button>` : ''}
         <button class="btn btn-secondary btn-small" data-advice="${index}" data-decision="keep">${t('להשאיר כמו עכשיו / דחייה')}</button></div>
-        <p class="advice-decision field-hint" data-no-translate>${trainingSettings().decisions?.[exercise.id] ? i18n.text(trainingSettings().decisions[exercise.id].targetWeightKg !== undefined
-          ? 'העומס שבחרת נשמר לאימונים הבאים בלבד. האימון הנוכחי לא השתנה.'
-          : trainingSettings().decisions[exercise.id].decision === 'accept' ? 'הכוונה נשמרה. העומס בתוכנית לא השתנה.' : 'נשמר: ללא שינוי בתוכנית.') : ''}</p></section>`).join('')}`);
+        <p class="advice-decision field-hint" data-no-translate>${trainingSettings().decisions?.[exercise.id] ? i18n.text(
+          trainingSettings().decisions[exercise.id].decision === 'accept' ? 'הבחירה נשמרה לאימונים הבאים. האימון הנוכחי לא השתנה.' : 'נשמר: ללא שינוי בתוכנית.') : ''}</p></section>`).join('')}`);
+    dialog.querySelector('#adviceFocus').onchange = () => safely(dialog, () => {
+      saveTraining({ progressFocus: dialog.querySelector('#adviceFocus').value });
+      dialog.close();
+      recommendations(scope);
+    });
+    dialog.querySelector('#adviceScope').onchange = () => {
+      const selected = dialog.querySelector('#adviceScope').value;
+      dialog.close();
+      recommendations(selected);
+    };
     dialog.querySelectorAll('[data-clear-load]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       api.clearLoadTarget(records[Number(btn.dataset.clearLoad)].exercise.id);
       dialog.close();
-      recommendations();
+      recommendations(scope);
     }));
     dialog.querySelectorAll('[data-target]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       const target = Number(btn.closest('section').querySelector('.advice-target').value);
       if (!Number.isInteger(target) || target < 1 || target > 100) throw new RangeError('Target must be 1–100 reps');
       api.saveTarget(records[Number(btn.dataset.target)].exercise.id, target);
       dialog.close();
-      recommendations();
+      recommendations(scope);
     }));
     dialog.querySelectorAll('[data-advice]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
       const { exercise, advice } = records[Number(btn.dataset.advice)];
       const input = btn.closest('section').querySelector('.advice-load');
-      const load = btn.dataset.decision === 'accept' && input?.value !== '' && input ? Number(input.value) : undefined;
+      const dose = btn.closest('section').querySelector('.advice-dose');
+      const accept = btn.dataset.decision === 'accept';
+      const load = accept && input ? Number(input.value) : undefined;
+      const target = accept && dose ? Number(dose.value) : undefined;
       if (load !== undefined && (!Number.isFinite(load) || load <= advice.weightKg || load > 1000)) throw new RangeError('Choose a valid available increment above the recorded load');
+      if (target !== undefined && (!Number.isInteger(target) || target < 1 || target > (focus === 'reps' ? 100 : 20))) throw new RangeError('Invalid progress target');
+      const targets = target === undefined ? {} : { [focus === 'reps' ? 'targetReps' : 'defaultSets']: target };
       api.acceptAdvice(exercise.id, { decision: btn.dataset.decision,
-        kind: advice.kind, evidenceDates: advice.evidence.map((row) => row.dateISO), savedAt: new Date().toISOString(),
-        ...(load !== undefined ? { targetWeightKg: load } : {}) }, load);
-      btn.closest('section').querySelector('.advice-decision').textContent = i18n.text(load !== undefined
-        ? 'העומס שבחרת נשמר לאימונים הבאים בלבד. האימון הנוכחי לא השתנה.'
-        : btn.dataset.decision === 'accept' ? 'הכוונה נשמרה. העומס בתוכנית לא השתנה.' : 'נשמר: ללא שינוי בתוכנית.');
+        kind: advice.kind, focus, ...targets, evidenceDates: advice.evidence.map((row) => row.dateISO), savedAt: new Date().toISOString(),
+        ...(load !== undefined ? { targetWeightKg: load } : {}) }, load, targets);
+      refresh();
+      btn.closest('section').querySelector('.advice-decision').textContent = i18n.text(accept
+        ? 'הבחירה נשמרה לאימונים הבאים. האימון הנוכחי לא השתנה.' : 'נשמר: ללא שינוי בתוכנית.');
     }));
   }
 
@@ -776,7 +823,7 @@ export function createTrainingUI(api) {
     const set = current?.sets?.find((set) => !set.completed);
     const exercise = current?.exerciseSnapshot || state.exercises.find((exercise) => exercise.id === current?.exerciseId);
     const write = (id, text) => { const node = document.getElementById(id); if (node.textContent !== text) node.textContent = text; };
-    write('trainingCurrent', current ? `${t('עכשיו')}: ${i18n.exerciseName(current.exerciseName)}`
+    write('trainingCurrent', current ? `${t(tools.workoutHasStarted(state.session) ? 'עכשיו' : 'מתחילים ב')}: ${i18n.exerciseName(current.exerciseName)}`
       : t(state.session.entries.some((entry) => entry.equipmentBusy && entry.sets?.some((set) => !set.completed))
         ? 'נותרו תרגילים שממתינים לציוד' : 'כל התרגילים הושלמו'));
     write('trainingTarget', current?.type === 'cardio' ? `${t('יעד זמן')}: ${Math.round(current.durationSec / 60)} ${t('דקות')}`
@@ -796,10 +843,28 @@ export function createTrainingUI(api) {
     write('trainingPlanStatus', trainingSettings().activePlan ? t('תוכנית אישית פעילה. הבחירה הקודמת זמינה לשחזור בתוכניות שמורות.') : '');
     const monthly = tools.monthlyGoalProgress(state.history, trainingSettings().monthlyGoal, new Date(), state.settings.weeklyGoal);
     const monthName = new Date(`${monthly.month}-01T12:00:00`).toLocaleDateString(i18n.locale(), { month: 'long', year: 'numeric' });
-    write('monthlyGoalStatus', monthly.target ? `${monthName}: ${monthly.count} / ${monthly.target} ${t('אימונים')} · ${monthly.percent}% · ${t('אימונים שנותרו להשגת היעד')}: ${monthly.remaining}` : '');
+    write('monthlyGoalStatus', monthly.target ? `${monthName}: ${monthly.count} / ${monthly.target} ${t('אימונים')} · ${monthly.percent}% · ${t('אימונים שנותרו להשגת היעד')}: ${monthly.remaining}`
+      : `${monthName}: ${monthly.count} ${t('אימונים שתועדו')} · ${t('לא הוגדר יעד חודשי')}`);
+    const overview = statisticsOverview(state.history);
+    write('progressHistoryStatus', `${t('אימונים בהיסטוריה')}: ${overview.records.length} · ${t('סטים שהושלמו ב־28 הימים האחרונים')}: ${overview.completedSets}`);
+    document.getElementById('progressFocus').value = trainingSettings().progressFocus || '';
+    const savedTargets = state.exercises.filter((exercise) => exercise.inputType !== 'cardio' && exercise.inputType !== 'hold')
+      .map((exercise) => {
+        const values = [];
+        if (Number(exercise.targetReps) > 0) values.push(`${Number(exercise.targetReps)} ${t('חזרות')}`);
+        if (exercise.targetWeightKg != null) values.push(`${Number(exercise.targetWeightKg)} ${t('ק"ג')}`);
+        if (trainingSettings().decisions?.[exercise.id]?.defaultSets) values.push(`${Number(exercise.defaultSets)} ${t('סטים')}`);
+        return values.length ? `<li>${name(exercise)}: ${values.join(' · ')}${exercise.active === false ? ` · ${t('לא באימון הנוכחי')}` : ''}</li>` : '';
+      }).filter(Boolean);
+    const targetHTML = savedTargets.length ? `<ul>${savedTargets.join('')}</ul><p>${t('השמירה תחול באימונים הבאים בלבד. האימון הנוכחי וההיסטוריה לא ישתנו.')}</p>`
+      : `<p>${t('עדיין לא בחרת יעד לתרגיל. פתח יעדים אישיים והמלצות כדי לבחור ולשמור יעד; ההיסטוריה הקיימת נשמרת.')}</p>`;
+    const targetNode = document.getElementById('progressSavedTargets');
+    if (targetNode.innerHTML !== targetHTML) targetNode.innerHTML = targetHTML;
     document.querySelectorAll('#exerciseList .exercise-card[data-entry-index]').forEach((card) => {
       const entry = state.session.entries[Number(card.dataset.entryIndex)];
       if (!entry) return;
+      card.classList.toggle('done', entry.type === 'cardio' ? entry.completed === true
+        : !!entry.sets.length && entry.sets.every((set) => set.completed));
       const summary = card.querySelector('.workout-card-summary');
       if (summary) {
         const text = entry.equipmentBusy && entry.sets?.some((set) => !set.completed) ? t('ממתין לציוד')

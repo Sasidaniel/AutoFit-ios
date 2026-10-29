@@ -23,7 +23,156 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
   ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
-    'nextAvailableWorkoutEntry', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+    'nextAvailableWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+
+function musicControlsFixture({ platform = true, authorization = 'authorized', state = 'paused' } = {}) {
+  const calls = [], toasts = [];
+  let current = { authorization, state }, listener;
+  const buttons = Array.from({ length: 2 }, () => ({
+    attributes: {}, disabled: false, textContent: '', hidden: true,
+    classList: { remove() { this.removed = true; } },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    addEventListener(_type, callback) { this.click = callback; },
+  }));
+  const hint = { textContent: '' }, events = {};
+  const doc = { visibilityState: 'visible',
+    querySelectorAll: (selector) => selector === '[data-music-status]' ? [hint] : buttons,
+    addEventListener: (type, callback) => { events[type] = callback; } };
+  const native = {
+    isNative: () => platform,
+    musicStatus: async () => { calls.push('status'); return current; },
+    musicRequestAuthorization: async () => { calls.push('authorize'); return current = { authorization: 'authorized', state: 'paused' }; },
+    musicSetPlayback: async (playing) => { calls.push(playing ? 'play' : 'pause'); return current = { authorization: 'authorized', state: playing ? 'playing' : 'paused' }; },
+    onMusicChanged: (callback) => { calls.push('observe'); listener = callback; return Promise.resolve(); },
+  };
+  const module = loadPhaseOneModule('www/js/music-controls.js', ['createMusicControls'],
+    { i18n: { text: (value) => value }, console: { error() {} } });
+  const ui = module.createMusicControls({ native, beforePlay: async () => { calls.push('end-focused-listening'); },
+    toast: (text) => toasts.push(text) }, doc);
+  return { ui, native, calls, toasts, buttons, hint, events, doc, flush: () => new Promise(setImmediate),
+    change: (next) => { current = next; listener(next); } };
+}
+
+test('Apple Music buttons are hidden in a browser and never manufacture a playback state', async () => {
+  const fixture = musicControlsFixture({ platform: false });
+  await fixture.ui.refresh();
+  assert.deepEqual(fixture.calls, []);
+  assert.ok(fixture.buttons.every((button) => !button.classList.removed && !button.click));
+  assert.equal(fixture.hint.textContent, '');
+});
+
+test('music permission is user initiated and permission approval alone never starts playback', async () => {
+  const fixture = musicControlsFixture({ authorization: 'notDetermined', state: 'unavailable' });
+  await fixture.flush();
+  assert.deepEqual(fixture.calls, ['observe', 'status']);
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'אפשר Apple Music'));
+  await fixture.buttons[0].click();
+  assert.ok(fixture.calls.includes('authorize'));
+  assert.ok(!fixture.calls.includes('play'));
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'המשך מוזיקה'));
+});
+
+test('header and floating music buttons share confirmed state, prevent double taps and honor external changes', async () => {
+  const fixture = musicControlsFixture();
+  await fixture.flush();
+  let finish;
+  fixture.native.musicSetPlayback = (playing) => {
+    fixture.calls.push(playing ? 'play' : 'pause');
+    return new Promise((resolve) => { finish = resolve; });
+  };
+  const pending = fixture.buttons[1].click();
+  await fixture.flush();
+  assert.ok(fixture.buttons.every((button) => button.disabled));
+  await fixture.buttons[0].click();
+  assert.equal(fixture.calls.filter((call) => call === 'play').length, 1);
+  assert.ok(fixture.calls.indexOf('end-focused-listening') < fixture.calls.indexOf('play'));
+  finish({ authorization: 'authorized', state: 'playing' });
+  await pending;
+  assert.ok(fixture.buttons.every((button) => !button.disabled && button.textContent === 'השהיית מוזיקה'));
+  fixture.change({ authorization: 'authorized', state: 'paused' });
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'המשך מוזיקה'));
+});
+
+test('music never reports unconfirmed playback and retries status instead of guessing after a failure', async () => {
+  for (const result of [new Error('offline'), { authorization: 'authorized', state: 'paused' }]) {
+    const fixture = musicControlsFixture();
+    await fixture.flush();
+    fixture.native.musicSetPlayback = async () => {
+      if (result instanceof Error) throw result;
+      return result;
+    };
+    await fixture.buttons[0].click();
+    assert.ok(fixture.buttons.every((button) => button.textContent === 'בדיקת Apple Music'));
+    assert.match(fixture.hint.textContent, /לא התקבל אישור/);
+    assert.equal(fixture.toasts.length, 1);
+    await fixture.buttons[0].click();
+    assert.equal(fixture.buttons[0].textContent, 'המשך מוזיקה');
+  }
+});
+
+test('stale status reads cannot overwrite a newer native music notification', async () => {
+  const fixture = musicControlsFixture();
+  await fixture.flush();
+  let finish;
+  fixture.native.musicStatus = () => new Promise((resolve) => { finish = resolve; });
+  const pending = fixture.ui.refresh();
+  fixture.change({ authorization: 'authorized', state: 'playing' });
+  finish({ authorization: 'authorized', state: 'paused' });
+  await pending;
+  assert.equal(fixture.buttons[0].textContent, 'השהיית מוזיקה');
+});
+
+test('denied music permission and interruptions do not cause repeated prompts or playback commands', async () => {
+  for (const config of [{ authorization: 'denied', state: 'unavailable' }, { state: 'interrupted' }]) {
+    const fixture = musicControlsFixture(config);
+    await fixture.flush();
+    await fixture.buttons[0].click();
+    assert.ok(!fixture.calls.includes('authorize'));
+    assert.ok(!fixture.calls.includes('play'));
+    assert.ok(!fixture.calls.includes('pause'));
+  }
+});
+
+test('Apple Music bridge is wired into the app target, permission-gated, bounded and never changes queue or audio policy', () => {
+  const source = read('ios/App/App/MusicBridgePlugin.swift');
+  assert.match(source, /MPMusicPlayerController\.systemMusicPlayer/);
+  assert.match(source, /DispatchQueue\.main\.async/);
+  assert.match(source, /MPMediaLibrary\.authorizationStatus\(\) == \.authorized/);
+  assert.match(source, /MPMediaLibrary\.authorizationStatus\(\) == \.notDetermined/);
+  assert.match(source, /call\.getBool\("playing"\)/);
+  assert.match(source, /pendingRequest == nil/);
+  assert.match(source, /attempts: 40/);
+  assert.match(source, /"NOT_CONFIRMED"/);
+  assert.match(source, /MPMusicPlayerControllerPlaybackStateDidChange/);
+  assert.doesNotMatch(source, /setQueue|MPMediaQuery|nowPlayingItem|setCategory|AVAudioSession|requestAuthorization.*status/);
+  assert.match(read('ios/App/App/MainViewController.swift'), /registerPluginInstance\(MusicBridgePlugin\(\)\)/);
+  const project = read('ios/App/App.xcodeproj/project.pbxproj');
+  assert.match(project, /MusicBridgePlugin\.swift in Sources/);
+  assert.match(project, /path = App\/MusicBridgePlugin\.swift/);
+  assert.match(read('ios/App/App/Info.plist'), /NSAppleMusicUsageDescription/);
+  const html = read('www/index.html');
+  assert.equal((html.match(/data-music-toggle/g) || []).length, 2);
+  assert.match(html.match(/id="workoutQuickStatus"[\s\S]*?<\/div>/)[0], /data-music-toggle/);
+  assert.match(read('www/service-worker.js'), /'\.\/js\/music-controls\.js'/);
+});
+
+test('music wrapper sends explicit playback intent and fails visibly when the native plugin is missing', async () => {
+  const calls = [];
+  const native = loadPhaseOneModule('www/js/native-bridge.js', ['musicStatus', 'musicRequestAuthorization', 'musicSetPlayback'], {
+    window: { Capacitor: { isNativePlatform: () => true, Plugins: { MusicBridge: {
+      status: async () => ({ authorization: 'authorized', state: 'paused' }),
+      requestAuthorization: async () => { calls.push('authorize'); },
+      setPlayback: async (value) => { calls.push(value.playing); },
+    } } } },
+  });
+  assert.equal((await native.musicStatus()).state, 'paused');
+  assert.deepEqual(calls, []);
+  await native.musicSetPlayback(true);
+  await native.musicSetPlayback(false);
+  assert.deepEqual(calls, [true, false]);
+  const missing = loadPhaseOneModule('www/js/native-bridge.js', ['musicStatus'], { window: {} });
+  await assert.rejects(missing.musicStatus(), /not-native/);
+});
 
 test('environment browsing uses authored locations, supports portable outdoor exercises and never guesses custom equipment', () => {
   const squat = library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === 'squat');
@@ -2885,6 +3034,22 @@ function voiceContext(entries = []) {
   return { context, calls, messages, session, el, cards };
 }
 
+test('prestart voice highlighting follows warmup while explicit strength counting and started selections remain usable', () => {
+  const { context, session, cards } = voiceContext([
+    { exerciseId: 'traps', exerciseName: 'טרפז', sets: [{ weightKg: '', reps: '', completed: false }] },
+    { exerciseId: 'warmup', exerciseName: 'חימום-הליכה', type: 'cardio', durationSec: 300, completed: false },
+  ]);
+  session.currentExerciseId = 'traps';
+  context.refreshVoiceSelection();
+  assert.equal(cards[1].classList.contains('voice-selected'), true);
+  assert.equal(cards[0].classList.contains('voice-selected'), false);
+  assert.equal(context.voiceTargetEntryIndex(true), 0);
+  session.running = true;
+  assert.equal(context.voiceTargetEntryIndex(), 0);
+  context.refreshVoiceSelection();
+  assert.equal(cards[0].classList.contains('voice-selected'), true);
+});
+
 test('counting starts on one after rest, completes sets and follows the next exercise without another exercise name', () => {
   const entries = ['bench', 'row'].map((id) => ({ exerciseId: id, exerciseName: id, defaultReps: '3',
     sets: [{ weightKg: 20, reps: '', completed: false }] }));
@@ -4891,7 +5056,7 @@ function navigationFixture() {
     return result;
   }
   const primary = ['home', 'history', 'workout', 'dashboard', 'exercises'];
-  for (const tab of [...primary, 'about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy']) {
+  for (const tab of [...primary, 'about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy', 'data']) {
     panels.push(node('tab-' + tab, {}, ['tab-panel', ...(tab === 'workout' ? ['active'] : [])]));
     if (primary.includes(tab)) buttons.push(node('button-' + tab, { tab }, ['tab-btn']));
   }
@@ -4901,7 +5066,7 @@ function navigationFixture() {
   menu.close = () => { menu.open = false; menu.listeners.close(); };
   menu.getBoundingClientRect = () => ({ left: 45, right: 385, top: 0, bottom: 800 });
   for (const id of ['btnOpenMenu', 'btnCloseMenu', 'btnPageBack']) node(id);
-  for (const pageLink of ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy']) {
+  for (const pageLink of ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy', 'data']) {
     links.push(node('link-' + pageLink, { pageLink }));
   }
   const voiceSection = node('voiceCommandsHelpCard');
@@ -4950,17 +5115,22 @@ test('exercise library summary keeps its heading without redundant counts or exp
   assert.doesNotMatch(summary, /<p|totals\.stored|totals\.selected|catalog\.length/);
 });
 
-test('privacy and settings are separate menu pages with independent content and one-step return', () => {
+test('privacy, personal data and settings are separate pages with independent content and one-step return', () => {
   const html = read('www/index.html');
   const settings = html.match(/<section id="tab-settings"[\s\S]*?<\/section>/)[0];
   const privacy = html.match(/<section id="tab-privacy"[\s\S]*?<\/section>/)[0];
+  const data = html.match(/<section id="tab-data"[\s\S]*?<\/section>/)[0];
   assert.match(settings, /id="settingRestSeconds"/);
   assert.doesNotMatch(settings, /privacySettingsCard|data-legal-doc|privacy-delete/);
   assert.match(privacy, /id="privacySettingsCard"/);
   assert.match(privacy, /data-legal-doc="terms"/);
   assert.match(privacy, /data-legal-doc="privacy"/);
-  assert.match(privacy, /privacy-export/);
-  assert.match(privacy, /privacy-delete/);
+  assert.doesNotMatch(privacy, /privacy-export|privacy-delete|privacy-cloud-export/);
+  assert.match(data, /id="dataSettingsCard"/);
+  assert.match(data, /privacy-export/);
+  assert.match(data, /privacy-delete/);
+  assert.match(data, /privacy-cloud-export/);
+  assert.doesNotMatch(data, /data-legal-doc|privacy-review/);
   assert.doesNotMatch(privacy, /settingRestSeconds|data-language=/);
   const { context, nodes, window, session } = navigationFixture();
   const initial = JSON.stringify(session);
@@ -4971,6 +5141,13 @@ test('privacy and settings are separate menu pages with independent content and 
   assert.equal(nodes.get('tab-settings').classList.contains('active'), false);
   assert.equal(nodes.get('tab-privacy').classList.contains('active'), true);
   assert.equal(nodes.get('btnPageBack').classList.contains('hidden'), false);
+  window.scrollY = 90;
+  nodes.get('link-data').click();
+  assert.equal(context.currentTab, 'data');
+  assert.equal(nodes.get('tab-privacy').classList.contains('active'), false);
+  nodes.get('btnPageBack').click();
+  assert.equal(context.currentTab, 'privacy');
+  assert.equal(window.scrollY, 90);
   nodes.get('btnPageBack').click();
   assert.equal(context.currentTab, 'settings');
   assert.equal(window.scrollY, 180);

@@ -436,9 +436,18 @@ export function workoutHistoryEntries(session) {
   return [...session.entries, ...(session.removedExercises || []).map(({ entry }) => ({ ...entry, removedFromWorkout: true }))];
 }
 
+export function workoutHasStarted(session) {
+  return !!(session.running || session.paused || session.startedAt || session.accumulatedSec > 0
+    || session.entries.some((entry) => entry.type === 'cardio'
+      ? entry.completed || entry.startedAt || entry.elapsedSec > 0 || entry.resumeAfterPause
+      : entry.sets.some((set) => set.completed || set.holdStartedAt || set.holdElapsedSec > 0 || set.resumeAfterPause)));
+}
+
 export function currentWorkoutEntry(session, catalog = []) {
   const unfinished = (entry) => entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed);
   const available = (entry) => !entry.equipmentBusy && unfinished(entry);
+  const warmup = session.entries.find((entry) => entry.exerciseId === 'warmup' && available(entry));
+  if (!workoutHasStarted(session) && warmup) return warmup;
   return session.entries.find((entry) => entry.exerciseId === session.currentExerciseId && available(entry))
     || session.entries.find((entry) => available(entry) && (entry.type === 'cardio' ? entry.startedAt || entry.resumeAfterPause
       : entry.sets.some((set) => set.holdStartedAt || set.resumeAfterPause)))
@@ -1029,11 +1038,15 @@ export function weeklyMuscleWork(history, now = new Date()) {
 export function monthlyGoalProgress(history, goal, now = new Date(), weeklyGoal = 3) {
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const target = goal?.month === month ? Number(goal.target) : 0;
+  const seen = new Set();
   const count = history.filter((workout) => {
     const date = new Date(workout.dateISO);
+    if (!workout.id || seen.has(workout.id) || !Array.isArray(workout.entries)) return false;
+    seen.add(workout.id);
     return Number.isFinite(date.getTime()) && date <= now && date.getFullYear() === now.getFullYear()
       && date.getMonth() === now.getMonth() && workout.entries.some((entry) => entry.type === 'cardio'
-        ? entry.completed : entry.sets?.some((set) => set.completed));
+        ? entry.completed === true && Number(entry.durationSec) > 0
+        : entry.sets?.some((set) => set.completed !== false && Number.isFinite(Number(set.reps)) && Number(set.reps) > 0));
   }).length;
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysRemaining = daysInMonth - now.getDate() + 1;

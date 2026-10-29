@@ -141,7 +141,8 @@
     <h3>אישי והגדרות</h3>
     <button type="button" data-page-link="profile">אישי</button>
     <button id="btnOpenSettings" type="button" data-page-link="settings">הגדרות</button>
-    <button type="button" data-page-link="privacy">פרטיות והנתונים שלי</button>
+    <button type="button" data-page-link="privacy">פרטיות</button>
+    <button type="button" data-page-link="data">הנתונים שלי</button>
   </nav>
 </dialog>
 
@@ -170,7 +171,7 @@
       <button id="btnHomeStartWorkout" class="btn home-start-button"><span id="homeStartLabel">התחל אימון</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6l-6 6 6 6"/></svg></button>
       <button id="btnHomeEditWorkout" class="home-hero-link">התאמת התרגילים והסדר</button>
     </section>
-    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">תוכניות</button>
+    <button type="button" class="btn btn-primary page-shortcut home-plans-button" data-page-link="plans">תוכניות</button>
 
     <section class="card home-week-card" aria-labelledby="homeWeekTitle">
       <div class="home-section-heading"><h2 id="homeWeekTitle">השבוע שלך</h2><button id="btnHomeToDashboard" class="home-text-link">לסטטיסטיקה המלאה <span aria-hidden="true">←</span></button></div>
@@ -213,10 +214,14 @@
       <button id="btnEnableWorkoutVoice" class="btn btn-secondary btn-small hidden">🎙️ הפעל מיקרופון ופקודות קוליות</button>
       <div id="workoutAudioControls" class="workout-audio-controls hidden">
         <button id="btnFocusedListening" type="button" class="btn btn-secondary btn-small" aria-pressed="false">האזנה ממוקדת</button>
-        <button id="btnRecoverWorkoutAudio" type="button" class="btn btn-secondary btn-small">שחרור אודיו וניסיון חידוש</button>
+        <button id="btnRecoverWorkoutAudio" type="button" class="btn btn-secondary btn-small">נסה להאזין שוב</button>
         <p id="focusedListeningHint" class="field-hint">האזנה ממוקדת עד שתי דקות עשויה לעצור מוזיקה. אפשר לצאת בכל רגע; החזרה למוזיקה תלויה בנגן.</p>
       </div>
       <div id="liveActivityStatus" class="field-hint hidden" role="status"></div>
+      <div class="workout-music-controls hidden" data-music-controls>
+        <button type="button" class="btn btn-secondary btn-small" data-music-toggle data-no-translate>Apple Music</button>
+        <p class="field-hint" data-music-status data-no-translate role="status"></p>
+      </div>
       <div class="workout-timer-row">
         <div>
           <div class="label">זמן אימון</div>
@@ -247,6 +252,7 @@
     <div id="workoutQuickStatus" class="workout-quick-status hidden">
       <span><span>זמן אימון</span> <strong id="workoutQuickTimer" data-no-translate>00:00</strong></span>
       <span id="workoutQuickPercent" class="progress-overall" data-no-translate>0%</span>
+      <button type="button" class="btn btn-secondary btn-small hidden" data-music-controls data-music-toggle data-no-translate>Apple Music</button>
     </div>
     <div id="exerciseList" class="exercise-list"></div>
   </section>
@@ -319,6 +325,7 @@
 
   <!-- EXERCISES TAB -->
   <section id="tab-exercises" class="tab-panel">
+    <button type="button" class="btn btn-primary page-shortcut" data-page-link="plans">תוכניות</button>
     <div class="exercise-library-topbar">
       <button id="btnExerciseCategoryBack" type="button" class="btn btn-secondary exercise-category-back hidden" aria-label="חזרה">
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6l-6 6 6 6"/></svg><span>חזרה</span>
@@ -365,9 +372,6 @@
     </div>
     <p id="libraryBrowseTrail" class="library-browse-trail"></p>
     <div id="exerciseCategoryGrid" class="exercise-category-grid" aria-label="קטגוריות תרגילים"></div>
-    <div class="training-actions">
-      <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">תוכניות</button>
-    </div>
     <div id="exerciseLibraryPanel" class="hidden">
       <button id="btnBackExerciseCategories" class="btn btn-secondary exercise-library-back">חזרה</button>
       <div class="exercise-library-heading">
@@ -490,7 +494,7 @@
 
   <section id="tab-privacy" class="tab-panel reading-page">
     <div class="card" id="privacySettingsCard">
-      <h2 class="section-title">תנאים, פרטיות והנתונים שלי</h2>
+      <h2 class="section-title">פרטיות</h2>
       <p class="privacy-consent-status field-hint" role="status"></p>
       <div class="training-actions">
         <button type="button" class="btn btn-secondary" data-legal-doc="terms">תנאי שימוש</button>
@@ -498,6 +502,12 @@
         <button type="button" class="btn btn-secondary privacy-review">בדיקה ואישור הטיוטה</button>
       </div>
       <p class="field-hint">טיוטה לבדיקה בלבד. השקה מסחרית דורשת השלמת פרטי עסק ואישור משפטי.</p>
+    </div>
+  </section>
+
+  <section id="tab-data" class="tab-panel reading-page">
+    <div class="card" id="dataSettingsCard">
+      <h2 class="section-title">הנתונים שלי</h2>
       <p class="privacy-cloud-status field-hint" role="status"></p>
       <div class="training-actions">
         <button type="button" class="btn btn-secondary privacy-cloud-export">ייצוא גיבוי קודם מ-iCloud</button>
@@ -627,7 +637,7 @@
       <ul class="voice-commands-list">
         <li><strong>״הקשב לי״ / “Listen”</strong><span> — מעבר להאזנה ממוקדת עד שתי דקות. מוזיקה עשויה להיעצר; אפשר גם ללחוץ על הכפתור באימון אם הפקודה לא מזוהה.</span></li>
         <li><strong>״המשך מוזיקה״ / “Resume music”</strong><span> — יציאה מהאזנה ממוקדת ושחרור האודיו לנגן. ההאזנה הרגילה נשארת זמינה; אין הפעלה כפויה של נגן חיצוני.</span></li>
-        <li>אחרי שיחה או הפרעת שמע, החידוש האוטומטי מכבד את החלטת iOS. אם ההאזנה או המוזיקה לא חזרו, אפשר ללחוץ על ״שחרור אודיו וניסיון חידוש״. אם הנגן נשאר מושהה, יש להמשיך בו ידנית.</li>
+        <li>אחרי שיחה או הפרעת שמע, החידוש האוטומטי מכבד את החלטת iOS. אם ההאזנה או המוזיקה לא חזרו, אפשר ללחוץ על ״נסה להאזין שוב״. אם הנגן נשאר מושהה, יש להמשיך בו ידנית.</li>
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
         <li><strong>"לחיצת חזה"</strong> או קיצור חד־משמעי כמו <strong>"חזה"</strong> — בוחר ומדגיש את התרגיל ומתחיל להקשיב לספירה בסט הבא שטרם הושלם. אין צורך לומר בנפרד ״התחל סט״. אמירת השם שוב בזמן ספירה אינה מאפסת אותה</li>
         <li><strong>"חימום"</strong>, <strong>"שחרור"</strong> או <strong>"פלאנק"</strong> — בוחר בלבד; אומרים ״התחל״ כדי להפעיל את הטיימר. לבחירה בלבד בתרגיל חזרות אפשר לומר <strong>"בחר לחיצת חזה"</strong></li>

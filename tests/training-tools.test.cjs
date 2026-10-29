@@ -11,7 +11,7 @@ function load(file, names, values = {}) {
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
-const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
+const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'workoutEntryAnnouncement', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
@@ -2018,6 +2018,89 @@ test('recommendation requires two matched top-target rated workouts; no automati
   assert.equal(JSON.stringify(history), before);
 });
 
+test('progress focus proposes only the selected dimension and keeps evidence immutable', () => {
+  const exercise = { ...find('chest'), targetReps: 12, defaultSets: 2 };
+  const history = [record('first', '2026-10-19', exercise), record('second', '2026-10-21', exercise)];
+  const before = JSON.stringify({ exercise, history });
+  const now = new Date('2026-10-22');
+  const reps = insights.progressRecommendation(exercise, history, now, 'reps');
+  assert.equal(reps.kind, 'increase-reps');
+  assert.equal(reps.targetReps, 13);
+  assert.equal(reps.targetSets, undefined);
+  assert.equal(reps.weightKg, undefined);
+  const sets = insights.progressRecommendation(exercise, history, now, 'sets');
+  assert.equal(sets.kind, 'increase-sets');
+  assert.equal(sets.targetSets, 3);
+  assert.equal(sets.targetReps, undefined);
+  assert.equal(sets.weightKg, undefined);
+  assert.equal(JSON.stringify({ exercise, history }), before);
+  assert.throws(() => insights.progressRecommendation(exercise, history, now, 'unknown'), /Invalid progress focus/);
+});
+
+test('rep and set suggestions still require matched rated targets and respect tool limits', () => {
+  const now = new Date('2026-10-22');
+  const exercise = { ...find('chest'), targetReps: 12, defaultSets: 2 };
+  for (const focus of ['reps', 'sets']) {
+    for (const [reason, mutate] of [
+      ['hard', (item) => { item.entries[0].sets[0].difficulty = 'hard'; }],
+      ['rating', (item) => { delete item.entries[0].sets[0].difficulty; }],
+      ['target', (item) => { delete item.entries[0].targetReps; }],
+      ['variation', (item) => { item.entries[0].comparisonKey = 'different'; }],
+    ]) {
+      const history = [record('first', '2026-10-19', exercise), record('second', '2026-10-21', exercise)];
+      mutate(history[1]);
+      assert.equal(insights.progressRecommendation(exercise, history, now, focus).reason, reason);
+    }
+  }
+  const history = [record('first', '2026-10-19', exercise), record('second', '2026-10-21', exercise)];
+  assert.equal(insights.progressRecommendation({ ...exercise, defaultSets: 3 }, history, now, 'sets').reason, 'set-target');
+  const maxReps = { ...exercise, targetReps: 100 };
+  const top = [set(20, 100, true, { difficulty: 'easy' })];
+  const maxHistory = [record('a', '2026-10-19', maxReps, top), record('b', '2026-10-21', maxReps, top)];
+  maxHistory.forEach((item) => { item.entries[0].targetReps = 100; });
+  assert.equal(insights.progressRecommendation(maxReps, maxHistory, now, 'reps').reason, 'limit');
+  const maxSets = { ...exercise, defaultSets: 20 };
+  const many = Array.from({ length: 20 }, () => set(20, 12, true, { difficulty: 'easy' }));
+  assert.equal(insights.progressRecommendation(maxSets, [record('a', '2026-10-19', maxSets, many),
+    record('b', '2026-10-21', maxSets, many)], now, 'sets').reason, 'limit');
+});
+
+test('legacy history is counted and shown honestly without inventing comparison metadata', () => {
+  const exercise = { ...find('chest'), catalogId: undefined };
+  const history = Array.from({ length: 12 }, (_, index) => ({
+    id: `old-${index}`, dateISO: `2026-10-${String(index + 1).padStart(2, '0')}`,
+    entries: [{ exerciseId: exercise.id, exerciseName: exercise.name, sets: [{ reps: 12, weightKg: 20 }] }],
+  }));
+  const before = JSON.stringify(history);
+  const advice = insights.progressRecommendation(exercise, history, new Date('2026-10-22'), 'sets');
+  assert.equal(advice.reason, 'identity');
+  assert.equal(advice.historyCount, 12);
+  assert.equal(advice.evidence.length, 2);
+  assert.equal(JSON.stringify(history), before);
+  const monthly = tools.monthlyGoalProgress([...history, history[0],
+    { id: 'empty', dateISO: '2026-10-13', entries: [{ sets: [{ reps: 12, completed: false }] }] }],
+  { month: '2026-10', target: 15 }, new Date('2026-10-22'));
+  assert.equal(monthly.count, 12);
+  assert.equal(monthly.remaining, 3);
+});
+
+test('a fresh workout starts with warmup despite a stale strength focus, while started selections are preserved', () => {
+  const exercise = find('chest');
+  const warmup = { exerciseId: 'warmup', exerciseName: 'חימום — הליכה', type: 'cardio', durationSec: 300, completed: false };
+  const draft = { ...session([entry(exercise, [set(20, 12)]), warmup]), currentExerciseId: exercise.id };
+  const before = JSON.stringify(draft);
+  assert.equal(tools.workoutHasStarted(draft), false);
+  assert.equal(tools.currentWorkoutEntry(draft).exerciseId, 'warmup');
+  assert.equal(JSON.stringify(draft), before);
+  for (const patch of [{ running: true }, { paused: true }, { accumulatedSec: 20 }, { startedAt: 123 }]) {
+    assert.equal(tools.workoutHasStarted({ ...draft, ...patch }), true);
+    assert.equal(tools.currentWorkoutEntry({ ...draft, ...patch }).exerciseId, exercise.id);
+  }
+  draft.entries[0].sets[0].completed = true;
+  assert.equal(tools.workoutHasStarted(draft), true);
+  assert.equal(tools.currentWorkoutEntry(draft).exerciseId, 'warmup');
+});
+
 for (const [reason, mutate] of [
   ['hard', (record) => { record.entries[0].sets[0].difficulty = 'hard'; }],
   ['rating', (record) => { delete record.entries[0].sets[0].difficulty; }],
@@ -2362,6 +2445,57 @@ test('real controller saves an accepted chosen load for future drafts without to
   assert.equal(context.exercises.find((exercise) => exercise.id === id).targetWeightKg, 22.5);
   assert.equal(JSON.stringify(context.activeSession), before);
   assert.equal(context.settings.training.decisions[id].decision, 'accept');
+});
+
+test('explicit rep/set targets are atomic, future-only and do not alter any recorded performance', () => {
+  for (const targets of [{ targetReps: 13 }, { defaultSets: 4 }]) {
+    const { context, api, writes } = controllerContext();
+    const id = find('chest').id;
+    const before = JSON.stringify(context.activeSession);
+    api.acceptAdvice(id, { decision: 'accept', focus: targets.targetReps ? 'reps' : 'sets', ...targets }, undefined, targets);
+    for (const [key, value] of Object.entries(targets)) {
+      assert.equal(context.exercises.find((exercise) => exercise.id === id)[key], value);
+    }
+    assert.equal(writes.length, 1, 'Targets and decision are persisted in one transaction');
+    assert.equal(JSON.stringify(context.activeSession), before);
+    const saved = JSON.stringify({ exercises: context.exercises, settings: context.settings });
+    context.db.saveProgramState = () => { throw Error('quota'); };
+    assert.throws(() => api.acceptAdvice(id, { decision: 'accept' }, undefined, { defaultSets: 5 }), /quota/);
+    assert.equal(JSON.stringify({ exercises: context.exercises, settings: context.settings }), saved);
+  }
+});
+
+test('progress targets reject invalid doses and dismissing advice cannot change a target', () => {
+  const { context, api, writes } = controllerContext();
+  const id = find('chest').id;
+  for (const targets of [{ targetReps: 0 }, { targetReps: 101 }, { defaultSets: 21 }, { defaultSets: 1.5 }, { unknown: 3 }]) {
+    assert.throws(() => api.acceptAdvice(id, { decision: 'accept' }, undefined, targets), /Invalid progress target/);
+  }
+  assert.throws(() => api.acceptAdvice(id, { decision: 'keep' }, undefined, { defaultSets: 4 }), /Invalid progress target/);
+  assert.throws(() => api.acceptAdvice('missing', { decision: 'accept' }, undefined, { defaultSets: 4 }), /Invalid progress target/);
+  assert.equal(writes.length, 0);
+  const hold = find('sidePlank');
+  assert.throws(() => api.acceptAdvice(hold.id, { decision: 'accept' }, undefined, { defaultSets: 4 }), /Invalid progress target/);
+  api.acceptAdvice(hold.id, { decision: 'keep' });
+  assert.equal(context.settings.training.decisions[hold.id].decision, 'keep');
+});
+
+test('choosing another progress focus, dismissing advice and clearing load retain earlier rep and set goals', () => {
+  const { context, api } = controllerContext();
+  const id = find('chest').id;
+  api.acceptAdvice(id, { decision: 'accept', focus: 'sets', defaultSets: 4 }, undefined, { defaultSets: 4 });
+  api.acceptAdvice(id, { decision: 'accept', focus: 'reps', targetReps: 13 }, undefined, { targetReps: 13 });
+  api.acceptAdvice(id, { decision: 'accept', focus: 'weight', targetWeightKg: 22.5 }, 22.5);
+  api.acceptAdvice(id, { decision: 'keep', focus: 'weight' });
+  assert.equal(context.settings.training.decisions[id].defaultSets, 4);
+  assert.equal(context.settings.training.decisions[id].targetReps, 13);
+  api.clearLoadTarget(id);
+  const exercise = context.exercises.find((item) => item.id === id);
+  assert.equal(exercise.targetWeightKg, undefined);
+  assert.equal(exercise.defaultSets, 4);
+  assert.equal(exercise.targetReps, 13);
+  assert.equal(context.settings.training.decisions[id].defaultSets, 4);
+  assert.equal(context.settings.training.decisions[id].targetWeightKg, undefined);
 });
 
 test('real controller does not mutate in-memory program if persistence fails', () => {
