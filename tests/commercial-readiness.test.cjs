@@ -12,7 +12,7 @@ function load(file, names, values = {}) {
 }
 const config = load('www/js/commercial-config.js', ['COMMERCIAL_CONFIG', 'commercialReadiness']);
 const legal = load('www/js/legal.js', ['POLICY_VERSION', 'PERSONAL_DATA_KEYS', 'CLOUD_ERASURE_KEY',
-  'hasCurrentConsent', 'acceptLegalConsent', 'cloudRestoreAllowed', 'legalDocumentHTML',
+  'hasCurrentConsent', 'acceptLegalConsent', 'profileAgeAllowed', 'cloudRestoreAllowed', 'legalDocumentHTML',
   'exportPersonalData', 'exportLegacyCloudData', 'eraseLocalPersonalData', 'restorableCloudData'], config);
 const choices = { termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true, adultConfirmed: true };
 const confirmed = (extra = {}) => legal.acceptLegalConsent(extra, choices, 'he', new Date('2026-10-22T09:00:00Z'));
@@ -120,14 +120,47 @@ function commerceController({ platform = true, approved = true } = {}) {
     notify: () => observer?.(), flush: () => new Promise(setImmediate) };
 }
 
-test('the real commerce controller is honest in browser preview and never calls Apple or shows a purchase button', async () => {
+test('browser preview omits the unused subscription card and never calls Apple or exposes subscription actions', async () => {
   const fixture = commerceController({ platform: false, approved: false });
   await fixture.ui.refresh();
   assert.deepEqual(fixture.calls, []);
-  assert.match(fixture.root.innerHTML, /בדפדפן אין רכישה/);
-  assert.doesNotMatch(fixture.root.innerHTML, /data-commerce-action="buy:/);
-  fixture.button('privacy').click();
-  assert.deepEqual(fixture.calls, ['privacy']);
+  assert.equal(fixture.root.hidden, true);
+  assert.equal(fixture.root.innerHTML, '');
+  assert.equal(fixture.button('manage'), undefined);
+  assert.match(read('www/index.html'), /id="privacySettingsCard"/);
+});
+
+test('native subscriptions stay hidden when unconfigured, but status errors remain visible and retryable', async () => {
+  const fixture = commerceController({ approved: false });
+  fixture.setStatus({ configured: false, enabled: false, verified: false, canMakePayments: false, products: [], entitlements: [] });
+  await fixture.ui.refresh();
+  assert.equal(fixture.root.hidden, true);
+  assert.equal(fixture.root.innerHTML, '');
+  fixture.native.commerceStatus = async () => { throw Error('offline'); };
+  await fixture.ui.refresh();
+  assert.equal(fixture.root.hidden, false);
+  assert.match(fixture.root.innerHTML, /לא ניתן לאמת/);
+  assert.ok(fixture.button('refresh'));
+  assert.equal(fixture.button('manage'), undefined);
+});
+
+test('subscription management is offered only for an actual verified active entitlement', async () => {
+  const fixture = commerceController();
+  await fixture.ui.refresh();
+  assert.equal(fixture.button('manage'), undefined);
+  fixture.setStatus(appleStatus({ entitlements: [{ productID: 'example.monthly' }] }));
+  await fixture.ui.refresh();
+  fixture.button('manage').click();
+  await fixture.flush();
+  assert.ok(fixture.calls.includes('manage'));
+});
+
+test('personal details and onboarding omit development account copy without dropping privacy controls', () => {
+  const html = read('www/index.html');
+  assert.doesNotMatch(html, /חשבון וחיבור|חיבור Apple או Google\/Gmail עדיין|חיבור אמיתי דורש|Face ID נועל את הנתונים במכשיר ואינו/);
+  assert.doesNotMatch(read('www/js/privacy-ui.js'), /href="https:\/\/apps\.apple\.com\/account\/subscriptions/);
+  assert.match(html, /id="onboardingLegalForm"/);
+  assert.match(html, /id="privacySettingsCard"/);
 });
 
 test('actual purchase controller blocks overlapping requests and repeat purchases while Apple approval is pending', async () => {
@@ -231,6 +264,33 @@ test('legacy recovery needs separate consent and never implies permission for ne
   assert.equal(legal.cloudRestoreAllowed(confirmed({ privacyPreferences: { cloudRestore: true, cloudBackup: false } })), true);
 });
 
+test('ages 12–17 require a separate explicit guardian declaration and cannot reuse an adult receipt', () => {
+  const guardian = { ...choices, ageGroup: 'minor', adultConfirmed: false, guardianConfirmed: true };
+  const child = legal.acceptLegalConsent({}, guardian, 'he');
+  assert.equal(legal.hasCurrentConsent(child), true);
+  assert.equal(child.legalConsent.guardianConfirmed, true);
+  assert.equal(child.legalConsent.adultConfirmed, false);
+  for (const age of [12, 17]) {
+    assert.equal(legal.profileAgeAllowed(child, age), true);
+    assert.equal(legal.profileAgeAllowed(confirmed(), age), false);
+  }
+  for (const age of [18, 120]) {
+    assert.equal(legal.profileAgeAllowed(confirmed(), age), true);
+    assert.equal(legal.profileAgeAllowed(child, age), false);
+  }
+  for (const age of [11, 121, 'oops', 12.5]) assert.equal(legal.profileAgeAllowed(child, age), false);
+  assert.equal(legal.profileAgeAllowed(child, ''), true);
+  for (const value of [false, undefined, 'true', 1]) {
+    assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, guardianConfirmed: value }, 'he'), /Explicit/);
+  }
+  assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, adultConfirmed: true }, 'he'), /Explicit/);
+  assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, adultConfirmed: 'true' }, 'he'), /Explicit/);
+  assert.throws(() => legal.acceptLegalConsent({}, { ...choices, guardianConfirmed: 'true' }, 'he'), /Explicit/);
+  assert.equal(legal.hasCurrentConsent({ legalConsent: { ...child.legalConsent, version: 'commercial-draft-1' } }), false);
+  assert.match(legal.legalDocumentHTML('privacy', 'en'), /identity and guardianship are not verified/);
+  assert.match(legal.legalDocumentHTML('terms', 'en'), /not child-specific/);
+});
+
 test('both complete offline legal documents disclose actual limitations and safely escape owner configuration', () => {
   for (const kind of ['privacy', 'terms']) {
     const he = legal.legalDocumentHTML(kind, 'he');
@@ -268,6 +328,22 @@ test('data export preserves all five records including photos, custom IDs, notes
   assert.equal(JSON.stringify(result).includes('must not export'), false);
   assert.deepEqual(Object.fromEntries(storage.data), { ...source, unrelated: 'must stay', ft_unknown_secret: 'must not export' });
   assert.throws(() => legal.exportPersonalData(memory({ ft_workouts_v1: 'broken JSON' })));
+});
+
+test('profile wording defaults safely for legacy data and persists through save, export and legacy restore', () => {
+  const storage = memory(sample());
+  const db = load('www/js/db.js', ['getProfile', 'saveProfile'], { localStorage: storage });
+  const original = db.getProfile();
+  assert.equal(original.gender, '');
+  db.saveProfile({ ...original, gender: 'female' });
+  assert.equal(db.getProfile().gender, 'female');
+  assert.equal(db.getProfile().name, original.name);
+  assert.equal(db.getProfile().photoDataUrl, original.photoDataUrl);
+  const exported = legal.exportPersonalData(storage);
+  assert.equal(exported.records.ft_profile_v1.gender, 'female');
+  const restored = legal.restorableCloudData(Object.fromEntries(storage.data), { language: 'he' });
+  assert.equal(JSON.parse(restored.records.find(([key]) => key === 'ft_profile_v1')[1]).gender, 'female');
+  assert.deepEqual(plain(exported.records.ft_profile_v1.weightHistory), plain(original.weightHistory));
 });
 
 test('legacy cloud export is read-only, preserves the original archive and never claims latest-server verification', () => {

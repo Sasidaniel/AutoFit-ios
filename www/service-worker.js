@@ -1,5 +1,5 @@
 // service-worker.js — app shell caching for offline + installability
-const CACHE_NAME = 'autofit-v70';
+const CACHE_NAME = 'autofit-v86';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const PRECACHE_URLS = [
   './js/commercial-config.js',
   './js/legal.js',
   './js/privacy-ui.js',
+  './js/profile-fields.js',
   './js/commerce-ui.js',
   './js/legal-page.js',
   './legal.html',
@@ -22,6 +23,7 @@ const PRECACHE_URLS = [
   './js/native-bridge.js',
   './js/i18n.js',
   './js/translations-en.js',
+  './js/translations-he-female.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

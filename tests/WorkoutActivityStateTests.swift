@@ -12,16 +12,26 @@ struct WorkoutActivityStateTests {
         }
         let workout = try state()
         precondition(!workout.isEnglish)
+        precondition(!workout.usesFeminineWording && workout.readyTitle == "מוכן לאימון")
+        let feminine = try WorkoutActivityState(startMillis: now - 60000, exerciseName: "Bench",
+            completedSets: 2, totalSets: 6, phase: "workout",
+            phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, feminineWording: true)
+        precondition(feminine.usesFeminineWording && feminine.readyTitle == "מוכנה לאימון")
+        let feminineRoundTrip = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(feminine))
+        precondition(feminineRoundTrip.usesFeminineWording)
         let english = try WorkoutActivityState(startMillis: now - 60000, exerciseName: "Bench",
             completedSets: 2, totalSets: 6, phase: "workout",
             phaseStartMillis: nil, phaseEndMillis: nil, nowMillis: now, language: "en")
         let englishRoundTrip = try JSONDecoder().decode(WorkoutActivityState.self, from: JSONEncoder().encode(english))
         precondition(englishRoundTrip.isEnglish)
+        precondition(englishRoundTrip.readyTitle == "Ready to train")
         var legacyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(workout)) as! [String: Any]
         legacyJSON.removeValue(forKey: "language")
+        legacyJSON.removeValue(forKey: "feminineWording")
         let legacy = try JSONDecoder().decode(WorkoutActivityState.self,
             from: JSONSerialization.data(withJSONObject: legacyJSON))
         precondition(legacy.language == nil && !legacy.isEnglish)
+        precondition(!legacy.usesFeminineWording && legacy.readyTitle == "מוכן לאימון")
         precondition(workout.workoutStartedAt.timeIntervalSince1970 == (now - 60000) / 1000)
         precondition(workout.phaseStartedAt == nil && workout.phaseEndsAt == nil)
         let ready = try state("ready")

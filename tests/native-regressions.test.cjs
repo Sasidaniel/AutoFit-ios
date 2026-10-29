@@ -21,7 +21,92 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
-  ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises'], library);
+  ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
+    'nextAvailableWorkoutEntry', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+test('workout card toggles hide rather than replace controls and retain explicit expansion across renders', () => {
+  const node = () => ({
+    children: [], attributes: {}, listeners: {}, hidden: false,
+    classList: { toggle() {} },
+    appendChild(child) {
+      if (child.parentElement) child.parentElement.children = child.parentElement.children.filter((item) => item !== child);
+      this.children.push(child); child.parentElement = this;
+    },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    addEventListener(key, listener) { this.listeners[key] = listener; },
+  });
+  const createCard = () => {
+    const card = node(), head = node(), title = node(), name = node(), input = node();
+    input.value = '21.5';
+    card.appendChild(head); head.appendChild(title); title.appendChild(name); card.appendChild(input);
+    card.querySelector = () => head;
+    head.querySelector = () => name;
+    return { card, head, input };
+  };
+  const context = nodeVM.createContext({ document: { createElement: node }, expandedWorkoutExercises: new Set(),
+    i18n: { text: (value) => value, exerciseName: (value) => value } });
+  nodeVM.runInContext(section('function configureWorkoutCard(', 'function removeLastWorkoutSet('), context);
+  const entry = { exerciseId: 'custom:exercise', exerciseName: 'Personal', sets: [{ weightKg: 21.5, completed: false }] };
+  const first = createCard();
+  context.configureWorkoutCard(first.card, entry, 1);
+  const content = first.card.children[1], toggle = first.head.children.at(-1);
+  assert.equal(content.hidden, true);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  toggle.listeners.click();
+  assert.equal(content.hidden, false);
+  assert.equal(content.children[0], first.input);
+  assert.equal(first.input.value, '21.5');
+  const rerendered = createCard();
+  context.configureWorkoutCard(rerendered.card, entry, 1);
+  assert.equal(rerendered.card.children[1].hidden, false);
+  for (const id of ['warmup', 'cooldown']) {
+    const walk = createCard();
+    context.configureWorkoutCard(walk.card, { exerciseId: id, exerciseName: id }, 0);
+    assert.equal(walk.card.children[1].hidden, true);
+    assert.equal(walk.head.children.at(-1).attributes['aria-expanded'], 'false');
+    walk.head.children.at(-1).listeners.click();
+    assert.equal(walk.card.children[1].hidden, false);
+    assert.equal(walk.card.children[1].children[0], walk.input);
+  }
+});
+
+test('summary sharing reuses the saved workout rather than the reset next draft or stale health copy', () => {
+  const controls = new Map(), latest = { id: 'saved', entries: [{ exerciseName: 'Personal', sets: [{ weightKg: 21.5, reps: 12 }] }] };
+  const control = (key) => {
+    if (!controls.has(key)) controls.set(key, {
+      addEventListener(event, callback) { this[event] = callback; },
+      querySelector(selector) { return control(selector); },
+    });
+    return controls.get(key);
+  };
+  let shared;
+  const context = nodeVM.createContext({
+    insights: { workoutSummary: () => ({ exercises: 1, sets: 1, insights: [], difficulty: {} }) },
+    db: { getWorkouts: () => [latest] }, workouts: [latest], native: { isNative: () => true },
+    openTrainingDialog: () => ({ querySelector: control }), qs: control, renderHealthSummary() {},
+    formatHMS: () => '01:00', escapeHtml: (value) => value, escapeAttr: (value) => value, i18n: { text: (value) => value },
+    openShareModal: (records) => { shared = records; },
+  });
+  nodeVM.runInContext(section('function openWorkoutSummary(', 'function finishWorkout()'), context);
+  context.openWorkoutSummary({ id: 'saved', entries: [], durationSec: 60 });
+  control('.btnShareWorkoutSummary').click();
+  assert.equal(shared.length, 1);
+  assert.equal(shared[0], latest);
+});
+
+test('detailed upcoming exercise speech translates repetition ranges, assistance, holds and cardio', () => {
+  const translation = localizationContext();
+  translation.setLanguage('en');
+  for (const entry of [
+    { exerciseName: 'לחיצת חזה', sets: [{ reps: '8–12', weightKg: 27.5 }], exerciseSnapshot: {} },
+    { exerciseName: 'Assisted', sets: [{ reps: 10, weightKg: 35 }], exerciseSnapshot: { loadKind: 'assistance' } },
+    { exerciseName: 'Hold', sets: [{}], exerciseSnapshot: { inputType: 'hold', holdSeconds: 30 } },
+    { exerciseName: 'Walk', type: 'cardio', durationSec: 90 },
+  ]) {
+    const speech = trainingTools.workoutEntryAnnouncement(entry, [], translation.text, translation.exerciseName);
+    assert.doesNotMatch(speech, /[\u0590-\u05ff]/, speech);
+  }
+});
+
 test('difficulty is Easy, Medium, Hard while legacy right values and spoken phrases remain compatible', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(insights.DIFFICULTY_LABELS)), { easy: 'קל', right: 'בינוני', hard: 'קשה' });
   for (const phrase of ['היה בינוני', 'הסט היה בינוני', 'היה מתאים', 'it was medium', 'it was moderate', 'it was just right']) {
@@ -62,12 +147,13 @@ test('the page uses document scrolling rather than a fixed-height nested body sc
   assert.match(css, /(?:^|\n)html\s*\{[^}]*height:\s*100%;[^}]*overflow-x:\s*hidden/);
   assert.doesNotMatch(css.match(/(?:^|\n)body\s*\{([^}]+)\}/)[1], /overflow|(?:^|;)\s*height:/);
 });
-const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData'],
+const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData', 'profileAgeAllowed'],
   loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
   const context = nodeVM.createContext(extras);
   nodeVM.runInContext(read('www/js/exercise-library.js').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/translations-en.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  nodeVM.runInContext(read('www/js/translations-he-female.js').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/seed.js').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/i18n.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return context;
@@ -79,6 +165,7 @@ const vm = {
     return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       finishingWorkout: false, pendingWorkoutAutoFinish: null,
+      workoutMuscleCompletionCue: () => '', refreshWorkoutMuscleHeadings: () => {},
       isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((set) => set.completed),
       rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, cancelSpeech: () => {}, ...values });
   },
@@ -776,6 +863,122 @@ test('translation round trips preserve text node identity and use the latest ren
   assert.equal(node.nodeValue, 'ראשי');
 });
 
+test('female wording covers slogans, readiness, actions, guidance and encouragement but not object grammar', () => {
+  const context = localizationContext();
+  assert.equal(context.getGender(), 'general');
+  context.setGender('female');
+  for (const [source, expected] of [
+    ['אתה לא מתאמן לבד, אני איתך!', 'את לא מתאמנת לבד, אני איתך!'],
+    ['מוכן לאימון', 'מוכנה לאימון'],
+    ['מוכן להתחיל אימון', 'מוכנה להתחיל אימון'],
+    ['התחל אימון', 'התחילי אימון'], ['המשך אימון', 'המשיכי אימון'],
+    ['הפסק אימון', 'הפסיקי אימון'], ['סיים אימון', 'סיימי אימון'],
+    ['שמור', 'שמרי'], ['+ הוסף לאימון שלי', '+ הוסיפי לאימון שלי'],
+    ['בחר תרגילים מהספרייה ובנה את התוכנית שמתאימה לך.', 'בחרי תרגילים מהספרייה ובני את התוכנית שמתאימה לך.'],
+    ['אחרי שתסיים ותשמור אימון, הסיכום שלו יופיע כאן.', 'אחרי שתסיימי ותשמרי אימון, הסיכום שלו יופיע כאן.'],
+    ['עמוד יציב; אפשר להיעזר בקיר לשיווי משקל.', 'עמדי יציבה; אפשר להיעזר בקיר לשיווי משקל.'],
+    ['עמוד עם משקולות לפני הירכיים וברכיים כפופות מעט.', 'עמדי עם משקולות לפני הירכיים וברכיים כפופות מעט.'],
+    ['הורד עקבים לאט עד לרצפה.', 'הורידי עקבים לאט עד לרצפה.'],
+    ['לא ניתן לבצע את השינוי. הנתונים נשמרו; בדוק את הבחירה או את האחסון ונסה שוב.', 'לא ניתן לבצע את השינוי. הנתונים נשמרו; בדקי את הבחירה או את האחסון ונסי שוב.'],
+    ['כל הכבוד על האימון וההתקדמות! תמשיך כך 💪', 'כל הכבוד על האימון וההתקדמות! תמשיכי כך 💪'],
+    ['העוזר האישי שלך!', 'העוזר האישי שלך!'],
+    ['כמו חבר לאימון שדואג לפרטים הקטנים', 'כמו חבר לאימון שדואג לפרטים הקטנים'],
+    ['הקובץ הורד — אפשר לצרף אותו', 'הקובץ הורד — אפשר לצרף אותו'],
+    ['כל תמונה היא עמוד נפרד', 'כל תמונה היא עמוד נפרד'],
+    ['50 אחוז מהאימון הושלמו', '50 אחוז מהאימון הושלמו'],
+    ['AutoFit מוכן לאימון במסך הנעילה וב־Dynamic Island', 'AutoFit מוכן לאימון במסך הנעילה וב־Dynamic Island'],
+    ['גב יציב, קצב נוח וללא לחץ על הצוואר', 'גב יציב, קצב נוח וללא לחץ על הצוואר'],
+    ['בחר סיוע שמאפשר שליטה, אחוז בידיות ועלה בזהירות על המשטח.', 'בחרי סיוע שמאפשר שליטה, אחזי בידיות ועלי בזהירות על המשטח.'],
+    ['שב או עמוד ביציבות, זרועות לצד הגוף וכפות ידיים לפנים.', 'שבי או עמדי ביציבות, זרועות לצד הגוף וכפות ידיים לפנים.'],
+    ['נשום, הורד בשליטה והחלף צד. מדוד זמן לכל צד.', 'נשמי, הורידי בשליטה והחליפי צד. מדדי זמן לכל צד.'],
+    ['גרור לשינוי סדר', 'גררי לשינוי סדר'],
+    ['שתף כ-PDF', 'שתפי כ-PDF'], ['צור קיצור חדש וקרא לו בדיוק:', 'צרי קיצור חדש וקראי לו בדיוק:'],
+    ['קראתי ואני מאשר/ת את טיוטת תנאי השימוש.', 'קראתי ואני מאשרת את טיוטת תנאי השימוש.'],
+  ]) assert.equal(context.text(source), expected, source);
+  context.setGender('male');
+  assert.equal(context.text('התחל אימון'), 'התחל אימון');
+  context.setGender('general');
+  assert.equal(context.text('מוכן לאימון'), 'מוכן לאימון');
+  assert.throws(() => context.setGender('unknown'), /Unsupported gender/);
+});
+
+test('feminine copy distinguishes user actions from equipment, pairs, stored data and system subjects', () => {
+  const context = localizationContext();
+  context.setGender('female');
+  for (const source of [
+    'הצמד אינו מלא באימון הזה. התרגיל ממשיך עם מנוחה רגילה.',
+    'נותרו תרגילים שממתינים לציוד',
+    'סטים שהושלמו נשארים בתרגיל המקורי. שאר הנתונים נשמרים לשחזור. אין שינוי בתוכנית הקבועה.',
+  ]) assert.equal(context.text(source), source);
+  const source = 'שינויים במסך אימון חלים רק על האימון הנוכחי. לאחר הסיום התרגילים, הסטים והיעדים חוזרים להגדרות התוכנית והביצוע בפועל נשמר בהיסטוריה. אם אין משקל יעד קבוע, משקל תקין מהסט הראשון שהושלם נשמר אוטומטית כמשקל בסיס; משקל קבוע קיים או משקל שנוקה במפורש אינם מוחלפים.';
+  assert.equal(context.text(source), source);
+  assert.equal(context.text('קח צעד לאחור וכופף את שתי הברכיים בטווח נוח.'), 'קחי צעד לאחור וכופפי את שתי הברכיים בטווח נוח.');
+  assert.equal(context.text('כופף מרפקים לאט והורד משקולות לצדי הראש, הרחק מהפנים.'), 'כופפי מרפקים לאט והורידי משקולות לצדי הראש, הרחק מהפנים.');
+  assert.equal(context.text('נשוף בעלייה. אל תעגל את הגב או תרים עקבים כדי לרדת עמוק יותר.'), 'נשפי בעלייה. אל תעגלי את הגב או תרימי עקבים כדי לרדת עמוק יותר.');
+  assert.equal(context.text('אימון מעולה! עוד צעד קדימה למטרה שלך 🔥'), 'אימון מעולה! עוד צעד קדימה למטרה שלך 🔥');
+  assert.equal(context.text('הישאר מרוכז באימון בעזרת טיימרים והכרזות קוליות, ובאייפון גם פקודות קוליות.'), 'הישארי מרוכזת באימון בעזרת טיימרים והכרזות קוליות, ובאייפון גם פקודות קוליות.');
+  assert.equal(context.text('נמצאו כמה תרגילים: בחר שם אישי. אמור שם מדויק יותר'), 'נמצאו כמה תרגילים: בחר שם אישי. אמרי שם מדויק יותר');
+  assert.equal(context.text('הודעה חדשה: בחר שם אישי'), 'הודעה חדשה: בחר שם אישי');
+});
+
+test('explicit feminine catalog preserves canonical keys and template slots', () => {
+  const context = localizationContext();
+  const entries = nodeVM.runInContext('Object.entries(HE_FEMALE)', context);
+  for (const [source, value] of entries) {
+    assert.ok(nodeVM.runInContext(`Object.hasOwn(EN, ${JSON.stringify(source)})`, context), source);
+    assert.notEqual(source, value, source);
+    assert.deepEqual(source.match(/\{\d+\}/g) || [], value.match(/\{\d+\}/g) || [], source);
+  }
+});
+
+test('every authored translation remains reversible and idempotent after female personalization', () => {
+  const context = localizationContext();
+  const sources = nodeVM.runInContext('Object.keys(EN)', context);
+  for (const source of sources) {
+    context.setLanguage('en');
+    const english = context.text(source);
+    context.setLanguage('he');
+    context.setGender('female');
+    const female = context.text(source);
+    assert.equal(context.text(female), female, source);
+    context.setLanguage('en');
+    assert.equal(context.text(female), english, source);
+    context.setLanguage('he');
+    context.setGender('general');
+    assert.equal(context.text(female), source, source);
+  }
+});
+
+test('gender and language changes restore live DOM sources without replacing nodes or changing protected user text', () => {
+  const node = { nodeType: 3, nodeValue: 'אתה לא מתאמן לבד.', parentElement: { closest: () => null } };
+  const protectedNode = { nodeType: 3, nodeValue: 'בחר שם אישי', parentElement: { closest: () => ({}) } };
+  const body = { nodeType: 1, matches: () => false, hasAttribute: () => false, childNodes: [node, protectedNode] };
+  const document = { body, documentElement: {}, querySelectorAll: () => [] };
+  const context = localizationContext({ document });
+  context.setGender('female');
+  assert.equal(node.nodeValue, 'את לא מתאמנת לבד.');
+  node.nodeValue = context.text('מוכן לאימון');
+  context.translateDOM(node);
+  context.setLanguage('en');
+  assert.equal(node.nodeValue, 'Ready to train');
+  context.setLanguage('he');
+  assert.equal(node.nodeValue, 'מוכנה לאימון');
+  context.setGender('general');
+  assert.equal(node.nodeValue, 'מוכן לאימון');
+  assert.equal(protectedNode.nodeValue, 'בחר שם אישי');
+  assert.equal(body.childNodes[0], node);
+});
+
+test('gender personalization does not change canonical or custom exercise names or custom notes', () => {
+  const context = localizationContext();
+  context.setGender('female');
+  assert.equal(context.exerciseName('התחל אימון'), 'התחל אימון');
+  assert.equal(context.exerciseNotes('בחר משקל אישי שלי'), 'בחר משקל אישי שלי');
+  const originals = JSON.stringify(library.LIBRARY_EXERCISES);
+  for (const exercise of library.LIBRARY_EXERCISES) assert.equal(context.exerciseName(exercise.name), exercise.name);
+  assert.equal(JSON.stringify(library.LIBRARY_EXERCISES), originals);
+});
+
 test('exercise translations never rename stored models or translate authored exercise names and notes', () => {
   const context = localizationContext();
   context.setLanguage('en');
@@ -818,6 +1021,21 @@ for (const [phrase, expected] of [
     assert.equal(voiceContext().context.classifyVoiceCommand(phrase), expected);
   });
 }
+
+test('feminine Hebrew voice commands use the same existing workout actions for every profile choice', () => {
+  for (const gender of ['general', 'male', 'female']) {
+    const { context } = voiceContext();
+    context.i18n.setGender(gender);
+    for (const [phrase, expected] of [
+      ['התחילי אימון', 'startWorkout'], ['סיימי אימון', 'finishWorkout'],
+      ['בטלי אימון', 'cancelWorkout'], ['התחילי סט', 'startSet'],
+      ['עצרי תרגיל', 'stopExercise'], ['דלגי על מנוחה', 'skipRest'],
+      ['בטלי', 'undo'],
+    ]) assert.equal(context.classifyVoiceCommand(phrase), expected, `${gender}: ${phrase}`);
+    assert.equal(context.i18n.canonicalVoice('מאשרת סיום'), 'מאשר סיום');
+    assert.equal(context.i18n.canonicalVoice('תוסיפי חצי דקה מנוחה'), 'תוסיף חצי דקה מנוחה');
+  }
+});
 
 test('English rep counting, named exercise selection and set completion use the existing workout actions', () => {
   const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ completed: false, reps: '' }] };
@@ -1203,6 +1421,9 @@ test('contact form uses the configured Formspree endpoint without a redundant co
     assert.match(html, new RegExp(`id="${id}"[^>]*required`));
   }
   const contact = html.slice(html.indexOf('<section id="tab-contact"'), html.indexOf('</section>', html.indexOf('<section id="tab-contact"')));
+  assert.match(contact, /class="section-title">יצירת קשר<\/h2>/);
+  assert.equal((contact.match(/class="card"/g) || []).length, 1);
+  assert.doesNotMatch(contact, /aboutFeatures|about-author|אודות|מעקב אימוני כוח/);
   assert.doesNotMatch(contact, /contactEmailLink|mailto:|פרטי יצירת קשר/);
   assert.doesNotMatch(app, /במייל שמופיע למעלה/);
   for (const id of ['contactName', 'contactEmail']) {
@@ -1374,14 +1595,26 @@ test('workout ordering keeps a fixed-width field despite generic input styles', 
   assert.match(css, /\.exercise-manage-copy\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;/);
 });
 
-test('settings uses a large vector icon anchored below the safe-area padding', () => {
+test('the right-hand hamburger has a full-sized safe-area-aware target and settings lives in its menu', () => {
   const css = read('www/css/style.css');
-  const gear = css.match(/\.gear-btn\s*\{([^}]+)\}/)[1];
-  assert.match(gear, /bottom:\s*2px/);
-  assert.match(gear, /width:\s*48px;\s*height:\s*48px/);
-  assert.doesNotMatch(gear, /top:|translateY/);
-  assert.match(css, /\.gear-btn \.gear-icon\s*\{[^}]*width:\s*32px;\s*height:\s*32px/);
-  assert.match(read('www/index.html'), /id="btnOpenSettings"[^>]*aria-label="הגדרות"><svg[^>]*gear-icon/);
+  const menu = css.match(/\.menu-button\s*\{([^}]+)\}/)[1];
+  assert.match(menu, /right:\s*12px;\s*bottom:\s*2px/);
+  assert.match(menu, /width:\s*48px;\s*height:\s*48px/);
+  assert.doesNotMatch(menu, /top:|translateY/);
+  const topbar = css.match(/\.topbar\s*\{\s*position:[^}]+/)[0];
+  assert.match(topbar, /position:\s*sticky;\s*top:\s*0/);
+  assert.doesNotMatch(topbar, /position:\s*relative/);
+  const html = read('www/index.html');
+  assert.match(html, /id="btnOpenMenu"[^>]*aria-controls="navigationMenu"[^>]*aria-expanded="false"/);
+  const drawer = html.match(/<dialog id="navigationMenu"[\s\S]*?<\/dialog>/)[0];
+  assert.match(drawer, /id="btnOpenSettings"[^>]*data-page-link="settings"/);
+  assert.match(drawer, /data-page-link="privacy"/);
+  assert.ok(drawer.indexOf('מידע ועזרה') < drawer.indexOf('האימונים שלי'));
+  assert.doesNotMatch(drawer, /data-page-link="settings"[^>]*data-page-section/);
+  const compactDrawer = css.match(/\.app-menu\s*\{([^}]+)\}/)[1];
+  assert.match(compactDrawer, /width:\s*min\(280px, 76vw\)/);
+  assert.match(compactDrawer, /height:\s*auto/);
+  assert.match(compactDrawer, /max-height:\s*calc\(100dvh - 24px\)/);
 });
 
 test('my workout contains only selected exercises, with warmup first and cooldown last', () => {
@@ -1731,6 +1964,294 @@ for (const inputId of ['homePhotoInput', 'profilePhotoInput']) {
   });
 }
 
+function profileFieldsFixture() {
+  const elements = new Map();
+  const root = { createElement: () => ({ value: '', textContent: '' }), getElementById(id) {
+    if (!elements.has(id)) elements.set(id, { ownerDocument: root, value: '', disabled: false, options: [],
+      listeners: {}, addEventListener(event, callback) { this.listeners[event] = callback; },
+      replaceChildren(...options) { this.options = options; } });
+    return elements.get(id);
+  } };
+  const i18n = localizationContext();
+  const fields = loadPhaseOneModule('www/js/profile-fields.js', ['renderProfileFields', 'readProfileGender'], { document: root, i18n });
+  return { root, fields, i18n, el: (id) => root.getElementById(id) };
+}
+
+test('both profile flows require an explicit gender choice and onboarding previews the selected wording', () => {
+  const { root, fields, i18n, el } = profileFieldsFixture();
+  for (const prefix of ['profile', 'ob']) {
+    fields.renderProfileFields(prefix, {}, root);
+    assert.equal(el(prefix + 'Gender').value, '');
+    assert.deepEqual(Array.from(el(prefix + 'Gender').options, (option) => option.value), ['', 'general', 'male', 'female']);
+    assert.equal(el(prefix + 'Gender').options[0].disabled, true);
+    assert.throws(() => fields.readProfileGender(prefix, root), /בחר מין/);
+    el(prefix + 'Gender').value = 'general';
+    assert.equal(fields.readProfileGender(prefix, root), 'general');
+    el(prefix + 'Gender').value = 'female';
+    assert.equal(fields.readProfileGender(prefix, root), 'female');
+    if (prefix === 'ob') {
+      el('obGender').onchange();
+      assert.equal(i18n.getGender(), 'female');
+    }
+    el(prefix + 'Gender').value = 'invalid';
+    assert.throws(() => fields.readProfileGender(prefix, root), /בחר מין/);
+    assert.match(read('www/index.html'), new RegExp(`<select[^>]*id="${prefix}Gender"`));
+    assert.match(read('www/index.html'), new RegExp(`<select[^>]*id="${prefix}Gender"[^>]*required`));
+  }
+});
+
+test('profile and onboarding share optional native selections with exact age 12–120 boundaries', () => {
+  const { root, fields, el } = profileFieldsFixture();
+  for (const prefix of ['profile', 'ob']) {
+    fields.renderProfileFields(prefix, {}, root);
+    const ages = el(prefix + 'Age').options.map((option) => option.value);
+    assert.equal(ages[0], '');
+    assert.equal(ages[1], '12');
+    assert.equal(ages.at(-1), '120');
+    assert.equal(ages.length, 110);
+    assert.equal(el(prefix + 'Height').value, '');
+    assert.equal(el(prefix + 'Weight').value, '');
+    assert.equal(el(prefix + 'WeightWhole').value, '');
+    assert.equal(el(prefix + 'WeightFraction').disabled, true);
+    assert.equal(el(prefix + 'WeightFraction').options.length, 10);
+  }
+  const html = read('www/index.html');
+  for (const prefix of ['profile', 'ob']) {
+    for (const field of ['Age', 'Height', 'WeightWhole', 'WeightFraction']) {
+      assert.match(html, new RegExp(`<select[^>]*id="${prefix + field}"`));
+    }
+    assert.match(html, new RegExp(`<input type="hidden" id="${prefix}Weight">`));
+  }
+  assert.match(read('www/service-worker.js'), /'\.\/js\/profile-fields\.js'/);
+});
+
+test('profile selectors preserve exact existing values and decimals instead of rounding or clearing them', () => {
+  const { root, fields, el } = profileFieldsFixture();
+  fields.renderProfileFields('profile', { age: '121', heightCm: '275.5', weightKg: '507.25' }, root);
+  assert.equal(el('profileAge').value, '121');
+  assert.equal(el('profileHeight').value, '275.5');
+  assert.equal(el('profileWeight').value, '507.25');
+  assert.equal(el('profileWeightWhole').value, '507');
+  assert.equal(el('profileWeightFraction').value, '0.25');
+  assert.ok(el('profileWeightFraction').options.some((option) => option.value === '0.25'));
+  fields.renderProfileFields('profile', { weightKg: '83.20' }, root);
+  assert.equal(el('profileWeight').value, '83.20');
+  el('profileWeightWhole').value = '84';
+  el('profileWeightWhole').onchange();
+  assert.equal(el('profileWeight').value, '84.2');
+  el('profileWeightFraction').value = '0.3';
+  el('profileWeightFraction').onchange();
+  assert.equal(el('profileWeight').value, '84.3');
+  el('profileWeightWhole').value = '';
+  el('profileWeightWhole').onchange();
+  assert.equal(el('profileWeight').value, '');
+  assert.equal(el('profileWeightFraction').disabled, true);
+});
+
+test('both body-weight pickers cap new selections at exactly 200 kg, including decimal fractions', () => {
+  const { root, fields, el } = profileFieldsFixture();
+  for (const prefix of ['profile', 'ob']) {
+    fields.renderProfileFields(prefix, { weightKg: '199.9' }, root);
+    const whole = el(prefix + 'WeightWhole'), fraction = el(prefix + 'WeightFraction');
+    assert.equal(whole.options.at(-1).value, '200');
+    assert.equal(whole.options.length, 192);
+    whole.value = '200';
+    whole.onchange();
+    assert.equal(fraction.disabled, true);
+    assert.equal(fraction.value, '0');
+    assert.equal(el(prefix + 'Weight').value, '200');
+    whole.value = '199';
+    whole.onchange();
+    fraction.value = '0.9';
+    fraction.onchange();
+    assert.equal(fraction.disabled, false);
+    assert.equal(el(prefix + 'Weight').value, '199.9');
+    fields.renderProfileFields(prefix, { weightKg: '205.25' }, root);
+    assert.equal(el(prefix + 'Weight').value, '205.25');
+    assert.equal(whole.options.find((option) => option.value === '205').disabled, true);
+    assert.equal(fraction.disabled, true);
+    assert.ok(whole.options.every((option) => option.disabled || Number(option.value) <= 200));
+  }
+});
+
+function profileSaveFixture() {
+  const fixture = profileFieldsFixture(), { el, root, fields } = fixture;
+  const messages = [], saved = [];
+  const choices = { termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true, adultConfirmed: true };
+  const context = nodeVM.createContext({ ...fields, legal, i18n: fixture.i18n, appInitialized: false,
+    document: root, el, settings: legal.acceptLegalConsent({}, choices, 'he'),
+    profile: { name: 'Demo', gender: 'general', age: '42', heightCm: '180.5', weightKg: '83.25',
+      photoDataUrl: 'keep-photo', weightHistory: [{ weightKg: 83.25, dateISO: '2026-10-28' }] },
+    wireProfilePhoto() {}, renderProfilePhotos() {}, renderBrand() {}, renderHomeTab() {},
+    db: { saveProfile: (value) => saved.push(JSON.parse(JSON.stringify(value))) },
+    privacyUI: { reviewConsent: async () => false }, console: { error() {} },
+    showToast: (message) => messages.push(message),
+  });
+  nodeVM.runInContext(section('function recordWeightHistory(', 'function wireProfilePhoto('), context);
+  nodeVM.runInContext(section('function applyProfileWording()', 'function wireProfileTab()'), context);
+  nodeVM.runInContext(section('function wireProfileTab()', 'function renderBrand()'), context);
+  context.renderProfileTab();
+  context.wireProfileTab();
+  return { ...fixture, context, messages, saved };
+}
+
+test('profile gender changes apply only after a successful durable save and failed saves retain the existing wording', async () => {
+  const { context, el, saved } = profileSaveFixture();
+  el('profileGender').value = 'female';
+  assert.equal(context.i18n.getGender(), 'general');
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved[0].gender, 'female');
+  assert.equal(context.profile.gender, 'female');
+  assert.equal(context.i18n.getGender(), 'female');
+  context.db.saveProfile = () => { throw Error('quota'); };
+  el('profileGender').value = 'male';
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(context.profile.gender, 'female');
+  assert.equal(context.i18n.getGender(), 'female');
+  el('profileGender').value = 'invalid';
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(context.profile.gender, 'female');
+  assert.equal(saved.length, 1);
+});
+
+test('empty gender prevents both profile saving and onboarding completion without losing existing details', async () => {
+  const { context, el, saved, messages, fields, root } = profileSaveFixture();
+  el('profileGender').value = '';
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved.length, 0);
+  assert.equal(context.profile.name, 'Demo');
+  assert.equal(context.profile.gender, 'general');
+  assert.match(messages.at(-1), /בחר מין/);
+  assert.equal(el('btnSaveProfile').disabled, false);
+  let finished = 0;
+  context.native = { isNative: () => false };
+  context.legal = { ...legal, hasCurrentConsent: () => true };
+  context.finishOnboarding = () => { finished++; };
+  fields.renderProfileFields('ob', {}, root);
+  nodeVM.runInContext(section("  el('btnOnboardingNext').addEventListener('click', async () => {",
+    "  el('btnOnboardingFinish').addEventListener"), context);
+  await el('btnOnboardingNext').listeners.click();
+  assert.equal(saved.length, 0);
+  assert.equal(finished, 0);
+  assert.equal(el('btnOnboardingNext').disabled, false);
+  assert.match(messages.at(-1), /בחר מין/);
+});
+
+test('applying saved wording refreshes greetings, voice badges and native plans without rebuilding workout inputs', () => {
+  const calls = [];
+  const context = vm.createContext({ profile: { gender: 'female' }, appInitialized: true,
+    announcementPlanKey: 'old', activitySnapshotKey: 'old',
+    renderBrand: () => calls.push('brand'), renderHomeTab: () => calls.push('home'),
+    updateVoiceBadgeForListeningState: () => calls.push('voice'),
+    syncNativeAnnouncementPlan: () => calls.push('announcements'), syncWorkoutActivity: () => calls.push('widget'),
+    renderWorkoutTab: () => assert.fail('Do not rebuild entered workout controls'),
+  });
+  vm.runInContext(section('function applyProfileWording()', 'function wireProfileTab()'), context);
+  context.applyProfileWording();
+  assert.equal(context.i18n.getGender(), 'female');
+  assert.equal(context.announcementPlanKey, '');
+  assert.equal(context.activitySnapshotKey, '');
+  assert.deepEqual(calls, ['brand', 'home', 'voice', 'announcements', 'widget']);
+});
+
+test('profile saving retains existing precision, records only changed weights and rolls back memory on failure', async () => {
+  const { context, el, saved, messages } = profileSaveFixture();
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved[0].weightKg, '83.25');
+  assert.equal(saved[0].heightCm, '180.5');
+  assert.equal(saved[0].weightHistory.length, 1);
+  assert.equal(saved[0].photoDataUrl, 'keep-photo');
+  el('profileWeightFraction').value = '0.3';
+  el('profileWeightFraction').onchange();
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(context.profile.weightKg, '83.3');
+  assert.equal(context.profile.weightHistory.length, 2);
+  context.db.saveProfile = () => { throw Error('quota'); };
+  el('profileWeightFraction').value = '0.4';
+  el('profileWeightFraction').onchange();
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(context.profile.weightKg, '83.3');
+  assert.equal(context.profile.weightHistory.length, 2);
+  assert.match(messages.at(-1), /לא נשמרו/);
+  assert.equal(el('btnSaveProfile').disabled, false);
+});
+
+test('minor profile age cannot be saved using an adult declaration or a cancelled guardian review', async () => {
+  const { context, el, saved } = profileSaveFixture();
+  el('profileAge').value = '12';
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved.length, 0);
+  assert.equal(context.profile.age, '42');
+  context.privacyUI.reviewConsent = async () => {
+    context.settings = legal.acceptLegalConsent(context.settings, {
+      termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true,
+      ageGroup: 'minor', guardianConfirmed: true, adultConfirmed: false,
+    }, 'he');
+    return true;
+  };
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved[0].age, '12');
+  assert.equal(context.profile.age, '12');
+});
+
+test('profile review is guarded against repeat clicks and consent errors leave saving available', async () => {
+  const { context, el, saved, messages } = profileSaveFixture();
+  el('profileAge').value = '12';
+  let resolveReview, reviews = 0;
+  context.privacyUI.reviewConsent = () => { reviews++; return new Promise((resolve) => { resolveReview = resolve; }); };
+  const first = el('btnSaveProfile').listeners.click();
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(reviews, 1);
+  assert.equal(el('btnSaveProfile').disabled, true);
+  resolveReview(false);
+  await first;
+  assert.equal(saved.length, 0);
+  assert.equal(el('btnSaveProfile').disabled, false);
+  context.privacyUI.reviewConsent = async () => { throw Error('consent storage unavailable'); };
+  await el('btnSaveProfile').listeners.click();
+  assert.equal(saved.length, 0);
+  assert.match(messages.at(-1), /לא נשמרו/);
+  assert.equal(el('btnSaveProfile').disabled, false);
+});
+
+test('onboarding saves dropdown values through the same guardian check without rounding or duplicate weight history', async () => {
+  const { context, el, fields, root, saved } = profileSaveFixture();
+  let finished = 0;
+  context.native = { isNative: () => false };
+  context.legal = { ...legal, hasCurrentConsent: () => true };
+  context.finishOnboarding = () => { finished++; };
+  fields.renderProfileFields('ob', context.profile, root);
+  el('obName').value = 'New demo';
+  el('obGender').value = 'female';
+  const start = "  el('btnOnboardingNext').addEventListener('click', async () => {";
+  nodeVM.runInContext(section(start, "  el('btnOnboardingFinish').addEventListener"), context);
+  await el('btnOnboardingNext').listeners.click();
+  assert.equal(saved[0].heightCm, '180.5');
+  assert.equal(saved[0].weightKg, '83.25');
+  assert.equal(saved[0].weightHistory.length, 1);
+  assert.equal(saved[0].gender, 'female');
+  assert.equal(context.i18n.getGender(), 'female');
+  assert.equal(finished, 1);
+  context.db.saveProfile = () => { throw Error('quota'); };
+  el('obWeightWhole').value = '84';
+  el('obWeightWhole').onchange();
+  await el('btnOnboardingNext').listeners.click();
+  assert.equal(context.profile.weightKg, '83.25');
+  assert.equal(finished, 1);
+  assert.equal(el('btnOnboardingNext').disabled, false);
+  el('obAge').value = '12';
+  let resolveReview, reviews = 0;
+  context.privacyUI.reviewConsent = () => { reviews++; return new Promise((resolve) => { resolveReview = resolve; }); };
+  const first = el('btnOnboardingNext').listeners.click();
+  await el('btnOnboardingNext').listeners.click();
+  assert.equal(reviews, 1);
+  resolveReview(false);
+  await first;
+  assert.equal(finished, 1);
+  assert.equal(context.profile.age, '42');
+  assert.equal(el('btnOnboardingNext').disabled, false);
+});
+
 test('a cancelled image picker leaves the profile unchanged', async () => {
   const { context, element, saved, messages } = profilePhotoContext();
   await element('profilePhotoInput').listeners.change();
@@ -1784,24 +2305,47 @@ test('default profile art is consistent across home, workout and personal area',
   assert.match(app, /wireProfilePhoto\('btnHomePhoto', 'homePhotoInput'\)/);
 });
 
+test('header companion title translates alongside AutoFit while retaining the clock and menu', () => {
+  const header = read('www/index.html').match(/<header class="topbar">[\s\S]*?<\/header>/)[0];
+  assert.match(header, /id="appBrand" class="brand">AutoFit<\/div>/);
+  assert.match(header, /class="header-tagline">העוזר האישי שלך!<\/span>/);
+  assert.match(header, /id="liveClock"/);
+  assert.match(header, /id="btnOpenMenu"/);
+  const { i18n } = vm.createContext();
+  assert.equal(i18n.text('העוזר האישי שלך!'), 'העוזר האישי שלך!');
+  i18n.setLanguage('en');
+  assert.equal(i18n.text('העוזר האישי שלך!'), 'Your personal assistant!');
+  i18n.setLanguage('he');
+  assert.equal(i18n.text('העוזר האישי שלך!'), 'העוזר האישי שלך!');
+});
+
 test('workout banner includes the saved profile name and follows the selected language', () => {
-  const nodes = { appBrand: {}, greetingText: {} };
+  const nodes = { appBrand: {}, greetingText: {}, workoutCompanionText: {} };
   const context = vm.createContext({ el: (id) => nodes[id], profile: { name: 'ששי דניאל' } });
   vm.runInContext(section('function renderBrand()', '/* ================= HOME TAB ================= */'), context);
   context.renderBrand();
   assert.equal(nodes.greetingText.textContent, 'אימון מוצלח ששי דניאל');
+  assert.equal(nodes.workoutCompanionText.textContent, 'ששי דניאל, אני מלווה אותך באימון הזה');
   context.i18n.setLanguage('en');
   context.renderBrand();
   assert.equal(nodes.greetingText.textContent, 'Have a great workout ששי דניאל');
+  assert.equal(nodes.workoutCompanionText.textContent, 'ששי דניאל, I\'m with you for this workout');
   context.profile.name = '  שלום  ';
   context.renderBrand();
   assert.equal(nodes.greetingText.textContent, 'Have a great workout שלום');
+  assert.equal(nodes.workoutCompanionText.textContent, 'שלום, I\'m with you for this workout');
+  assert.equal(context.profile.name, '  שלום  ');
   context.profile.name = ' ';
   context.renderBrand();
   assert.equal(nodes.greetingText.textContent, 'Have a great workout');
+  assert.equal(nodes.workoutCompanionText.textContent, 'I\'m with you for this workout');
   context.i18n.setLanguage('he');
   context.renderBrand();
   assert.equal(nodes.greetingText.textContent, 'אימון מוצלח');
+  assert.equal(nodes.workoutCompanionText.textContent, 'אני מלווה אותך באימון הזה');
+  context.profile.name = 'דנה';
+  context.renderBrand();
+  assert.equal(nodes.workoutCompanionText.textContent, 'דנה, אני מלווה אותך באימון הזה');
   assert.match(read('www/index.html'), /id="greetingText"[^>]*data-no-translate/);
 });
 
@@ -1818,14 +2362,42 @@ test('statistics labels replace dashboard wording without changing the destinati
   assert.equal(context.text('לסטטיסטיקה המלאה'), 'Full statistics');
 });
 
-test('bottom navigation retains seven labeled destinations with consistent local vector icons', () => {
-  const nav = read('www/index.html').match(/<nav class="tabbar">([\s\S]*?)<\/nav>/)[1];
-  assert.equal((nav.match(/class="ui-icon nav-icon"/g) || []).length, 7);
-  for (const tab of ['home', 'workout', 'history', 'dashboard', 'exercises', 'profile', 'contact']) {
-    assert.match(nav, new RegExp(`data-tab="${tab}"`));
-  }
-  assert.equal((nav.match(/aria-hidden="true"/g) || []).length, 7);
+test('bottom navigation has exactly five ordered destinations and a larger circular central workout control', () => {
+  const nav = read('www/index.html').match(/<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/)[1];
+  assert.deepEqual([...nav.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1]),
+    ['home', 'history', 'workout', 'dashboard', 'exercises']);
+  assert.equal((nav.match(/class="ui-icon nav-icon"/g) || []).length, 5);
+  assert.equal((nav.match(/aria-hidden="true"/g) || []).length, 5);
+  assert.match(nav, /class="tab-btn workout-tab" data-tab="workout"><span class="workout-nav-icon">/);
+  assert.match(read('www/css/style.css'), /\.workout-nav-icon\s*\{[^}]*width:\s*56px;\s*height:\s*56px;[^}]*border-radius:\s*50%/);
   assert.doesNotMatch(nav, /<img|https?:/);
+});
+
+test('the user guide owns the single voice command list and each menu page resolves to a real panel', () => {
+  const html = read('www/index.html');
+  const guide = html.slice(html.indexOf('<section id="tab-guide"'), html.indexOf('<!-- CONTACT TAB -->'));
+  const settings = html.slice(html.indexOf('<section id="tab-settings"'), html.indexOf('<section id="tab-plans"'));
+  assert.equal((html.match(/id="voiceCommandsHelpCard"/g) || []).length, 1);
+  assert.match(guide, /<details id="voiceCommandsHelpCard"/);
+  assert.doesNotMatch(settings, /id="voiceCommandsHelpCard"/);
+  assert.match(settings, /data-page-section="voiceCommandsHelpCard"/);
+  assert.match(guide, /בדפדפן אפשר לקרוא את המדריך, אבל אין האזנה לפקודות/);
+  for (const link of html.matchAll(/data-page-link="([^"]+)"/g)) {
+    assert.match(html, new RegExp(`id="tab-${link[1]}"`));
+  }
+  assert.match(html, /האפליקציה נוצרה על ידי ששי דניאל/);
+});
+
+test('plan and goal actions are centralized without duplicate builders on primary screens', () => {
+  const source = read('www/js/training-ui.js');
+  assert.match(source, /getElementById\('plansPageContent'\)/);
+  assert.match(source, /getElementById\('goalsPageContent'\)/);
+  assert.doesNotMatch(source, /home-workout-hero|btnExercisePersonalPlan|btnExerciseHomePlan|btnExerciseRopePlan|btnExerciseSavedPlans/);
+  for (const id of ['btnPersonalPlan', 'btnHomePlan', 'btnRopePlan', 'btnSavedPlans', 'btnExerciseSaveCurrentWorkout',
+    'btnProgressAdvice', 'btnWeeklyWork', 'btnMonthlyGoal']) {
+    assert.equal((source.match(new RegExp(`button\\('${id}'`, 'g')) || []).length, 1, id);
+    assert.match(source, new RegExp(`on\\('${id}'`));
+  }
 });
 
 function voiceContext(entries = []) {
@@ -2074,6 +2646,20 @@ test('natural report requests a choice rather than picking the first of several 
   context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
   assert.equal(JSON.stringify(entries), before);
   assert.match(messages.at(-1), /לא ברור/);
+});
+
+test('the last voice report leaves its muscle completion cue for the final workout announcement', () => {
+  for (const finalSet of [false, true]) {
+    const entries = [{ exerciseId: 'bench', exerciseName: 'לחיצת חזה', sets: [{ reps: 12, weightKg: '', completed: false }] }];
+    if (!finalSet) entries.push({ exerciseId: 'cooldown', exerciseName: 'שחרור', type: 'cardio', completed: false });
+    const { context, session } = voiceContext(entries);
+    let consumed = 0;
+    context.workoutMuscleCompletionCue = () => { consumed++; return 'group completed. '; };
+    session.currentExerciseId = 'bench';
+    context.handleVoiceTranscript('עשיתי 12 חזרות עם 40 קילו');
+    assert.equal(entries[0].sets[0].completed, true);
+    assert.equal(consumed, finalSet ? 0 : 1);
+  }
 });
 
 test('natural report can use a sole repetition exercise and cannot move away from selected hold, cardio or completed exercise', () => {
@@ -2422,7 +3008,7 @@ test('unknown or ranged goals require explicit finish and manual early finish re
 });
 
 test('selection-only phrases do not start counting and ambiguous names cannot select or start', () => {
-  for (const phrase of ['בחר לחיצת חזה', 'Select chest press', 'Choose chest press']) {
+  for (const phrase of ['בחר לחיצת חזה', 'בחרי לחיצת חזה', 'Select chest press', 'Choose chest press']) {
     const { context, session } = voiceContext(contextualEntries());
     context.i18n.setLanguage('en');
     context.handleVoiceTranscript(phrase);
@@ -2498,7 +3084,7 @@ test('named prefix/suffix commands start the intended timer even when earlier ex
   const { context, session, calls } = voiceContext(contextualEntries());
   context.handleVoiceTranscript('פלנק התחל');
   context.handleVoiceTranscript('סט הושלם');
-  assert.equal(session.currentExerciseId, 'cooldown');
+  assert.equal(session.currentExerciseId, 'warmup');
   assert.equal(session.entries[3].sets[0].completed, true);
   assert.equal(session.entries[1].sets[0].completed, false);
   assert.ok(calls.includes('startHold') && calls.includes('rest'));
@@ -2941,7 +3527,7 @@ for (const finish of [false, true]) {
       syncWorkoutToHealth: () => calls.push('health'),
     });
     vm.runInContext(section('function doCancelWorkout()', 'const CELEBRATION_MESSAGES'), context);
-    context.trainingTools = loadPhaseOneModule('www/js/training-tools.js', ['workoutHistoryEntries'], library);
+    context.trainingTools = loadPhaseOneModule('www/js/training-tools.js', ['workoutHistoryEntries', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
     vm.runInContext(section('function finishWorkout()', 'function persistActiveSession()'), context);
     vm.runInContext(section('function stopWorkoutTimers()', 'function renderWorkoutTab()'), context);
     if (finish) context.finishWorkout(); else context.doCancelWorkout();
@@ -3585,12 +4171,13 @@ test('subsecond rest ticks do not repeatedly replace unchanged visible timer tex
 test('offline navigation with query parameters falls back to the cached app without deleting unrelated caches', async () => {
   const handlers = {}, deleted = [];
   const offline = { app: true };
+  const currentCache = read('www/service-worker.js').match(/const CACHE_NAME = '([^']+)'/)[1];
   const context = vm.createContext({
     self: { location: { origin: 'https://example.test' }, clients: { claim: async () => {} },
       addEventListener: (name, callback) => { handlers[name] = callback; } },
     URL, Response, fetch: async () => { throw Error('offline'); },
     caches: {
-      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69', 'autofit-v70'],
+      keys: async () => ['another-app-cache', 'autofit-v38', 'autofit-v40', 'autofit-v43', 'autofit-v44', 'autofit-v45', 'autofit-v46', 'autofit-v47', 'autofit-v48', 'autofit-v49', 'autofit-v50', 'autofit-v51', 'autofit-v52', 'autofit-v53', 'autofit-v54', 'autofit-v55', 'autofit-v56', 'autofit-v57', 'autofit-v58', 'autofit-v59', 'autofit-v60', 'autofit-v61', 'autofit-v62', 'autofit-v63', 'autofit-v64', 'autofit-v65', 'autofit-v66', 'autofit-v67', 'autofit-v68', 'autofit-v69', currentCache],
       delete: async (key) => { deleted.push(key); },
       match: async (request) => request === './index.html' ? offline : undefined,
     },
@@ -3890,6 +4477,136 @@ test('exercise sorting does not stack handlers across renders and cancels a gest
   assert.equal(listeners.size, 0);
 });
 
+function navigationFixture() {
+  const nodes = new Map(), panels = [], buttons = [], links = [], focus = [], voice = [];
+  function node(id, dataset = {}, classes = []) {
+    const values = new Set(classes), listeners = {}, attributes = new Map();
+    const result = { id, dataset, listeners, value: '', tagName: 'DIV',
+      classList: { add: (value) => values.add(value), remove: (value) => values.delete(value),
+        contains: (value) => values.has(value),
+        toggle(value, on) { if (on) values.add(value); else values.delete(value); } },
+      setAttribute: (key, value) => attributes.set(key, value), removeAttribute: (key) => attributes.delete(key),
+      getAttribute: (key) => attributes.get(key),
+      addEventListener: (event, callback) => { listeners[event] = callback; },
+      click: () => listeners.click?.({ target: result }), focus: () => focus.push(id),
+      querySelector: () => ({ focus: () => focus.push(id + '-heading') }), scrollIntoView() {},
+    };
+    nodes.set(id, result);
+    return result;
+  }
+  const primary = ['home', 'history', 'workout', 'dashboard', 'exercises'];
+  for (const tab of [...primary, 'about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy']) {
+    panels.push(node('tab-' + tab, {}, ['tab-panel', ...(tab === 'workout' ? ['active'] : [])]));
+    if (primary.includes(tab)) buttons.push(node('button-' + tab, { tab }, ['tab-btn']));
+  }
+  const menu = node('navigationMenu');
+  menu.open = false;
+  menu.showModal = () => { menu.open = true; };
+  menu.close = () => { menu.open = false; menu.listeners.close(); };
+  menu.getBoundingClientRect = () => ({ left: 45, right: 385, top: 0, bottom: 800 });
+  for (const id of ['btnOpenMenu', 'btnCloseMenu', 'btnPageBack']) node(id);
+  for (const pageLink of ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy']) {
+    links.push(node('link-' + pageLink, { pageLink }));
+  }
+  const voiceSection = node('voiceCommandsHelpCard');
+  voiceSection.tagName = 'DETAILS';
+  links.push(node('voice-link', { pageLink: 'guide', pageSection: 'voiceCommandsHelpCard' }));
+  const window = { scrollY: 240, scrollTo: (_x, y) => { window.scrollY = y; } };
+  const session = { running: true, entries: [{ sets: [{ reps: 12, weightKg: 20 }] }], rest: { endAt: 123456 } };
+  const context = vm.createContext({ el: (id) => nodes.get(id), window, currentTab: 'workout', pageBackStack: [],
+    activeSession: session, document: { documentElement: node('html') },
+    qsa: (selector) => selector === '.tab-panel' ? panels : selector === '.tab-btn' ? buttons : links,
+    qs: (selector) => buttons.find((button) => selector.includes(`"${button.dataset.tab}"`)),
+    renderDashboard() {}, renderHistoryTab() {}, renderHomeTab() {},
+    updateVoiceListeningState: () => voice.push(context.currentTab), console,
+  });
+  vm.runInContext(section('function wireTabs()', '/* ---------------- live clock'), context);
+  context.wireTabs();
+  return { context, nodes, window, focus, voice, session };
+}
+
+test('menu pages return one step at a time to the same workout and scroll position without touching recorded data', () => {
+  const { context, nodes, window, session, voice } = navigationFixture();
+  const initial = JSON.stringify(session);
+  nodes.get('btnOpenMenu').click();
+  assert.equal(nodes.get('btnOpenMenu').getAttribute('aria-expanded'), 'true');
+  nodes.get('link-about').click();
+  assert.equal(context.currentTab, 'about');
+  assert.equal(nodes.get('navigationMenu').open, false);
+  assert.equal(nodes.get('html').classList.contains('menu-open'), false);
+  window.scrollY = 85;
+  nodes.get('link-guide').click();
+  nodes.get('btnPageBack').click();
+  assert.equal(context.currentTab, 'about');
+  assert.equal(window.scrollY, 85);
+  nodes.get('btnPageBack').click();
+  assert.equal(context.currentTab, 'workout');
+  assert.equal(window.scrollY, 240);
+  assert.equal(nodes.get('button-workout').getAttribute('aria-current'), 'page');
+  assert.equal(nodes.get('btnPageBack').classList.contains('hidden'), true);
+  assert.equal(JSON.stringify(session), initial);
+  assert.deepEqual(voice, ['about', 'guide', 'about', 'workout']);
+});
+
+test('exercise library summary keeps its heading without redundant counts or explanatory paragraphs', () => {
+  const summary = read('www/js/app.js').match(/el\('catalogSummary'\)\.innerHTML = ([\s\S]*?);/)[1];
+  assert.match(summary, /totals\.builtIn/);
+  assert.doesNotMatch(summary, /<p|totals\.stored|totals\.selected|catalog\.length/);
+});
+
+test('privacy and settings are separate menu pages with independent content and one-step return', () => {
+  const html = read('www/index.html');
+  const settings = html.match(/<section id="tab-settings"[\s\S]*?<\/section>/)[0];
+  const privacy = html.match(/<section id="tab-privacy"[\s\S]*?<\/section>/)[0];
+  assert.match(settings, /id="settingRestSeconds"/);
+  assert.doesNotMatch(settings, /privacySettingsCard|data-legal-doc|privacy-delete/);
+  assert.match(privacy, /id="privacySettingsCard"/);
+  assert.match(privacy, /data-legal-doc="terms"/);
+  assert.match(privacy, /data-legal-doc="privacy"/);
+  assert.match(privacy, /privacy-export/);
+  assert.match(privacy, /privacy-delete/);
+  assert.doesNotMatch(privacy, /settingRestSeconds|data-language=/);
+  const { context, nodes, window, session } = navigationFixture();
+  const initial = JSON.stringify(session);
+  nodes.get('link-settings').click();
+  window.scrollY = 180;
+  nodes.get('link-privacy').click();
+  assert.equal(context.currentTab, 'privacy');
+  assert.equal(nodes.get('tab-settings').classList.contains('active'), false);
+  assert.equal(nodes.get('tab-privacy').classList.contains('active'), true);
+  assert.equal(nodes.get('btnPageBack').classList.contains('hidden'), false);
+  nodes.get('btnPageBack').click();
+  assert.equal(context.currentTab, 'settings');
+  assert.equal(window.scrollY, 180);
+  assert.equal(JSON.stringify(session), initial);
+});
+
+test('primary navigation clears secondary return history and a guide shortcut opens its actual topic', () => {
+  const { context, nodes } = navigationFixture();
+  nodes.get('voice-link').click();
+  assert.equal(context.currentTab, 'guide');
+  assert.equal(nodes.get('voiceCommandsHelpCard').open, true);
+  assert.equal(context.pageBackStack.length, 1);
+  nodes.get('button-home').click();
+  assert.equal(context.currentTab, 'home');
+  assert.equal(context.pageBackStack.length, 0);
+  assert.equal(nodes.get('button-workout').getAttribute('aria-current'), undefined);
+  assert.equal(nodes.get('button-home').getAttribute('aria-current'), 'page');
+});
+
+test('menu dismissal restores its collapsed state without navigating or treating inside padding as backdrop', () => {
+  const { context, nodes } = navigationFixture();
+  const menu = nodes.get('navigationMenu');
+  nodes.get('btnOpenMenu').click();
+  menu.listeners.click({ target: menu, clientX: 100, clientY: 100 });
+  assert.equal(menu.open, true);
+  menu.listeners.click({ target: menu, clientX: 10, clientY: 100 });
+  assert.equal(menu.open, false);
+  assert.equal(context.currentTab, 'workout');
+  assert.equal(nodes.get('btnOpenMenu').getAttribute('aria-expanded'), 'false');
+  assert.equal(context.pageBackStack.length, 0);
+});
+
 test('invalid tab links preserve the current screen instead of throwing after hiding all panels', () => {
   let changed = false, logged = false;
   const context = vm.createContext({
@@ -3921,7 +4638,8 @@ test('local storage quota failures are visible, do not report cloud success, and
 });
 
 test('voice stop pauses warmup and cooldown without accidentally restarting an already paused timer', () => {
-  for (const [name, stop] of [['חימום', 'עצור'], ['שחרור', 'שחרור עצור'], ['חימום', 'השהה חימום']]) {
+  for (const [name, stop] of [['חימום', 'עצור'], ['שחרור', 'שחרור עצור'], ['חימום', 'השהה חימום'],
+    ['שחרור', 'שחרור עצרי'], ['חימום', 'השהי חימום']]) {
     const entry = { exerciseId: name, exerciseName: name, type: 'cardio', durationSec: 300 };
     const { context, calls } = voiceContext([entry]);
     context.handleVoiceTranscript(`התחל ${name}`);
@@ -3944,6 +4662,17 @@ test('voice stop uses the plank manual completion button and does not start an i
   assert.ok(!calls.includes('startHold'));
   context.handleVoiceTranscript('פלאנק התחל');
   context.handleVoiceTranscript('עצור פלאנק');
+  assert.equal(entry.sets[0].completed, true);
+  assert.ok(calls.includes('stopHold') && calls.includes('rest'));
+});
+
+test('feminine named hold commands start and stop the actual existing timer actions', () => {
+  const entry = { exerciseId: 'plank', exerciseName: 'פלאנק', inputType: 'hold', sets: [{ completed: false }] };
+  const { context, calls } = voiceContext([entry]);
+  context.i18n.setGender('female');
+  context.handleVoiceTranscript('פלאנק התחילי');
+  assert.ok(calls.includes('startHold'));
+  context.handleVoiceTranscript('פלאנק עצרי');
   assert.equal(entry.sets[0].completed, true);
   assert.ok(calls.includes('stopHold') && calls.includes('rest'));
 });
@@ -4543,6 +5272,151 @@ function progressSpeechContext(entries) {
   vm.runInContext(section('function startRestTimer(', '/* ================= HISTORY TAB'), context);
   return { context, messages, nodes };
 }
+
+test('muscle completion cues occur once per completion transition, reset on undo, and never replay on reload or removal', () => {
+  const exercises = [{ id: 'row-one', catalogId: 'row' }, { id: 'row-two', catalogId: 'row' },
+    { id: 'bench', catalogId: 'chest' }];
+  const activeSession = { id: 'muscles', running: true, entries: exercises.map((exercise) =>
+    ({ exerciseId: exercise.id, sets: [{ completed: false }] })) };
+  const context = vm.createContext({ activeSession, exercises, settings: { voiceAnnouncements: true } });
+  vm.runInContext(section('function workoutMuscleCompletionCue(', 'function refreshWorkoutMuscleHeadings('), context);
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  activeSession.entries[1].sets[0].completed = true;
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  activeSession.entries[0].sets[0].completed = true;
+  context.workoutMuscleCompletionCue(false);
+  assert.match(context.workoutMuscleCompletionCue(), /גב/);
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  activeSession.entries[0].sets[0].completed = false;
+  context.workoutMuscleCompletionCue(false);
+  activeSession.entries[0].sets[0].completed = true;
+  assert.match(context.workoutMuscleCompletionCue(), /גב/);
+  context.activeSession = JSON.parse(JSON.stringify(activeSession));
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  context.activeSession.entries[0].sets[0].completed = false;
+  context.workoutMuscleCompletionCue(false);
+  context.activeSession.entries.shift();
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  context.settings.voiceAnnouncements = false;
+  context.activeSession.entries.find((entry) => entry.exerciseId === 'bench').sets[0].completed = true;
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+  context.settings.voiceAnnouncements = true;
+  assert.equal(context.workoutMuscleCompletionCue(), '');
+});
+
+test('workout stays concise without estimate explanations or browser microphone copy and pause remains black', () => {
+  const ui = read('www/js/training-ui.js');
+  const workoutTools = ui.slice(ui.indexOf('controls.innerHTML ='), ui.indexOf("document.querySelector('.workout-header')"));
+  assert.doesNotMatch(workoutTools, /durationDetails|אומדן ממוצע בלבד/);
+  assert.doesNotMatch(ui, /דפדפן: רישום ידני בלבד/);
+  assert.match(ui, /!state\.native \? ''/);
+  assert.match(read('www/css/style.css'), /#btnPauseWorkout\s*\{[^}]*background:\s*#111/);
+  assert.match(read('www/index.html'), /id="btnFinishWorkout"[^>]*btn-danger/);
+});
+
+test('requested explanatory copy is absent while exercise duration and privacy documents remain available', () => {
+  const html = read('www/index.html');
+  assert.doesNotMatch(html, /עברית היא שפת ברירת המחדל|התמונה נשמרת אוטומטית|הפרטים בטופס נשלחים ל-Formspree|מין \(לא חובה\)/);
+  const ui = read('www/js/training-ui.js');
+  const programDuration = ui.slice(ui.indexOf('const programDuration ='), ui.indexOf("document.getElementById('exerciseCategoryGrid')"));
+  assert.match(programDuration, /trainingProgramDuration/);
+  assert.doesNotMatch(programDuration, /durationDetails|לפי בחירת התרגילים|<details/);
+  assert.match(ui, /const durationDetails =/);
+  assert.match(read('www/js/legal.js'), /Formspree/);
+});
+
+test('training companion branding explains personal plans and practical benefits without the removed About quote', () => {
+  const html = read('www/index.html');
+  const menu = html.match(/<dialog id="navigationMenu"[\s\S]*?<\/dialog>/)[0];
+  const home = html.match(/<section id="tab-home"[\s\S]*?<!-- WORKOUT TAB -->/)[0];
+  const workout = html.match(/<section id="tab-workout"[\s\S]*?<!-- HISTORY TAB -->/)[0];
+  const about = html.match(/<section id="tab-about"[\s\S]*?<\/section>/)[0];
+  assert.doesNotMatch(menu, /menu-tagline|אתה לא מתאמן לבד\./);
+  assert.match(about, /אתה לא מתאמן לבד\./);
+  assert.match(home, /class="home-training-tagline">אתה לא מתאמן לבד, אני איתך!<\/p>/);
+  assert.match(about, /פחות להתעסק\. יותר להתאמן\./);
+  assert.match(about, /השותף שלך לאימון/);
+  assert.match(about, /כמו חבר לאימון/);
+  assert.match(about, /באייפון אפשר לדווח חזרות ומשקלים בקול/);
+  assert.match(about, /בין סבבי סופר סט/);
+  assert.match(about, /התיעוד מבוסס על מה שסימנת או דיווחת/);
+  assert.doesNotMatch(about, /״אני מלווה אותך באימון הזה\.״|ששי דניאל, יוצר AutoFit|הליווי נעשה דרך האפליקציה/);
+  assert.match(about, /תוכניות אימון אישיות/);
+  assert.match(about, /חדר כושר עם מכשירים ומשקולות/);
+  assert.match(about, /אימון ביתי עם גומיות או משקולות יד/);
+  assert.match(about, /אימון משקל גוף ללא ציוד/);
+  assert.match(about, /שומרים תוכניות אישיות בשמות שונים/);
+  assert.match(about, /עורכים את התרגילים, הסטים, החזרות והמנוחות/);
+  assert.match(about, /שמירה ועריכה אינן מחליפות את האימון הנוכחי/);
+  assert.match(about, /<button[^>]*data-page-link="plans">לתוכניות האימון שלי<\/button>/);
+  assert.match(workout, /id="greetingText"[^>]*data-no-translate/);
+  assert.match(workout, /id="workoutCompanionText"[^>]*data-no-translate/);
+  assert.doesNotMatch(workout, /ששי: אני מלווה אותך|דרך AutoFit/);
+  assert.doesNotMatch(about, /אין צורך לדווח|מזהה אוטומטית את המשקלים/);
+});
+
+test('compact workout metrics appear when either original metric leaves view and track header size without scroll handlers', () => {
+  const nodes = new Map(), observers = [], variables = new Map();
+  let resize, headerHeight = 65;
+  const el = (id) => {
+    if (!nodes.has(id)) nodes.set(id, { hidden: true, classList: {
+      toggle(_name, hidden) { nodes.get(id).hidden = hidden; },
+    } });
+    return nodes.get(id);
+  };
+  class IntersectionObserver {
+    constructor(callback, options) { this.callback = callback; this.options = options; this.targets = []; observers.push(this); }
+    observe(target) { this.targets.push(target); }
+    disconnect() { this.disconnected = true; }
+  }
+  class ResizeObserver {
+    constructor(callback) { resize = callback; }
+    observe() {}
+  }
+  const context = nodeVM.createContext({ el, IntersectionObserver, ResizeObserver,
+    qs: () => ({ getBoundingClientRect: () => ({ height: headerHeight }) }),
+    document: { documentElement: { style: { setProperty: (key, value) => variables.set(key, value) } } },
+  });
+  vm.runInContext(section('function wireWorkoutQuickStatus()', 'function switchTab('), context);
+  context.wireWorkoutQuickStatus();
+  const observer = observers[0], bar = el('workoutQuickStatus');
+  assert.equal(observer.options.rootMargin, '-65px 0px 0px 0px');
+  assert.equal(observer.targets.length, 2);
+  observer.callback(observer.targets.map((target) => ({ target, intersectionRatio: 1 })));
+  assert.equal(bar.hidden, true);
+  observer.callback([{ target: el('overallProgressBadge'), intersectionRatio: 0 }]);
+  assert.equal(bar.hidden, false);
+  observer.callback([{ target: el('overallProgressBadge'), intersectionRatio: 1 }]);
+  assert.equal(bar.hidden, true);
+  headerHeight = 90;
+  resize();
+  assert.equal(observer.disconnected, true);
+  assert.equal(observers[1].options.rootMargin, '-90px 0px 0px 0px');
+  assert.equal(variables.get('--app-header-height'), '90px');
+  assert.doesNotMatch(section('function wireWorkoutQuickStatus()', 'function switchTab('), /addEventListener\(['"]scroll/);
+  const html = read('www/index.html');
+  assert.match(html.match(/<section id="tab-workout"[\s\S]*?<\/section>/)[0], /id="workoutQuickStatus"/);
+});
+
+test('workout muscle headings refresh both title and count when returning after a language change', () => {
+  const title = {}, count = {}, heading = { dataset: { workoutMuscleSection: '0' }, classList: { toggle() {} } };
+  const activeSession = { entries: [{ exerciseId: 'row', exerciseName: 'חתירה',
+    exerciseSnapshot: { catalogId: 'row' }, sets: [{ reps: 12, weightKg: 20, completed: false }] }] };
+  const before = JSON.stringify(activeSession);
+  const context = vm.createContext({ activeSession, exercises: [], settings: { voiceAnnouncements: false },
+    qsa: () => [heading], qs: (selector) => selector === 'h2' ? title : count });
+  vm.runInContext(section('function workoutMuscleCompletionCue(', 'function renderWorkoutTab()'), context);
+  context.refreshWorkoutMuscleHeadings();
+  assert.equal(title.textContent, 'גב');
+  context.i18n.setLanguage('en');
+  context.refreshWorkoutMuscleHeadings();
+  assert.equal(title.textContent, 'Back');
+  assert.equal(count.textContent, '1 exercise');
+  context.i18n.setLanguage('he');
+  context.refreshWorkoutMuscleHeadings();
+  assert.equal(title.textContent, 'גב');
+  assert.equal(JSON.stringify(activeSession), before);
+});
 
 test('exercise completion speech matches the displayed set-weighted percentage, not exercise count', () => {
   const { context, messages, nodes } = progressSpeechContext([

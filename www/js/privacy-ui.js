@@ -13,8 +13,18 @@ export function consentFormHTML() {
     <label class="checkbox-row"><input type="checkbox" name="termsAccepted" required><span>${t('קראתי ואני מאשר/ת את טיוטת תנאי השימוש.')}</span></label>
     <label class="checkbox-row"><input type="checkbox" name="privacyAcknowledged" required><span>${t('קראתי את טיוטת מדיניות הפרטיות ואת הסבר השמירה והשיתוף.')}</span></label>
     <label class="checkbox-row"><input type="checkbox" name="healthDataConsent" required><span>${t('אני מסכים/ה לעיבוד מקומי של נתוני האימון והמדדים שאבחר להזין, שעשויים להיות מידע רגיש. גיבוי ושיתוף דורשים בחירה נפרדת.')}</span></label>
-    <label class="checkbox-row"><input type="checkbox" name="adultConfirmed" required><span>${t('מלאו לי 18 שנים. מסלול מסחרי לקטינים אינו נתמך בטיוטה זו.')}</span></label>
-    <p class="field-hint">${t('אין הסכמה לשיווק ואין רכישה באישור זה. אפשר לייצא או למחוק נתונים בהגדרות.')}</p>
+    <label class="field-label">${t('מסלול גיל')}</label>
+    <select class="select" name="ageGroup" aria-label="${t('מסלול גיל')}" required>
+      <option value="">${t('בחר מסלול גיל')}</option>
+      <option value="adult">${t('גיל 18 ומעלה')}</option>
+      <option value="minor">${t('גיל 12–17 — באישור הורה או אפוטרופוס')}</option>
+    </select>
+    <label class="checkbox-row hidden" data-adult-consent><input type="checkbox" name="adultConfirmed" disabled><span>${t('מלאו לי 18 שנים.')}</span></label>
+    <div class="hidden" data-guardian-consent>
+      <label class="checkbox-row"><input type="checkbox" name="guardianConfirmed" disabled><span>${t('אני הורה או אפוטרופוס של המשתמש/ת בגיל 12–17, נוכח/ת ומאשר/ת את השימוש ואת עיבוד הנתונים האופציונליים לפי הטיוטה.')}</span></label>
+      <p class="field-hint">${t('זו הצהרה בלבד, לא אימות זהות או הורות. תוכניות כלליות אינן מותאמות במיוחד לילדים; נדרשת הכוונה מקצועית ופיקוח מבוגר.')}</p>
+    </div>
+    <p class="field-hint">${t('אין הסכמה לשיווק ואין רכישה באישור זה. אפשר לייצא או למחוק נתונים דרך ״פרטיות והנתונים שלי״ בתפריט.')}</p>
     <p class="privacy-form-status" role="alert"></p>
     <button type="submit" class="btn btn-primary">${t('אישור והמשך ללא רכישה')}</button>
     <div class="training-actions">
@@ -39,6 +49,17 @@ export function createPrivacyUI(api) {
   }
 
   function bindConsentForm(form, onAccepted) {
+    const ageGroup = form.elements.namedItem('ageGroup');
+    ageGroup.addEventListener('change', () => {
+      for (const [group, field] of [['adult', 'adultConfirmed'], ['minor', 'guardianConfirmed']]) {
+        const control = form.elements.namedItem(field);
+        control.checked = false;
+        control.disabled = ageGroup.value !== group;
+        control.required = ageGroup.value === group;
+        form.querySelector(group === 'adult' ? '[data-adult-consent]' : '[data-guardian-consent]')
+          .classList.toggle('hidden', ageGroup.value !== group);
+      }
+    });
     form.querySelectorAll('[data-legal-doc]').forEach((button) =>
       button.addEventListener('click', () => openDocument(button.dataset.legalDoc)));
     const exportButton = form.querySelector('[data-consent-export]');
@@ -53,8 +74,9 @@ export function createPrivacyUI(api) {
       const status = form.querySelector('.privacy-form-status');
       status.textContent = '';
       try {
-        const choices = Object.fromEntries(['termsAccepted', 'privacyAcknowledged', 'healthDataConsent', 'adultConfirmed']
+        const choices = Object.fromEntries(['termsAccepted', 'privacyAcknowledged', 'healthDataConsent', 'adultConfirmed', 'guardianConfirmed']
           .map((key) => [key, form.elements.namedItem(key).checked]));
+        choices.ageGroup = ageGroup.value;
         const current = api.getSettings();
         const next = acceptLegalConsent(current, choices, i18n.getLanguage());
         next.privacyPreferences = { ...current.privacyPreferences, cloudBackup: false };
@@ -104,8 +126,7 @@ export function createPrivacyUI(api) {
     const dialog = api.dialog(t('מחיקת נתוני AutoFit'), `
       <p>${t('יימחקו הפרופיל, התמונות המקומיות, התוכניות השמורות, ההיסטוריה והאימון הנוכחי במכשיר הזה. הפעולה אינה ניתנת לביטול.')}</p>
       <p>${t('אפשר לייצא קובץ לפני המחיקה. מחיקה אינה מבטלת מינוי ב-App Store ואינה מוחקת רשומות מ-Apple Health או קבצים שכבר שותפו.')}</p>
-      <div class="training-actions"><button type="button" class="btn btn-secondary privacy-export-first">${t('ייצוא הנתונים לפני מחיקה')}</button>
-        <a class="btn btn-secondary" href="https://apps.apple.com/account/subscriptions/" target="_blank" rel="noopener noreferrer">${t('ניהול מינויים ב-Apple')}</a></div>
+      <div class="training-actions"><button type="button" class="btn btn-secondary privacy-export-first">${t('ייצוא הנתונים לפני מחיקה')}</button></div>
       ${api.isNative() ? `<label class="checkbox-row"><input type="checkbox" class="privacy-delete-cloud"><span>${t('לבקש גם מחיקת גיבוי AutoFit ב-iCloud. זהו משלוח בקשה, לא אישור מחיקה מכל השרתים והמכשירים.')}</span></label>` : ''}
       <form class="privacy-delete-form">
         <label class="checkbox-row"><input type="checkbox" required><span>${t('הבנתי שהנתונים יימחקו ושמינוי, נתוני Health ועותקים חיצוניים אינם נמחקים בפעולה זו.')}</span></label>

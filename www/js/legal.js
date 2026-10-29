@@ -1,6 +1,6 @@
 import { COMMERCIAL_CONFIG } from './commercial-config.js';
 
-export const POLICY_VERSION = 'commercial-draft-1';
+export const POLICY_VERSION = 'commercial-draft-2';
 export const PERSONAL_DATA_KEYS = Object.freeze([
   'ft_exercises_v1', 'ft_workouts_v1', 'ft_settings_v1', 'ft_active_session_v1', 'ft_profile_v1',
 ]);
@@ -10,13 +10,17 @@ const escape = (value) => String(value).replace(/[&<>"']/g, (char) =>
 const pair = (he, en) => [he, en];
 
 const PRIVACY = [
+  [pair('גיל ואישור הורה או אפוטרופוס', 'Age and parent or guardian declaration'), [
+    pair('מסלול הסקירה מיועד לגיל 12–120. בגיל 12–17 נדרשת הצהרה של הורה או אפוטרופוס שהוא מאשר את השימוש ואת עיבוד הנתונים האופציונליים. האישור וקבוצת הגיל נשמרים במכשיר; אין אימות זהות או הורות ואין איסוף שם או תעודה של ההורה. הרשאות ושיתוף נשארים בחירה נפרדת. לפני הפצה לקטינים נדרשת בדיקה משפטית של הסכמה תקפה, זכויות קטינים ודרישות כל מדינת הפצה.',
+      'The review flow is intended for ages 12–120. Ages 12–17 require a parent or legal guardian to declare approval of use and processing of optional data. The declaration and age group are stored locally; identity and guardianship are not verified and no parent name or identity document is collected. Permissions and sharing remain separate choices. Distribution to minors requires legal review of valid consent, children’s rights and each territory’s requirements.'),
+  ]],
   [pair('מי מפעיל את האפליקציה', 'Who operates the app'), [
     pair('AutoFit נוצרה על ידי ששי דניאל. שם הישות המשפטית, כתובת העסק וכתובת פרטיות ייעודית טרם אושרו לפרסום מסחרי. אפשר לפנות כעת דרך ״יצירת קשר״ באפליקציה. אין להציג טיוטה זו כמדיניות מסחרית מאושרת.',
       'AutoFit was created by Sasi Daniel. The legal entity, business address and dedicated privacy contact have not yet been confirmed for a commercial launch. You can currently use Contact in the app. This draft must not be represented as an approved commercial policy.'),
   ]],
   [pair('איזה מידע נשמר ולמה', 'What is stored and why'), [
-    pair('שם או כינוי, גיל, גובה, משקל, היסטוריית משקל ותמונה נשמרים אם בוחרים להזין אותם. גיל, מדדים ותמונה אינם חובה. תוכניות, בחירת ציוד, תרגילים אישיים, סטים, עומסים, חזרות, החזקות, הערות, דירוגי קושי, משך אימון, יעדים והיסטוריה משמשים לניהול האימון ולהצגת תיעוד והמלצות מקומיות. נתוני כושר ומדדים עשויים להיות מידע רגיש.',
-      'A name or nickname, age, height, weight, weight history and photo are stored when you choose to enter them. Age, measurements and a photo are optional. Programs, equipment choices, custom exercises, sets, loads, repetitions, holds, notes, difficulty ratings, duration, goals and history support workout tracking and local recommendations. Fitness records and measurements may be sensitive information.'),
+    pair('שם או כינוי, גיל, גובה, משקל, היסטוריית משקל ותמונה נשמרים אם בוחרים להזין אותם ואינם חובה. שדה המין נדרש בהגדרה הראשונית ובשמירת הפרטים; אפשר לבחור כללי, זכר או נקבה. הבחירה משמשת להתאמת המלל בלבד, לא לשינוי תוכניות או יעדי אימון. תוכניות, בחירת ציוד, תרגילים אישיים, סטים, עומסים, חזרות, החזקות, הערות, דירוגי קושי, משך אימון, יעדים והיסטוריה משמשים לניהול האימון ולהצגת תיעוד והמלצות מקומיות. נתוני כושר ומדדים עשויים להיות מידע רגיש.',
+      'A name or nickname, age, height, weight, weight history and photo are stored when you choose to enter them and are optional. The gender field is required during initial setup and when saving profile details; you can choose General, Male or Female. This choice only personalizes wording; it does not change workout plans or targets. Programs, equipment choices, custom exercises, sets, loads, repetitions, holds, notes, difficulty ratings, duration, goals and history support workout tracking and local recommendations. Fitness records and measurements may be sensitive information.'),
     pair('נתוני האפליקציה נשמרים באחסון המקומי של המכשיר או של אתר זה בדפדפן. אין כיום חשבון AutoFit בשרת, מערכת פרסום, מכירת נתוני אימון או שירות AI חיצוני לבניית תוכניות. המלצות מחושבות לפי כללים מקומיים, אינן החלטה רפואית ואינן משנות תוכנית בלי אישור.',
       'App data is kept in device storage or this website’s browser storage. There is currently no server-hosted AutoFit account, advertising system, sale of workout data or external AI service for creating plans. Recommendations use local rules, are not medical decisions and do not change a program without confirmation.'),
   ]],
@@ -49,8 +53,8 @@ const PRIVACY = [
   [pair('בחירה, זכויות, שמירה ומחיקה', 'Choices, rights, retention and deletion'), [
     pair('מסירת מדדים, תמונות, גיבוי, הרשאות ושיתוף היא בחירה. לצורך תיעוד אימונים מקומי יש לעבד את הנתונים שבחרת לתעד. מסך האישור מבקש בנפרד אישור לתנאים, עיון במדיניות והסכמה לעיבוד נתוני האימון והמדדים שבחרת להזין. אין הסכמה מוקדמת מסומנת ואין הסכמה לשיווק. הסכמה בגרסת הסקירה מתועדת כהסכמה לטיוטה, לא לאישור משפטי סופי.',
       'Measurements, photos, backup, permissions and sharing are optional. Local workout logging requires processing the records you choose to enter. The confirmation screen separately asks for agreement to the terms, acknowledgment of the privacy notice and consent to processing the workout data and measurements you choose to provide. Consent is not preselected and no marketing consent is requested. Review-version consent is recorded as draft consent, not final legal approval.'),
-    pair('אפשר לערוך את הפרופיל והנתונים באפליקציה ולייצא את כל נתוני האפליקציה לקובץ JSON בהגדרות. נתונים מקומיים נשמרים עד מחיקה על ידך, ניקוי אחסון או הסרת האפליקציה. כלי המחיקה מאפשר למחוק נתונים מקומיים ולבקש בנפרד מחיקת גיבוי iCloud של AutoFit. מסירת בקשת מחיקה ל-iCloud אינה הוכחה שכל המכשירים והגיבויים מחקו מיד את העותקים.',
-      'You can edit your profile and records in the app and export all app data as JSON in Settings. Local records remain until you delete them, clear storage or uninstall. The deletion tool can erase local app data and separately request deletion of AutoFit’s iCloud backup. Sending an iCloud deletion request is not proof that every device and backup has immediately erased its copies.'),
+    pair('אפשר לערוך את הפרופיל והנתונים באפליקציה ולייצא את כל נתוני האפליקציה לקובץ JSON דרך ״פרטיות והנתונים שלי״ בתפריט. נתונים מקומיים נשמרים עד מחיקה על ידך, ניקוי אחסון או הסרת האפליקציה. כלי המחיקה מאפשר למחוק נתונים מקומיים ולבקש בנפרד מחיקת גיבוי iCloud של AutoFit. מסירת בקשת מחיקה ל-iCloud אינה הוכחה שכל המכשירים והגיבויים מחקו מיד את העותקים.',
+      'You can edit your profile and records in the app and export all app data as JSON through "Privacy and my data" in the menu. Local records remain until you delete them, clear storage or uninstall. The deletion tool can erase local app data and separately request deletion of AutoFit’s iCloud backup. Sending an iCloud deletion request is not proof that every device and backup has immediately erased its copies.'),
     pair('אפשר להפסיק גיבוי ושיתופים עתידיים, לבטל הרשאות במערכת ולייצא או למחוק נתונים. משיכת הסכמה להמשך עיבוד נתונים שנשמרים מקומית נעשית באמצעות מחיקתם והפסקת השימוש בתכונה. לפי הדין החל עשויות להיות זכויות עיון, תיקון, מחיקה, הגבלה, התנגדות וניידות וכן הגשת תלונה לרשות מוסמכת. ניתן לפנות דרך ״יצירת קשר״; דרכי מימוש, פרטי המפעיל ובסיסי העיבוד בכל מדינת שיווק מחייבים אישור משפטי לפני השקה.',
       'You can stop future backup and sharing, revoke system permissions, and export or delete data. To withdraw consent to further processing of locally retained records, delete them and stop using that feature. Depending on applicable law, rights may include access, correction, erasure, restriction, objection, portability and complaints to a competent authority. You can use Contact; request procedures, operator details and processing grounds for each distribution territory require legal approval before launch.'),
   ]],
@@ -72,8 +76,8 @@ const TERMS = [
       'Choose loads, ranges of motion and equipment appropriate to your ability. Check equipment stability and condition and follow its manufacturer’s instructions; do not improvise anchors or stand on a chair. Do not continue through pain, dizziness or unusual symptoms. If you have a limitation, condition, pregnancy, injury or uncertainty about suitability, seek appropriate professional advice before exercise. Do not operate the app in a way that endangers yourself or others.'),
   ]],
   [pair('גיל, פרטים והרשאות', 'Age, information and permissions'), [
-    pair('הטיוטה למסלול המסחרי מיועדת לבגירים בני 18 ומעלה. לפני פרסום יש לאשר את מדיניות הגיל, דירוג החנות והשווקים המותרים. פרטי גוף ותמונה אינם חובה וניתן להשתמש בכינוי. אין למסור מידע של אדם אחר ללא זכות מתאימה. הרשאות בריאות, קול, התראות, Face ID וגיבוי נפרדות ואפשר לדלג עליהן.',
-      'This proposed commercial flow is intended for adults aged 18 or older. Age policy, store rating and permitted markets must be approved before publication. Body measurements and a photo are optional and you may use a nickname. Do not provide someone else’s information without appropriate authority. Health, voice, notifications, Face ID and backup choices are separate and may be skipped.'),
+    pair('מסלול הסקירה מיועד לגיל 12–120. בגיל 12–17 נדרש אישור של הורה או אפוטרופוס בנוכחותו; ההצהרה אינה אימות זהות או הורות. תוכניות האימון הכלליות אינן תוכניות ייעודיות לילדים, ויש לקבל הכוונה מקצועית מתאימה ופיקוח מבוגר. לפני פרסום יש לאשר משפטית את מסלול הקטינים, מדיניות הגיל, דירוג החנות והשווקים המותרים. פרטי גוף ותמונה אינם חובה וניתן להשתמש בכינוי. הרשאות בריאות, קול, התראות, Face ID וגיבוי נפרדות ואפשר לדלג עליהן.',
+      'The review flow is intended for ages 12–120. Ages 12–17 require approval by a parent or legal guardian who is present; the declaration is not identity or guardianship verification. General workout plans are not child-specific programs; seek appropriate professional guidance and adult supervision. The minor flow, age policy, store rating and permitted markets require legal approval before publication. Body measurements and a photo are optional and you may use a nickname. Health, voice, notifications, Face ID and backup choices are separate and may be skipped.'),
   ]],
   [pair('נתונים, גיבוי ואמינות', 'Records, backup and reliability'), [
     pair('אתה מחליט אילו נתונים לתעד ואילו תוכניות להפעיל. אומדני זמן אינם התחייבות; מנוחה, תורים, קצב ומצב הציוד משנים את משך האימון. השוואות דורשות תיעוד מתאים ואינן הוכחת שינוי פיזיולוגי. ודא נתוני סטים לפני שמירה. מומלץ לייצא גיבוי; אחסון דפדפן, גיבוי iCloud וכתיבה ל-Health עלולים להיכשל, ואין לראות בשמירה מקומית אישור מסירה לשירות אחר.',
@@ -96,8 +100,8 @@ const TERMS = [
   [pair('אחריות, שינויים ופנייה', 'Responsibility, changes and contact'), [
     pair('האפליקציה עשויה להשתנות ולהכיל תקלות. אין בטיוטה ויתור על אחריות או זכות שלא ניתן להגביל לפי דין, ואין קביעה שפוטרת מרשלנות או מחובה חוקית. מגבלות אחריות, הדין החל וסמכות שיפוט מסחריים דורשים ניסוח ואישור משפטי לפי מדינות ההפצה, ולא ייקבעו באופן גורף על חשבון זכויות חובה.',
       'The app may change and may contain defects. This draft does not waive liability or rights that cannot lawfully be limited, or declare an exemption from negligence or statutory duties. Commercial liability provisions, governing law and jurisdiction require legal drafting and approval for the distribution territories and must not override mandatory rights.'),
-    pair('שינוי מהותי בתנאים או במדיניות יזוהה בגרסה חדשה ובבקשת עיון או הסכמה חדשה לפי הצורך. ניתן לקרוא את המסמכים בהגדרות גם ללא הרשאות. לפניות השתמש ב״יצירת קשר״. לפני מחיקה אפשר לייצא את הנתונים; אין למחוק אוטומטית היסטוריה רק עקב סירוב לאישור טיוטה חדשה.',
-      'Material changes to terms or privacy will receive a new version and a request to review or consent where appropriate. Documents are available in Settings without optional permissions. Use Contact for questions. You can export before deletion; history must not be automatically deleted because you decline a new draft.'),
+    pair('שינוי מהותי בתנאים או במדיניות יזוהה בגרסה חדשה ובבקשת עיון או הסכמה חדשה לפי הצורך. ניתן לקרוא את המסמכים דרך ״פרטיות והנתונים שלי״ בתפריט גם ללא הרשאות. לפניות השתמש ב״יצירת קשר״. לפני מחיקה אפשר לייצא את הנתונים; אין למחוק אוטומטית היסטוריה רק עקב סירוב לאישור טיוטה חדשה.',
+      'Material changes to terms or privacy will receive a new version and a request to review or consent where appropriate. Documents are available through "Privacy and my data" in the menu without optional permissions. Use Contact for questions. You can export before deletion; history must not be automatically deleted because you decline a new draft.'),
   ]],
 ];
 
@@ -127,19 +131,35 @@ export function hasCurrentConsent(settings) {
   const receipt = settings?.legalConsent;
   return receipt?.version === POLICY_VERSION && receipt.documentStatus === 'draft'
     && receipt.termsAccepted === true && receipt.privacyAcknowledged === true
-    && receipt.healthDataConsent === true && receipt.adultConfirmed === true
+    && receipt.healthDataConsent === true
+    && (receipt.ageGroup === 'adult' && receipt.adultConfirmed === true && receipt.guardianConfirmed === false
+      || receipt.ageGroup === 'minor' && receipt.adultConfirmed === false && receipt.guardianConfirmed === true)
     && typeof receipt.acceptedAt === 'string' && Number.isFinite(Date.parse(receipt.acceptedAt));
 }
 
 export function acceptLegalConsent(settings, choices, language, now = new Date()) {
-  if (!choices || ['termsAccepted', 'privacyAcknowledged', 'healthDataConsent', 'adultConfirmed'].some((key) => choices[key] !== true)) {
+  const ageGroup = choices?.ageGroup ?? (choices?.adultConfirmed === true ? 'adult' : null);
+  if (!choices || ['termsAccepted', 'privacyAcknowledged', 'healthDataConsent'].some((key) => choices[key] !== true)
+    || !['adult', 'minor'].includes(ageGroup)
+    || ageGroup === 'adult' && (choices.adultConfirmed !== true
+      || choices.guardianConfirmed !== undefined && choices.guardianConfirmed !== false)
+    || ageGroup === 'minor' && (choices.guardianConfirmed !== true
+      || choices.adultConfirmed !== undefined && choices.adultConfirmed !== false)) {
     throw new Error('Explicit separate confirmations are required');
   }
   if (!['he', 'en'].includes(language) || !Number.isFinite(now.getTime())) throw new Error('Invalid consent metadata');
   const receipt = { version: POLICY_VERSION, documentStatus: 'draft', acceptedAt: now.toISOString(),
-    language, termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true, adultConfirmed: true };
+    language, termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true,
+    ageGroup, adultConfirmed: ageGroup === 'adult', guardianConfirmed: ageGroup === 'minor' };
   return { ...settings, legalConsent: receipt,
     legalConsentHistory: [...(Array.isArray(settings.legalConsentHistory) ? settings.legalConsentHistory : []), receipt] };
+}
+
+export function profileAgeAllowed(settings, age) {
+  if (age === '') return true;
+  const number = Number(age);
+  return Number.isInteger(number) && number >= 12 && number <= 120 && hasCurrentConsent(settings)
+    && settings.legalConsent.ageGroup === (number < 18 ? 'minor' : 'adult');
 }
 
 export function cloudRestoreAllowed(settings) {

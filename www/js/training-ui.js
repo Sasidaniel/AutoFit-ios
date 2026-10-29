@@ -91,36 +91,31 @@ const ACTION_ERRORS = {
 };
 
 export function createTrainingUI(api) {
-  const home = document.createElement('section');
-  home.className = 'card training-hub';
-  home.innerHTML = `<h2>${t('כלים לאימון שלך')}</h2>${note('הצעות מקומיות בלבד. התוכנית וההיסטוריה נשארות שלך.')}
-    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}
-    ${button('btnProgressAdvice', 'יעדים אישיים והמלצות')}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
-    <p id="trainingPlanStatus" class="field-hint" data-no-translate></p><p id="monthlyGoalStatus" data-no-translate></p>`;
-  document.querySelector('.home-workout-hero').after(home);
+  const plans = document.getElementById('plansPageContent');
+  plans.innerHTML = `<section class="card training-hub"><h3>${t('בנייה ושמירה')}</h3>
+    <div class="training-actions">${button('btnPersonalPlan', 'בניית תוכנית אישית')}${button('btnHomePlan', 'בניית אימון ביתי')}${button('btnRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnSavedPlans', 'תוכניות שמורות')}${button('btnExerciseSaveCurrentWorkout', 'שמירת האימון שלי')}</div>
+    <p id="trainingPlanStatus" class="field-hint" data-no-translate></p></section>`;
+  const goals = document.getElementById('goalsPageContent');
+  goals.innerHTML = `<section class="card training-hub">
+    <div class="training-actions">${button('btnProgressAdvice', 'יעדים אישיים והמלצות')}${button('btnWeeklyWork', 'עבודת שרירים השבוע')}${button('btnMonthlyGoal', 'יעד חודשי אישי')}</div>
+    <p id="monthlyGoalStatus" data-no-translate></p></section>`;
   const controls = document.createElement('div');
   controls.className = 'training-workout-tools';
   controls.innerHTML = `<section class="training-duration"><strong id="trainingDurationTotal" data-no-translate></strong>
-    <p id="trainingDurationRemaining" data-no-translate></p>${note('אומדן ממוצע בלבד, לא זמן סיום מובטח.')}${durationDetails()}</section>
+    <p id="trainingDurationRemaining" data-no-translate></p></section>
     <div class="training-actions">${button('btnTimeBudget', 'יש לי 30 דקות')}${button('btnTimeBudget60', 'יש לי 60 דקות')}${button('btnTimeBudget90', 'יש לי 90 דקות')}${button('btnFullWorkout', 'תוכנית מלאה')}${button('btnWorkoutAdvice', 'יעדים אישיים והמלצות')}</div>
     <p id="trainingSessionStatus" class="field-hint" data-no-translate></p>
     <div class="workout-focus" role="status" aria-live="polite" data-no-translate><strong id="trainingCurrent"></strong><span id="trainingTarget"></span><span id="trainingListening"></span></div>`;
   document.querySelector('.workout-header').appendChild(controls);
   const programDuration = document.createElement('section');
   programDuration.className = 'card training-duration';
-  programDuration.innerHTML = `<strong id="trainingProgramDuration" data-no-translate></strong>
-    ${note('לפי בחירת התרגילים, הסטים ושבוע התוכנית. אימון פעיל או מותאם עשוי להיות שונה.')}${durationDetails()}
-    <div class="training-actions">${button('btnExercisePersonalPlan', 'בניית תוכנית אישית')}${button('btnExerciseHomePlan', 'בניית אימון ביתי')}${button('btnExerciseRopePlan', 'בניית אימון קפיצה על חבל')}${button('btnExerciseSavedPlans', 'תוכניות שמורות')}${button('btnExerciseSaveCurrentWorkout', 'שמירת האימון שלי')}</div>`;
+  programDuration.innerHTML = `<strong id="trainingProgramDuration" data-no-translate></strong>`;
   document.getElementById('exerciseCategoryGrid').before(programDuration);
   const on = (id, handler) => document.getElementById(id).addEventListener('click', handler);
   on('btnPersonalPlan', () => planBuilder());
   on('btnHomePlan', () => planBuilder({ homeOnly: true }));
   on('btnRopePlan', ropeBuilder);
   on('btnSavedPlans', savedPlans);
-  on('btnExercisePersonalPlan', () => planBuilder());
-  on('btnExerciseHomePlan', () => planBuilder({ homeOnly: true }));
-  on('btnExerciseRopePlan', ropeBuilder);
-  on('btnExerciseSavedPlans', savedPlans);
   on('btnExerciseSaveCurrentWorkout', saveCurrentWorkout);
   on('btnProgressAdvice', recommendations);
   on('btnWorkoutAdvice', recommendations);
@@ -231,6 +226,13 @@ export function createTrainingUI(api) {
         : note('אין חלופה מאומתת לווריאציה הזו. אפשר להמתין או לעיין בספרייה; שריר משותף לבדו אינו בסיס להחלפה בטוחה.')}
       <div class="training-actions">${choices.length ? button('btnSwapGuide', 'הדרכה') + button('btnConfirmSwap', 'החלפה באימון הזה בלבד', true) : ''}</div>
       ${note('סטים שהושלמו נשארים בתרגיל המקורי. שאר הנתונים נשמרים לשחזור. אין שינוי בתוכנית הקבועה.')}`);
+    const busy = document.createElement('button');
+    busy.type = 'button';
+    busy.className = 'btn btn-secondary';
+    busy.textContent = t(entry.equipmentBusy ? 'המכשיר התפנה — החזרה לסדר האימון' : 'סימון כממתין לציוד');
+    busy.onclick = () => changedSession(dialog, (session) =>
+      tools.setEquipmentBusy(session, exerciseId, !entry.equipmentBusy));
+    dialog.querySelector('.training-dialog-body').prepend(busy);
     if (choices.length) {
       document.getElementById('btnSwapGuide').onclick = () => api.guide(choices.find((choice) => choice.id === document.getElementById('swapChoice').value));
       document.getElementById('btnConfirmSwap').onclick = () => changedSession(dialog, (session) =>
@@ -738,17 +740,21 @@ export function createTrainingUI(api) {
     const t = i18n.text;
     const state = api.getState();
     if (!state.session) return;
-    const current = tools.currentWorkoutEntry(state.session);
+    const current = tools.currentWorkoutEntry(state.session, state.exercises);
     const set = current?.sets?.find((set) => !set.completed);
     const exercise = current?.exerciseSnapshot || state.exercises.find((exercise) => exercise.id === current?.exerciseId);
     const write = (id, text) => { const node = document.getElementById(id); if (node.textContent !== text) node.textContent = text; };
-    write('trainingCurrent', current ? `${t('עכשיו')}: ${i18n.exerciseName(current.exerciseName)}` : t('כל התרגילים הושלמו'));
+    write('trainingCurrent', current ? `${t('עכשיו')}: ${i18n.exerciseName(current.exerciseName)}`
+      : t(state.session.entries.some((entry) => entry.equipmentBusy && entry.sets?.some((set) => !set.completed))
+        ? 'נותרו תרגילים שממתינים לציוד' : 'כל התרגילים הושלמו'));
     write('trainingTarget', current?.type === 'cardio' ? `${t('יעד זמן')}: ${Math.round(current.durationSec / 60)} ${t('דקות')}`
       : set ? `${t('סט')} ${current.sets.indexOf(set) + 1} / ${current.sets.length} · ${t('יעד')}: ${exercise?.inputType === 'hold'
         ? exercise.holdSeconds || 15 : api.repTarget(set, exercise) || '—'} ${t(exercise?.inputType === 'hold' ? 'שניות' : 'חזרות')}`
         : '');
-    write('trainingListening', `${state.session.paused ? t('האימון בהפסקה — הטיימרים והספירה נעצרו') : !state.native ? t('דפדפן: רישום ידני בלבד, המיקרופון אינו מקשיב')
-      : state.voiceActive ? t(state.counting ? 'ספירה קולית פעילה' : 'המיקרופון מקשיב') : t('המיקרופון אינו זמין או אינו פעיל')}${state.restSeconds > 0 ? ` · ${t('מנוחה')}: ${Math.ceil(state.restSeconds)} ${t('שניות')}` : ''}`);
+    const listening = state.session.paused ? t('האימון בהפסקה — הטיימרים והספירה נעצרו') : !state.native ? ''
+      : state.voiceActive ? t(state.counting ? 'ספירה קולית פעילה' : 'המיקרופון מקשיב') : t('המיקרופון אינו זמין או אינו פעיל');
+    const rest = state.restSeconds > 0 ? `${t('מנוחה')}: ${Math.ceil(state.restSeconds)} ${t('שניות')}` : '';
+    write('trainingListening', [listening, rest].filter(Boolean).join(' · '));
     if (live) return;
     write('trainingSessionStatus', state.session.timeBudget ? t('בחירת זמן פעילה באימון הזה בלבד — ניתן לשחזר את האימון המלא')
       : state.session.substitutions?.length ? t('החלפת ציוד פעילה באימון הזה בלבד — ניתן לשחזר בכרטיס התרגיל') : '');
@@ -761,13 +767,21 @@ export function createTrainingUI(api) {
     write('monthlyGoalStatus', monthly.target ? `${monthName}: ${monthly.count} / ${monthly.target} ${t('אימונים')} · ${monthly.percent}% · ${t('אימונים שנותרו להשגת היעד')}: ${monthly.remaining}` : '');
     document.querySelectorAll('#exerciseList .exercise-card[data-entry-index]').forEach((card) => {
       const entry = state.session.entries[Number(card.dataset.entryIndex)];
-      if (!entry || entry.type === 'cardio') return;
+      if (!entry) return;
+      const summary = card.querySelector('.workout-card-summary');
+      if (summary) {
+        const text = entry.equipmentBusy && entry.sets?.some((set) => !set.completed) ? t('ממתין לציוד')
+          : entry.type === 'cardio' ? t(entry.completed ? 'בוצע' : 'יעד זמן') + ` · ${Math.round(entry.durationSec / 60)} ${t('דקות')}`
+          : `${entry.sets.filter((set) => set.completed).length} / ${entry.sets.length} ${t('סטים הושלמו')}`;
+        if (summary.textContent !== text) summary.textContent = text;
+      }
+      if (entry.type === 'cardio') return;
       const existingActions = card.querySelector('.training-equipment-actions');
       if (existingActions) {
         existingActions.classList.toggle('hidden', entry.sets.every((set) => set.completed)
           && !state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId));
         const label = t(state.session.substitutions?.some((item) => item.replacementId === entry.exerciseId)
-          ? 'שחזור התרגיל המקורי' : 'המכשיר תפוס');
+          ? 'שחזור התרגיל המקורי' : entry.equipmentBusy ? 'המכשיר התפנה?' : 'המכשיר תפוס');
         const button = existingActions.querySelector('button');
         if (button.textContent !== label) button.textContent = label;
         return;
@@ -780,7 +794,7 @@ export function createTrainingUI(api) {
       const swap = document.createElement('button');
       swap.type = 'button';
       swap.className = 'btn btn-secondary btn-small';
-      swap.textContent = t(substitution ? 'שחזור התרגיל המקורי' : 'המכשיר תפוס');
+      swap.textContent = t(substitution ? 'שחזור התרגיל המקורי' : entry.equipmentBusy ? 'המכשיר התפנה?' : 'המכשיר תפוס');
       swap.onclick = () => {
         if (!substitution) { equipmentBusy(entry.exerciseId); return; }
         const dialog = api.dialog(t('שחזור התרגיל המקורי'), `${note('הנתונים המקוריים יחזרו. אם כבר תיעדת משהו בחלופה, היא תישאר כתרגיל נפרד ללא איחוד משקלים.')}

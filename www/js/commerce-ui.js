@@ -70,19 +70,20 @@ export function createCommerceUI(api) {
     : `${period.value} ${t({ day: 'ימים', week: 'שבועות', month: 'חודשים', year: 'שנים' }[period.unit])}`;
 
   function render() {
+    root.hidden = !native.isNative() || (!status?.configured && !failed);
+    if (root.hidden) {
+      root.innerHTML = '';
+      return;
+    }
     const current = document.activeElement?.closest?.('[data-commerce-action]');
     const focusKey = current && root.contains(current) ? current.dataset.commerceAction : '';
     const ready = purchaseAllowed(status, api.getSettings());
     const owns = !!status?.configured && status.entitlements.length > 0;
     const canBuy = ready && !busy && !waitingProduct && !owns && !failed;
-    root.innerHTML = `<h3>${t('מינויים — הכנה מסחרית')}</h3>
-      <p>${t('היכולות המקומיות הקיימות נשארות זמינות. אין נעילה של הנתונים או הפעלה אוטומטית של מנוי.')}</p>
-      ${!status?.configured ? `<p>${t('לתכנון בלבד: שבוע ניסיון, 10–15 ש״ח לחודש או 100–150 ש״ח לשנה. אלו אינם מוצרים זמינים לרכישה או הבטחת ניסיון חינם.')}</p>` : ''}
-      <p>${t('כאשר יופעלו מוצרים אמיתיים, המחיר, המטבע, התקופה והזכאות לניסיון יוצגו לפי Apple. המנוי מתחדש אוטומטית לפי התנאים במסך האישור של Apple.')}</p>
-      <p class="commerce-status" role="status" aria-live="polite">${escape(message || t(!native.isNative()
-        ? 'בדפדפן אין רכישה או אימות מנוי של App Store. אין חשבון מקוון ואין חיוב.'
-        : !status?.configured ? 'מוצרי App Store עדיין לא הוגדרו; לא בוצע אימות רכישות. אין אפשרות לרכוש.'
-          : owns ? 'Apple אימתה זכאות פעילה למנוי במכשיר הזה.' : 'לא נמצאה זכאות פעילה בבדיקת Apple הנוכחית.'))}</p>
+    root.innerHTML = `<h3>${t('מינויים')}</h3>
+      ${status?.configured ? `<p>${t('המנוי מתחדש אוטומטית לפי התנאים במסך האישור של Apple.')}</p>` : ''}
+      <p class="commerce-status" role="status" aria-live="polite">${escape(message || t(
+        owns ? 'Apple אימתה זכאות פעילה למנוי במכשיר הזה.' : 'לא נמצאה זכאות פעילה בבדיקת Apple הנוכחית.'))}</p>
       ${status?.configured ? status.products.map((product) => `<section class="training-advice">
         <strong data-no-translate>${escape(product.name)}</strong>
         <p data-no-translate>${escape(product.price)} / ${escape(periodText(product.period))}</p>
@@ -95,11 +96,10 @@ export function createCommerceUI(api) {
       <div class="training-actions">
         ${native.isNative() ? `<button type="button" class="btn btn-secondary" data-commerce-action="refresh" ${busy ? 'disabled' : ''}>${t('בדיקת מצב ב-Apple')}</button>
           ${status?.configured ? `<button type="button" class="btn btn-secondary" data-commerce-action="restore" ${busy ? 'disabled' : ''}>${t('שחזור רכישות Apple')}</button>` : ''}
-          <button type="button" class="btn btn-secondary" data-commerce-action="manage" ${busy ? 'disabled' : ''}>${t('ניהול וביטול מנוי ב-Apple')}</button>` : `<a class="btn btn-secondary" href="https://apps.apple.com/account/subscriptions/" target="_blank" rel="noopener noreferrer">${t('ניהול וביטול מנוי ב-Apple')}</a>`}
+          ${owns ? `<button type="button" class="btn btn-secondary" data-commerce-action="manage" ${busy ? 'disabled' : ''}>${t('ניהול וביטול מנוי ב-Apple')}</button>` : ''}` : ''}
         <button type="button" class="btn btn-secondary" data-commerce-action="terms">${t('קריאת תנאי השימוש')}</button>
         <button type="button" class="btn btn-secondary" data-commerce-action="privacy">${t('קריאת מדיניות הפרטיות')}</button>
-      </div>
-      <p class="field-hint">${t('מחיקת נתוני AutoFit אינה מבטלת מנוי ב-Apple. לביטול יש להשתמש בניהול המינויים. אין כאן פתיחת עסק, ייעוץ מס או אישור משפטי להשקה.')}</p>`;
+      </div>`;
     root.querySelectorAll('[data-commerce-action]').forEach((button) => button.addEventListener('click', () => {
       const action = button.dataset.commerceAction;
       if (action === 'privacy' || action === 'terms') api.openDocument(action);

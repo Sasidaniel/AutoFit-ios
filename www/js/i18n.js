@@ -1,13 +1,17 @@
 import { EN } from './translations-en.js';
+import { HE_FEMALE } from './translations-he-female.js';
 import { SEED_EXERCISES } from './seed.js';
 import { LIBRARY_EXERCISES, PLANNING_EXERCISES } from './exercise-library.js';
 
 let language = 'he';
+let gender = 'general';
 let observer;
 const originals = new WeakMap();
 const inputs = new WeakMap();
+const feminineSources = new Map();
 const attributes = ['title', 'placeholder', 'aria-label', 'aria-valuetext', 'alt'];
-const patterns = Object.entries(EN).filter(([key]) => /\{\d+\}/.test(key))
+function translationPatterns(dictionary) {
+  return Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key))
   .sort(([a], [b]) => b.replace(/\{\d+\}/g, '').length - a.replace(/\{\d+\}/g, '').length)
   .map(([key, value]) => {
   const slots = [];
@@ -20,12 +24,16 @@ const patterns = Object.entries(EN).filter(([key]) => /\{\d+\}/.test(key))
   }).join('');
   return { regex: new RegExp(`^${escaped}$`, 'su'), value, slots };
 });
+}
+const patterns = translationPatterns(EN);
+const femininePatterns = translationPatterns(HE_FEMALE);
 
 export function getLanguage() { return language; }
+export function getGender() { return gender; }
 export function locale() { return language === 'en' ? 'en-US' : 'he-IL'; }
 export function searchText(value) { return Object.hasOwn(EN, value) ? EN[value] : value; }
 export function exerciseName(value) {
-  return [...SEED_EXERCISES, ...LIBRARY_EXERCISES, ...PLANNING_EXERCISES].some((exercise) => exercise.name === value) ? text(value) : value;
+  return [...SEED_EXERCISES, ...LIBRARY_EXERCISES, ...PLANNING_EXERCISES].some((exercise) => exercise.name === value) ? translateText(value, false) : value;
 }
 export function exerciseNotes(value) {
   return [...SEED_EXERCISES, ...LIBRARY_EXERCISES, ...PLANNING_EXERCISES].some((exercise) => exercise.notes === value || exercise.pace === value) ? text(value) : value;
@@ -43,17 +51,23 @@ export function inputValue(input) {
 }
 
 export function text(value) {
-  const source = String(value ?? '');
-  if (language !== 'en' || !/[\u0590-\u05ff]/.test(source)) return source;
+  return translateText(value, true);
+}
+
+function translateText(value, personalize) {
+  const raw = String(value ?? '');
+  const source = personalize ? feminineSources.get(raw) ?? raw : raw;
+  const dictionary = language === 'en' ? EN : personalize && gender === 'female' ? HE_FEMALE : null;
+  if (!dictionary || !/[\u0590-\u05ff]/.test(source)) return source;
   const trimmed = source.trim();
-  let translated = EN[trimmed];
+  let translated = dictionary[trimmed];
   if (translated === undefined) {
-    for (const pattern of patterns) {
+    for (const pattern of dictionary === EN ? patterns : femininePatterns) {
       const match = trimmed.match(pattern.regex);
       if (!match) continue;
       translated = pattern.value.replace(/\{\d+\}/g, (slot) => {
         const index = pattern.slots.indexOf(slot);
-        return index < 0 ? slot : text(match[index + 1]);
+        return index < 0 ? slot : dictionary === EN ? translateText(match[index + 1], personalize) : match[index + 1];
       });
       break;
     }
@@ -61,25 +75,27 @@ export function text(value) {
   if (translated === undefined) {
     const decorated = trimmed.match(/^([^\p{L}\p{N}]+)([\s\S]*)$/u);
     if (decorated && decorated[2]) {
-      const result = text(decorated[2]);
+      const result = translateText(decorated[2], personalize);
       if (result !== decorated[2]) translated = decorated[1] + result;
     }
     if (translated === undefined) {
       const suffix = trimmed.match(/^([\s\S]*?)([^\p{L}\p{N}]+)$/u);
       if (suffix && suffix[1]) {
-        const result = text(suffix[1]);
+        const result = translateText(suffix[1], personalize);
         if (result !== suffix[1]) translated = result + suffix[2];
       }
     }
   }
-  return translated === undefined ? source : source.replace(trimmed, translated);
+  const result = translated === undefined ? source : source.replace(trimmed, translated);
+  if (dictionary === HE_FEMALE && result !== source) feminineSources.set(result, source);
+  return result;
 }
 
 function translateValue(node, key, value, write) {
   let saved = originals.get(node);
   if (!saved) { saved = new Map(); originals.set(node, saved); }
   let record = saved.get(key);
-  if (!record || value !== record.last) record = { source: value, last: value };
+  if (!record || value !== record.last) record = { source: feminineSources.get(value) ?? value, last: value };
   const result = text(record.source);
   record.last = result;
   saved.set(key, record);
@@ -103,14 +119,12 @@ export function translateDOM(root = document.body) {
   for (const child of root.childNodes) translateDOM(child);
 }
 
-export function setLanguage(value) {
-  if (!['he', 'en'].includes(value)) throw new Error(`Unsupported language: ${value}`);
-  language = value;
+function refreshLocalizedDOM() {
   if (typeof document !== 'undefined') {
-    document.documentElement.lang = value;
-    document.documentElement.dir = value === 'he' ? 'rtl' : 'ltr';
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'he' ? 'rtl' : 'ltr';
     document.querySelectorAll('[data-language]').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.language === value));
+      button.setAttribute('aria-pressed', String(button.dataset.language === language));
     });
     document.querySelectorAll('[data-exercise-name]').forEach((node) => {
       node.textContent = exerciseName(node.dataset.exerciseName);
@@ -129,7 +143,20 @@ export function setLanguage(value) {
   }
 }
 
-export function start(value) {
+export function setLanguage(value) {
+  if (!['he', 'en'].includes(value)) throw new Error(`Unsupported language: ${value}`);
+  language = value;
+  refreshLocalizedDOM();
+}
+
+export function setGender(value = 'general') {
+  if (!['general', 'male', 'female'].includes(value)) throw new Error(`Unsupported gender: ${value}`);
+  gender = value;
+  refreshLocalizedDOM();
+}
+
+export function start(value, profileGender = 'general') {
+  setGender(profileGender);
   setLanguage(value);
   if (observer || typeof MutationObserver === 'undefined') return;
   observer = new MutationObserver((changes) => {
@@ -164,6 +191,13 @@ export function canonicalVoice(value) {
   for (const [english, hebrew] of commands) {
     result = result.replace(new RegExp(`\\b${english}\\b`, 'g'), hebrew);
   }
+  const feminineCommands = new Map([
+    ['התחילי', 'התחל'], ['סיימי', 'סיים'], ['בטלי', 'בטל'], ['עצרי', 'עצור'],
+    ['השהי', 'השהה'], ['המשיכי', 'המשך'], ['דלגי', 'דלג'], ['מאשרת', 'מאשר'],
+    ['תוסיפי', 'תוסיף'], ['הוסיפי', 'הוסף'], ['הפעילי', 'הפעל'], ['בחרי', 'בחר'],
+  ]);
+  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי)(?=\s|$)/gu,
+    (_, before, word) => before + feminineCommands.get(word));
   result = result.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?\b/g,
     (_, tens, units) => String((['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'].indexOf(tens) + 2) * 10 + (units ? numbers.indexOf(units) : 0)));
   return result.replace(new RegExp(`\\b(${numbers.join('|')})\\b`, 'g'), (word) => String(numbers.indexOf(word)));

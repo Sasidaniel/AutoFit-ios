@@ -161,6 +161,7 @@ public class LiveActivityBridgePlugin: CAPPlugin, CAPBridgedPlugin {
                         phase: phase, phaseStartMillis: call.getDouble("phaseStartMillis"),
                         phaseEndMillis: call.getDouble("phaseEndMillis"),
                         language: call.getString("language") ?? "he",
+                        feminineWording: call.getBool("feminineWording") ?? false,
                         exerciseID: call.getString("exerciseID"), setIndex: call.getInt("setIndex"),
                         pausedElapsedSeconds: call.getDouble("pausedElapsedSeconds"),
                         controlRevision: call.getInt("controlRevision"))

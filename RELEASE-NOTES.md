@@ -1,5 +1,350 @@
 # AutoFit release notes
 
+## Documentation and branch backup - owner approved (2026-10-29)
+
+The owner requested a detailed numbered Markdown handoff and a GitHub backup
+of all accumulated local changes. See
+[the consolidated Hebrew pre-release review](PRE-RELEASE-REVIEW.md) for the
+current decisions, released-versus-unreleased scope, code map and device checklist.
+The approval covers committing/pushing the existing work branch only, not a
+main/master push, merge, release-workflow dispatch or TestFlight upload.
+Earlier "no commit or push" notes describe the state at each local review stage.
+The owner also requested an ongoing AutoFit workflow: document each completed
+change in Markdown and back up code/docs on the work branch, obtaining any
+additional required approval first and verifying the remote commit afterward.
+The exact request and release boundaries are preserved in the handoff.
+
+## Unreleased - concise screens and required wording selection (local review)
+
+- Removed the requested Exercises estimate note/expander, Settings language hint,
+  Profile photo hint, Contact submission hint and menu slogan. The exercise
+  duration itself, Home/About branding, contact behavior and privacy documents
+  remain unchanged; estimate explanations remain in the relevant planning dialogs.
+- Gender is now required in both profile flows, with an explicit General/Male/Female
+  selection and no automatic choice for profiles missing this field. Existing
+  saved choices remain selected. Legacy users keep masculine wording until choosing;
+  missing selection blocks saving/initial setup without losing entered data.
+- Updated English labels, the privacy draft and offline cache (`autofit-v86`).
+  Existing feminine voice aliases remain supported in local code; on-device speech
+  recognition still needs iPhone verification. No release, upload, commit or push.
+
+## Unreleased - optional gender and Hebrew wording (local review)
+
+- Added optional General/Male/Female choices in initial setup and Profile.
+  General retains the existing masculine Hebrew wording, including for legacy
+  profiles. The choice changes wording only, not plans, targets or exercise names.
+- Added explicit feminine Hebrew copy for readiness and action buttons, companion
+  messages, guidance, plan flows, errors and announcements. Canonical strings and
+  user-entered names remain separate; English stays gender-neutral. Switching
+  language or wording preserves entered workout data.
+- Onboarding previews the choice immediately; Profile applies it after a
+  successful save. Existing profile backup/restore retains the optional field.
+  Privacy copy discloses its wording-only purpose.
+- Feminine voice commands map to the existing actions. Native Live Activity
+  wording uses a backward-compatible optional grammatical flag. Native sources
+  and Swift tests were updated, but Xcode/Swift and device verification are not
+  available on this Windows host.
+- Added the feminine catalog to offline precaching (`autofit-v85`). Local preview
+  only; no release, upload, commit or push.
+
+## Unreleased - bilingual app header (local review)
+
+- Added "Your personal assistant!" next to AutoFit in the main header, with
+  Hebrew/English switching. The brand stays AutoFit; the clock and navigation
+  remain available. The title wraps within the space between navigation buttons
+  when needed. Offline cache: `autofit-v83`. No release, upload, commit or push.
+
+## Unreleased - Home companion slogan (local review)
+
+- Home now reads "You don't train alone, I'm with you!" in Hebrew and English.
+  Menu/About retain their existing slogan. Offline cache: `autofit-v82`.
+  Local preview only; no release, upload, commit or push.
+
+## Unreleased - personal plans and profile-based companion greeting (local review)
+
+Local app shell `autofit-v81`; no release, upload, commit or push.
+
+- Removed the About companion quote, its creator attribution and the separate
+  live-conversation disclaimer. The existing creator credit remains.
+- Expanded About's personal-plan section with gym machines/weights, home
+  bands/dumbbells and equipment-free training, plus the existing build, save,
+  return and edit flows. Added a direct link to My plans without changing
+  saved plans, the current workout or history.
+- Workout's companion line addresses the name in the user's profile, not the
+  creator. It refreshes after profile or language changes, preserves the name
+  without translating it, and omits the name cleanly when none is set.
+- Updated English copy and the offline cache.
+
+Validation: 367 native-regression/DOM/localization tests passed, including profile
+name changes, whitespace/empty names and Hebrew/English companion text. Browser
+review confirmed the removed About passages, working My plans link and existing
+builder/save/edit entry points, complete English About copy and profile-name
+preservation across language switches without horizontal overflow.
+
+## Unreleased - training companion identity (local review)
+
+Local app shell `autofit-v79`; no release, upload, commit or push.
+
+- Established "You don't train alone" as the slogan and "Less managing. More
+  training" as the motto, with natural Hebrew/English copy in Home, the compact
+  menu and About.
+- Workout retains the user's greeting/photo and adds Sasi's companion message
+  explicitly through AutoFit. No speech, microphone or timer behavior changes.
+- About explains the practical benefit of organized plans, automatic rest timers
+  between sets/superset rounds, voice reports and announcements. It retains home/outdoor/
+  gym coverage and clearly distinguishes app guidance from live human coaching
+  and user-reported records from automatic sensing.
+
+Validation: 367 native-regression/DOM/localization tests passed. Browser review
+confirmed the slogan on Home, Menu and About, Sasi's line alongside the retained
+personal greeting, complete English translation and Hebrew restoration, no
+horizontal overflow, and a compact 280px-wide menu below the viewport height.
+
+## Unreleased - workout muscle sections and quieter controls (local review)
+
+Local app shell `autofit-v78`; no release, upload, commit or push.
+
+- Workout-only muscle sections now collect matching exercises together even
+  when the saved order differs. Display and upcoming guidance share this order;
+  warmup/cooldown remain at the ends. Mixed-muscle supersets and their related
+  exercises share a combined section so pairs remain adjacent. Primary muscles
+  use the existing guide mapping, with
+  explicit categories as fallback; unmapped exercises remain in Other exercises.
+  The underlying workout entries, saved plans and history are not rewritten.
+- A group-completion cue joins the existing rest, voice-report or final-workout
+  announcement. It waits for every matching exercise and both superset parts,
+  including earlier work and busy equipment. Rerenders and reloads do not replay
+  completed groups; undo reopens the group. Removed exercises do not trigger a
+  completion announcement merely by disappearing.
+- Removed the estimate caveat/details from the Workout panel only, retaining the
+  approximate-duration labels and explanations in planning/review surfaces.
+  Removed the browser-only microphone sentence without enabling or pretending
+  to enable browser recognition. Native status and rest feedback remain.
+- The Pause button stays black, including while enabled, distinct from red Finish.
+- Warmup and cooldown now start collapsed like every other exercise. Their
+  toggles and running timers survive targeted cardio-card refreshes.
+- A compact timer and percentage circle appears below the app header whenever
+  either original metric is out of view. It follows actual pause/reset/progress
+  state, appears only in Workout, and uses intersection/resize observers rather
+  than per-scroll rendering.
+- About now highlights home, outdoor and gym training, including weights,
+  bodyweight, bands, ropes, suspension straps and other available accessories.
+
+Validation: 556 JavaScript regressions passed, with all 18 frontend modules
+parsing. Browser review verified one section per muscle group, collapsed
+warmup/cooldown, grouped next-exercise selection, no premature group cue,
+undo/recompletion, a live timer and matching 6% progress in the floating strip,
+visibility only in Workout, and Hebrew/English switching without losing inputs.
+The final preview is an unstarted draft; synthetic completed sets were cleared
+without changing saved plans or history.
+
+## Unreleased - compact menu and distinct privacy page (local review)
+
+Local app shell `autofit-v77`; no release, upload, commit or push.
+
+- Reduced the menu width from 340px/88vw to 280px/76vw. Its height now follows
+  the content, with smaller spacing, 44px minimum action targets and scrolling
+  when the available screen height is short. Information and help appears
+  before My training.
+- Privacy and my data opens a dedicated page, separate from language, workout
+  and permission settings. Existing document, consent, export and deletion
+  handlers are retained; navigation instructions now point to the new page.
+- Expanded About in Hebrew and English with practical reasons to use the app:
+  temporary workout changes without rewriting the plan, a shared place for
+  training tools, exercise instructions and optional advanced logging.
+- Removed the redundant category/library/workout counts and database explanation
+  from Exercises, keeping the library heading and existing browsing controls.
+
+Validation: 546 JavaScript regressions passed. Browser review confirmed a
+280x518px menu in a 385x678px viewport, requested group ordering, separate
+Settings/Privacy pages and working legal documents, one-step return, expanded
+About in both languages and the simplified exercise-library summary.
+
+## Unreleased - focused navigation and menu pages (local review)
+
+Local app shell `autofit-v76`; no release, upload, commit or push.
+
+1. Primary navigation now has five destinations: Home, History, Workout,
+   Statistics and Exercises. Hebrew follows that order from right to left;
+   English mirrors it. Workout occupies the middle with a larger circular
+   control. Safe-area spacing leaves room for the raised control and rest bar.
+2. A sticky header keeps the right-hand hamburger available while scrolling.
+   It opens a native modal drawer grouped into training,
+   information/help and personal/settings. It links to My plans, Goals and
+   progress, About, User guide, Contact, Personal details, Settings and the
+   existing privacy/data controls. There is no duplicate header settings icon.
+   The drawer locks background scrolling and uses the browser's modal focus
+   behavior, with an explicit close action and backdrop dismissal.
+3. Secondary pages have one-step return navigation, including the previous
+   scroll position. Choosing a primary tab clears that temporary route stack.
+   Navigation does not recreate workout inputs, alter timers or save forms.
+   The existing listening policy still follows the actual current page.
+4. Plan creation, home/rope builders and saved-plan actions now share one page
+   instead of duplicate toolbars in Home and Exercises. Goals, recommendations
+   and the weekly muscle-work view share a second page. Primary pages retain
+   a single plans shortcut and their contextual workout/library controls.
+5. About restores creator credit and explains the actual capabilities without
+   invented background stories or outcome promises. The user guide covers
+   building, editing, saving, training, history/sharing and voice commands.
+   The existing voice list moved into a collapsible guide topic, readable in
+   browsers with an explicit iPhone-only recognition notice. Settings links
+   directly to that topic.
+6. New content uses straightforward Hebrew and English, system fonts, moderate
+   heading weights and readable paragraph spacing. Form controls inherit the
+   same font. No remote font dependency or new service was added.
+
+Validation: 544 JavaScript regressions and syntax checks for all 18 frontend
+modules. The isolated 385-pixel browser review verified Hebrew/English ordering
+and centered workout geometry, modal focus containment, scroll locking,
+two-level return with restored scroll, retained per-set edits and an unchanged
+running workout/rest deadline. All eight relocated training actions opened
+their real flows, saving a synthetic plan retained the parent dialog, contact
+drafts survived navigation, and the privacy/voice shortcuts opened their actual
+sections. No form was sent externally and no native device test is claimed.
+
+## Unreleased - contact form only (local review)
+
+Local app shell `autofit-v75`; no release, upload, commit or push.
+Removed the About card from Contact and shortened the title to Contact.
+The existing inquiry form, validation, explicit send action and privacy notice
+are unchanged. About information has not been moved elsewhere; its next
+location is awaiting the owner's separate request.
+
+## Unreleased - quieter personal screens and body-weight limit (local review)
+
+Local app shell `autofit-v74`; no release, upload, commit or push.
+
+- Removed account-provider implementation commentary from Profile and onboarding,
+  and removed speculative subscription prices, trials and business-preparation
+  copy. The subscription card is absent in browsers and when native products
+  are unconfigured. Native verification errors still show a retry action;
+  verified active subscriptions retain management and restoration support.
+  Terms, privacy, consent and data export/deletion remain available in Settings.
+- Limited new body-weight selections to 200 kg in Profile and onboarding.
+  At exactly 200 kg the decimal selector is reset to zero and disabled; lower
+  weights retain tenths. Previously stored larger measurements are preserved
+  without silently clamping records, but their special option is disabled
+  for new selection. Exercise lifting loads are unaffected.
+
+Validation: 539 JavaScript regressions, all 18 frontend module syntax checks,
+and isolated browser checks of both pickers at 199.9/200 kg, the hidden empty
+subscription card, removed development copy, retained privacy controls, and
+unchanged saved demo measurements.
+
+## Unreleased - profile selections and guardian declaration (local review)
+
+Local app shell `autofit-v73`; based on internal TestFlight 1.0 (37).
+No release, upload, commit or push.
+
+1. Profile and first-run details share native dropdowns: ages 12–120,
+   height in centimeters, and weight as whole kilograms plus tenths.
+   Measurements remain optional, with no guessed defaults. Names/nicknames
+   remain free text. Existing measurement values outside the suggested lists
+   or with finer precision remain selectable and are not rounded on save.
+2. Both save paths retain profile photos and existing weight history, append
+   only changed measured weights, prevent duplicate saves while reviewing
+   consent, and report persistence errors without mutating the profile in
+   memory or advancing onboarding.
+3. The owner explicitly approved a separate parent/guardian declaration for
+   ages 12–17. The local review form starts with no selected age group or
+   prechecked acknowledgments. Changing groups clears both group-specific
+   checkboxes. Entered ages must match the current explicit declaration;
+   cancelling review preserves the existing profile and leaves edits available.
+4. Draft policy `commercial-draft-2` documents the guardian flow in Hebrew
+   and English and retains prior receipts. This is a local declaration, not
+   identity or guardianship verification, legal approval, or a child-specific
+   training prescription. Distribution to minors still requires legal review,
+   appropriate store rating and market approval. Purchases remain disabled.
+5. Hebrew/RTL and English/LTR share the same controls. Language changes
+   translate optional and preserved-value labels without resetting selections.
+   The offline shell includes the new shared module. Workout help also now
+   explains the previously added automatic missing-load baseline behavior.
+
+Validation: 535 JavaScript regressions and syntax checks for all 18 frontend
+modules. A fresh, isolated 385-pixel browser origin exercised real onboarding
+with a synthetic guardian declaration and age 12, required unchecked defaults,
+age-group checkbox reset, mismatched-group cancellation, later adult review,
+exact existing decimal preservation, optional blank saves and reloads, changed
+versus unchanged weight history, and Hebrew/English labels with no horizontal
+overflow. No native picker/device or legal approval is claimed.
+
+## Unreleased - missing weight baselines (local review)
+
+Local app shell `autofit-v72`; no release, upload, commit or push.
+The owner clarified that the missing weights were in the next workout, not
+history, and explicitly approved remembering an initial load automatically
+only when an exercise has no fixed load.
+
+1. On saving a workout, an original program exercise without a fixed load
+   remembers the first completed set with an explicitly entered valid load.
+   The next workout uses that baseline rather than returning an empty field.
+   Existing fixed loads, including zero, are never replaced by subsequent
+   performance. This does not read or import the last historical result.
+2. Set counts, repetition targets, exercise membership and ordering still
+   return to the original program. Actual per-set weights, repetitions, notes
+   and ratings remain in history, including different loads in later sets.
+   An uncompleted, blank or invalid measurement cannot establish a baseline.
+3. For saved plans, only the matching active plan and day receive a missing
+   baseline. Other A/B/C plans, other days and their loads remain unchanged.
+   Removed exercises and replacement/different-variation identities do not
+   supply a weight for the original exercise. Switching plans during a workout
+   cannot write that workout's weight into the newly selected plan.
+4. Explicitly clearing a fixed load keeps it cleared, rather than immediately
+   relearning it. That choice survives saving, activation and program restore.
+   Setting a numeric fixed load again remains supported in the saved-plan editor.
+5. Baselines use the existing rollback-protected program-state write before
+   clearing the completed session. A failed write is surfaced and can be
+   retried without duplicating history or changing targets only in memory.
+   The summary explains the reset and automatic first-load behavior.
+
+Validation: 528 JavaScript regressions, module syntax checks, and an isolated
+browser demonstration with three synthetic saved plans. A first workout with
+7.5/12.5 kg remembered 7.5 kg only for its previously empty target, while another
+exercise kept its configured 20 kg despite performing 40/45 kg. Both survived
+reload. A later workout at 99/100 and 60/65 kg retained those actual history
+values while the next draft still restored 7.5 and 20 kg with the original
+set count and repetition targets. No previously unknown load is invented or
+retrospectively inferred from old history; it is learned from a newly recorded
+completed set.
+
+## Unreleased - workout usability batch (local review)
+
+Based on internal TestFlight 1.0 (37), with local app shell `autofit-v71`.
+No new version, release workflow, upload, commit or push was performed.
+
+1. Added play, pause and red cancellation icons beside the existing workout
+   control labels, including the resumed-workout label.
+2. Workout exercises start collapsed, except warmup and cooldown. A top-right
+   44-pixel plus/minus button opens or collapses each card. Compact cards retain
+   completed-set progress and equipment-waiting status. Opening a card survives
+   same-workout rerenders; collapsing does not rebuild inputs or stop timers.
+   A new workout or reload starts collapsed again.
+3. Automatic exercise selection returns to the earliest available unfinished
+   work rather than blindly moving forward. Genuine supersets retain their
+   paired-round ordering. The equipment dialog now has an explicit, reversible
+   **waiting for equipment** action for this workout only. Waiting exercises
+   remain incomplete, are skipped while unavailable, and rejoin the order when
+   marked available. Cooldown is not automatically selected while work remains
+   unfinished, including exercises waiting for equipment.
+4. Upcoming-exercise and rest-finished speech includes the exercise name,
+   total/remaining sets, next-set number, repetitions and the entered kilograms
+   when known. Holds and cardio use their appropriate time targets; assistance
+   is labeled separately. Unknown or cleared loads are not invented. Rest
+   guidance is recomputed after session changes and at timer completion rather
+   than replaying a stale next exercise.
+5. Added **Share workout** directly to the saved-workout summary, using the
+   same PDF and paginated PNG pipeline as History and the actual saved record.
+   Share and browser Health help now use nested dialogs, so back/close returns
+   one level without losing the summary or hiding controls behind a modal.
+
+Validation: 523 local JavaScript regressions, module syntax checks, and
+385-pixel browser acceptance covering collapse/edit/rerender preservation,
+equipment waiting and return to earlier work, automatic save, summary sharing,
+valid generated PDF/PNG files, and nested-dialog return. Hebrew/RTL and
+English/LTR are supported. The preview uses isolated synthetic data; existing
+saved plans and history are not migrated. Browser checks do not establish
+iPhone speech, microphone, music or native share-sheet behavior.
+
 ## 1.0 (37) - Verified internal TestFlight release (2026-10-28)
 
 App shell `autofit-v70`. The owner approved release 37 after adding the

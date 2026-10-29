@@ -48,7 +48,6 @@
     <div id="onboardingLegalForm"></div>
   </div>
   <div class="onboarding-step" id="onboardingStepDetails">
-    <p class="field-hint">אפשר להמשיך ללא חשבון. חיבור Apple או Google/Gmail עדיין לא הוגדר; לא נוצר חשבון מקוון ולא מתבצע סנכרון דרך ספק חיצוני.</p>
     <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
     <h1 class="onboarding-title">ברוכים הבאים ל-AutoFit</h1>
     <p class="onboarding-subtitle">אפשר להשתמש בכינוי. גיל, מדדי גוף ותמונה אינם חובה.</p>
@@ -59,12 +58,19 @@
     <div class="onboarding-form">
       <label class="field-label">שם או כינוי (לא חובה)</label>
       <input class="input" id="obName">
-      <label class="field-label">גיל</label>
-      <input type="number" min="1" class="input" id="obAge">
-      <label class="field-label">גובה (ס"מ)</label>
-      <input type="number" min="1" class="input" id="obHeight">
-      <label class="field-label">משקל (ק"ג)</label>
-      <input type="number" min="1" step="0.1" class="input" id="obWeight">
+      <label class="field-label" for="obGender">מין (חובה)</label>
+      <select class="select" id="obGender" aria-describedby="obGenderHint" required></select>
+      <p class="field-hint" id="obGenderHint">הבחירה משנה רק את לשון הפנייה באפליקציה. כללי מוצג בלשון זכר.</p>
+      <label class="field-label" for="obAge">גיל</label>
+      <select class="select" id="obAge"></select>
+      <label class="field-label" for="obHeight">גובה (ס"מ)</label>
+      <select class="select" id="obHeight"></select>
+      <label class="field-label" for="obWeightWhole">משקל (ק"ג)</label>
+      <div class="profile-weight-picker" dir="ltr">
+        <select class="select" id="obWeightWhole" aria-label="קילוגרמים שלמים"></select>
+        <select class="select" id="obWeightFraction" aria-label="חלק עשרוני של קילוגרם"></select>
+      </div>
+      <input type="hidden" id="obWeight">
     </div>
     <button id="btnOnboardingNext" class="btn btn-primary onboarding-btn">המשך</button>
   </div>
@@ -114,13 +120,30 @@
 </div>
 
 <header class="topbar">
-  <button id="btnOpenSettings" class="gear-btn" aria-label="הגדרות"><svg class="ui-icon gear-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M13 2h6l1 4 3 2 4-1 3 5-3 3v2l3 3-3 5-4-1-3 2-1 4h-6l-1-4-3-2-4 1-3-5 3-3v-2l-3-3 3-5 4 1 3-2z"/><circle cx="16" cy="16" r="5"/></svg></button>
-  <img src="icons/icon-192.png" alt="AutoFit" class="header-logo">
+  <button id="btnPageBack" type="button" class="gear-btn hidden" aria-label="חזרה"><svg class="ui-icon page-back-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6l6 6-6 6"/></svg></button>
+  <button id="btnOpenMenu" type="button" class="menu-button" aria-label="פתיחת תפריט" aria-controls="navigationMenu" aria-expanded="false" aria-haspopup="dialog"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <div class="header-center">
-    <div id="appBrand" class="brand">AutoFit</div>
+    <div class="header-brand"><img src="icons/icon-192.png" alt="" class="header-logo"><div id="appBrand" class="brand">AutoFit</div><span class="header-tagline">העוזר האישי שלך!</span></div>
     <div id="liveClock" class="live-clock"></div>
   </div>
 </header>
+
+<dialog id="navigationMenu" class="app-menu" aria-labelledby="navigationMenuTitle">
+  <div class="app-menu-heading"><h2 id="navigationMenuTitle">תפריט</h2><button id="btnCloseMenu" type="button" class="btn-icon" aria-label="סגור">✕</button></div>
+  <nav aria-label="עמודים נוספים">
+    <h3>מידע ועזרה</h3>
+    <button type="button" data-page-link="about">בואו תכירו אותנו</button>
+    <button type="button" data-page-link="guide">מדריך למשתמש</button>
+    <button type="button" data-page-link="contact">יצירת קשר</button>
+    <h3>האימונים שלי</h3>
+    <button type="button" data-page-link="plans">התוכניות שלי</button>
+    <button type="button" data-page-link="goals">יעדים והתקדמות</button>
+    <h3>אישי והגדרות</h3>
+    <button type="button" data-page-link="profile">אישי</button>
+    <button id="btnOpenSettings" type="button" data-page-link="settings">הגדרות</button>
+    <button type="button" data-page-link="privacy">פרטיות והנתונים שלי</button>
+  </nav>
+</dialog>
 
 <main id="app">
 
@@ -140,12 +163,14 @@
 
     <section class="home-workout-hero" aria-labelledby="homeWorkoutTitle">
       <svg class="home-hero-art" viewBox="0 0 120 120" aria-hidden="true"><g transform="rotate(-30 60 60)"><path d="M15 60h90M15 45v30M30 35v50M90 35v50M105 45v30"/></g></svg>
+      <p class="home-training-tagline">אתה לא מתאמן לבד, אני איתך!</p>
       <div class="home-hero-top"><span class="home-eyebrow">התוכנית שלך</span><span id="homeWorkoutState" class="home-workout-state">מוכן לאימון</span></div>
       <h2 id="homeWorkoutTitle">האימון שלי</h2>
       <p id="homeWorkoutSummary" class="home-workout-summary"></p>
       <button id="btnHomeStartWorkout" class="btn home-start-button"><span id="homeStartLabel">התחל אימון</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6l-6 6 6 6"/></svg></button>
       <button id="btnHomeEditWorkout" class="home-hero-link">התאמת התרגילים והסדר</button>
     </section>
+    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">התוכניות שלי</button>
 
     <section class="card home-week-card" aria-labelledby="homeWeekTitle">
       <div class="home-section-heading"><h2 id="homeWeekTitle">השבוע שלך</h2><button id="btnHomeToDashboard" class="home-text-link">לסטטיסטיקה המלאה <span aria-hidden="true">←</span></button></div>
@@ -176,7 +201,10 @@
   <section id="tab-workout" class="tab-panel">
     <div class="greeting-card card">
       <img id="workoutProfilePhoto" src="icons/icon-192.png" alt="תמונת פרופיל" class="greeting-avatar">
-      <div id="greetingText" class="greeting-text" data-no-translate>אימון מוצלח</div>
+      <div class="workout-greeting-copy">
+        <div id="greetingText" class="greeting-text" data-no-translate>אימון מוצלח</div>
+        <p id="workoutCompanionText" class="workout-companion-line" data-no-translate>אני מלווה אותך באימון הזה</p>
+      </div>
     </div>
 
     <div class="workout-header card">
@@ -211,6 +239,10 @@
       </div>
     </div>
 
+    <div id="workoutQuickStatus" class="workout-quick-status hidden">
+      <span><span>זמן אימון</span> <strong id="workoutQuickTimer" data-no-translate>00:00</strong></span>
+      <span id="workoutQuickPercent" class="progress-overall" data-no-translate>0%</span>
+    </div>
     <div id="exerciseList" class="exercise-list"></div>
   </section>
 
@@ -264,7 +296,7 @@
 
     <div class="card">
       <div class="card-title">מגמת משקל גוף</div>
-      <div class="card-hint">מבוסס על עדכוני המשקל שנשמרו בטאב "אישי"</div>
+      <div class="card-hint">מבוסס על עדכוני המשקל שנשמרו באזור האישי</div>
       <canvas id="bodyWeightChart" height="160"></canvas>
     </div>
   </section>
@@ -309,6 +341,7 @@
       <button id="btnClearLibraryFilters" class="btn btn-secondary btn-small">נקה סינון</button>
     </div>
     <div id="exerciseCategoryGrid" class="exercise-category-grid" aria-label="קטגוריות תרגילים"></div>
+    <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">התוכניות שלי</button>
     <div id="exerciseLibraryPanel" class="hidden">
       <button id="btnBackExerciseCategories" class="btn btn-primary exercise-library-back">לכל הקטגוריות</button>
       <div class="exercise-library-heading">
@@ -324,32 +357,33 @@
   <!-- PERSONAL AREA TAB -->
   <section id="tab-profile" class="tab-panel">
     <h2 class="section-title">אזור אישי</h2>
-    <div class="card">
-      <h3>חשבון וחיבור</h3>
-      <p>אפשר להמשיך ללא חשבון. חיבור Apple או Google/Gmail עדיין לא הוגדר; לא נוצר חשבון מקוון ולא מתבצע סנכרון דרך ספק חיצוני.</p>
-      <p class="field-hint">Face ID נועל את הנתונים במכשיר ואינו חשבון Apple או Google. חיבור אמיתי דורש הגדרות ספק, שרת אימות ומסלול מחיקת חשבון; לא מוצגים כפתורי כניסה מדומים.</p>
-    </div>
-    <section class="card" id="subscriptionCard"></section>
+    <section class="card" id="subscriptionCard" hidden></section>
     <div class="card">
       <div class="profile-photo-panel">
         <img id="profilePhoto" src="icons/icon-192.png" alt="תמונת הפרופיל שנבחרה" class="profile-photo">
         <div>
           <button id="btnProfilePhoto" class="btn btn-secondary profile-photo-upload"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l2-3h4l2 3h4v14H4V6z"/><circle cx="12" cy="12" r="3"/></svg><span id="profilePhotoAction">העלה תמונת פרופיל</span></button>
-          <p class="profile-photo-hint">התמונה נשמרת אוטומטית ומוצגת גם בראשי ובאימון.</p>
         </div>
         <input type="file" id="profilePhotoInput" accept="image/*" class="hidden">
       </div>
       <label class="field-label">שם או כינוי (לא חובה)</label>
       <input class="input" id="profileName">
+      <label class="field-label" for="profileGender">מין (חובה)</label>
+      <select class="select" id="profileGender" aria-describedby="profileGenderHint" required></select>
+      <p class="field-hint" id="profileGenderHint">הבחירה משנה רק את לשון הפנייה באפליקציה. כללי מוצג בלשון זכר.</p>
 
-      <label class="field-label">גיל</label>
-      <input type="number" min="1" class="input" id="profileAge">
+      <label class="field-label" for="profileAge">גיל</label>
+      <select class="select" id="profileAge"></select>
 
-      <label class="field-label">גובה (ס"מ)</label>
-      <input type="number" min="1" class="input" id="profileHeight">
+      <label class="field-label" for="profileHeight">גובה (ס"מ)</label>
+      <select class="select" id="profileHeight"></select>
 
-      <label class="field-label">משקל (ק"ג)</label>
-      <input type="number" min="1" step="0.1" class="input" id="profileWeight">
+      <label class="field-label" for="profileWeightWhole">משקל (ק"ג)</label>
+      <div class="profile-weight-picker" dir="ltr">
+        <select class="select" id="profileWeightWhole" aria-label="קילוגרמים שלמים"></select>
+        <select class="select" id="profileWeightFraction" aria-label="חלק עשרוני של קילוגרם"></select>
+      </div>
+      <input type="hidden" id="profileWeight">
 
       <div class="settings-actions">
         <button id="btnSaveProfile" class="btn btn-primary">שמור</button>
@@ -359,6 +393,7 @@
 
   <!-- SETTINGS TAB -->
   <section id="tab-settings" class="tab-panel">
+    <h2 class="section-title">הגדרות</h2>
     <div class="card">
       <h2 class="section-title">שפה</h2>
       <div class="language-options" role="group" aria-label="בחירת שפה">
@@ -371,26 +406,7 @@
           <span class="language-names"><strong lang="he" dir="rtl">אנגלית</strong><span lang="en">English</span></span>
         </button>
       </div>
-      <p class="field-hint">עברית היא שפת ברירת המחדל. הבחירה שלך נשמרת גם לפתיחה הבאה.</p>
     </div>
-    <div class="card" id="privacySettingsCard">
-      <h2 class="section-title">תנאים, פרטיות והנתונים שלי</h2>
-      <p class="privacy-consent-status field-hint" role="status"></p>
-      <div class="training-actions">
-        <button type="button" class="btn btn-secondary" data-legal-doc="terms">תנאי שימוש</button>
-        <button type="button" class="btn btn-secondary" data-legal-doc="privacy">מדיניות פרטיות</button>
-        <button type="button" class="btn btn-secondary privacy-review">בדיקה ואישור הטיוטה</button>
-      </div>
-      <p class="field-hint">טיוטה לבדיקה בלבד. השקה מסחרית דורשת השלמת פרטי עסק ואישור משפטי.</p>
-      <p class="privacy-cloud-status field-hint" role="status"></p>
-      <div class="training-actions">
-        <button type="button" class="btn btn-secondary privacy-cloud-export">ייצוא גיבוי קודם מ-iCloud</button>
-        <button type="button" class="btn btn-secondary privacy-export">ייצוא כל הנתונים שלי (JSON)</button>
-        <button type="button" class="btn btn-danger privacy-delete">מחיקת נתוני AutoFit</button>
-      </div>
-      <p class="field-hint">קובץ הייצוא מכיל פרטים אישיים, תמונות, תוכניות והיסטוריה. שמור אותו במקום מהימן.</p>
-    </div>
-    <h2 class="section-title">הגדרות</h2>
     <div class="card">
       <label class="field-label">טיימר מנוחה ברירת מחדל (שניות)</label>
       <input type="number" id="settingRestSeconds" class="input" min="10" step="5">
@@ -416,7 +432,8 @@
 
       <div id="voiceCommandsSettingRow" class="hidden">
         <label class="checkbox-row"><input type="checkbox" id="settingVoiceCommands"> פקודות קוליות באימון (מיקרופון)</label>
-        <div class="field-hint">כשמופעל, אפשר להגיד "סט הושלם", "דלג על מנוחה" ועוד במקום ללחוץ — ראה רשימה מלאה בכרטיס "פקודות קוליות" למטה. זו דרך נוספת, לא תחליף להזנה ידנית.</div>
+        <div class="field-hint">אפשר לומר "סט הושלם" או "דלג על מנוחה" במקום ללחוץ. הרשימה המלאה נמצאת במדריך למשתמש.</div>
+        <button type="button" class="btn btn-secondary btn-small" data-page-link="guide" data-page-section="voiceCommandsHelpCard">למדריך הפקודות הקוליות</button>
         <label class="field-label" for="settingVoiceMicrophone">מיקרופון לפקודות קוליות</label>
         <select class="select" id="settingVoiceMicrophone">
           <option value="automatic">אוטומטי — עדיפות לאיכות מוזיקה</option>
@@ -442,8 +459,143 @@
       </div>
     </div>
 
-    <div id="voiceCommandsHelpCard" class="card hidden">
-      <div class="card-title">🎙️ פקודות קוליות זמינות</div>
+  </section>
+
+  <section id="tab-privacy" class="tab-panel reading-page">
+    <div class="card" id="privacySettingsCard">
+      <h2 class="section-title">תנאים, פרטיות והנתונים שלי</h2>
+      <p class="privacy-consent-status field-hint" role="status"></p>
+      <div class="training-actions">
+        <button type="button" class="btn btn-secondary" data-legal-doc="terms">תנאי שימוש</button>
+        <button type="button" class="btn btn-secondary" data-legal-doc="privacy">מדיניות פרטיות</button>
+        <button type="button" class="btn btn-secondary privacy-review">בדיקה ואישור הטיוטה</button>
+      </div>
+      <p class="field-hint">טיוטה לבדיקה בלבד. השקה מסחרית דורשת השלמת פרטי עסק ואישור משפטי.</p>
+      <p class="privacy-cloud-status field-hint" role="status"></p>
+      <div class="training-actions">
+        <button type="button" class="btn btn-secondary privacy-cloud-export">ייצוא גיבוי קודם מ-iCloud</button>
+        <button type="button" class="btn btn-secondary privacy-export">ייצוא כל הנתונים שלי (JSON)</button>
+        <button type="button" class="btn btn-danger privacy-delete">מחיקת נתוני AutoFit</button>
+      </div>
+      <p class="field-hint">קובץ הייצוא מכיל פרטים אישיים, תמונות, תוכניות והיסטוריה. שמור אותו במקום מהימן.</p>
+    </div>
+  </section>
+
+  <section id="tab-plans" class="tab-panel reading-page">
+    <h2 class="section-title">התוכניות שלי</h2>
+    <div id="plansPageContent"></div>
+  </section>
+
+  <section id="tab-goals" class="tab-panel reading-page">
+    <h2 class="section-title">יעדים והתקדמות</h2>
+    <div id="goalsPageContent"></div>
+  </section>
+
+  <section id="tab-about" class="tab-panel reading-page">
+    <h2 class="section-title">בואו תכירו אותנו</h2>
+    <div class="card about-brand-card">
+      <h3>קצת על AutoFit</h3>
+      <p class="brand-slogan">אתה לא מתאמן לבד.</p>
+      <p class="brand-motto">פחות להתעסק. יותר להתאמן.</p>
+      <p>עוד לפני הסט הראשון יש מספיק מה לזכור: מה עושים היום, כמה חזרות, באיזה משקל ומתי מסתיימת המנוחה. AutoFit מרכזת את כל זה במקום אחד, כדי שלא תצטרך לנהל את האימון תוך כדי האימון.</p>
+      <p>AutoFit היא השותף שלך לאימון: עוזרת לשמור על הסדר, מזכירה מה השלב הבא ומרכזת את התיעוד. כמו חבר לאימון שדואג לפרטים הקטנים, כדי שאתה תוכל להתרכז במאמץ.</p>
+      <p class="about-credit">האפליקציה נוצרה על ידי ששי דניאל.</p>
+    </div>
+    <div class="card">
+      <h3>למה להתאמן עם AutoFit?</h3>
+      <ul class="about-benefits">
+        <li>פחות לזכור: התוכנית, סדר העבודה, הסטים והיעדים נמצאים מולך. תמיד אפשר לראות מה כבר הושלם ומה נשאר.</li>
+        <li>פחות להתעסק עם השעון: כשמגיע זמן המנוחה בין הסטים או בין סבבי סופר סט, הטיימר מופעל אוטומטית לפי הגדרות האימון. יש גם טיימרים לחימום, לשחרור ולהחזקות.</li>
+        <li>פחות להקליד: באייפון אפשר לדווח חזרות ומשקלים בקול במקום לרשום אותם ידנית. מדווחים מה בוצע, והדיווח נכנס לתיעוד האימון.</li>
+        <li>פחות להיות צמוד למסך: הכרזות מכוונות לתרגיל הבא, ליעדים ולמנוחות. עם פקודות קוליות אפשר לבחור תרגיל, לספור חזרות ולסמן ביצוע.</li>
+      </ul>
+      <p>היכולות הקוליות זמינות באפליקציית האייפון לאחר הפעלה ואישור הרשאות. התיעוד מבוסס על מה שסימנת או דיווחת; תמיד אפשר לבדוק ולעדכן ידנית.</p>
+    </div>
+    <div class="card">
+      <h3>בבית, בחוץ או בחדר הכושר</h3>
+      <p>לא תמיד מתאמנים באותו מקום, ולא חייבים אותו ציוד כדי להמשיך בשגרה. AutoFit מאפשרת לבנות ולתעד אימון ביתי, אימון בחדר הכושר וגם פעילות בחוץ — מתרגילי משקל גוף והליכה ועד משקולות ומכשירים.</p>
+      <p>אפשר לשלב גומיות, חבל קפיצה, רצועות וציוד עזר, או לבחור תרגילים בלי ציוד בכלל. בוחרים מה זמין ומתאים לך, שומרים תוכניות שונות וחוזרים אליהן לפי המקום והזמן שיש באותו יום.</p>
+    </div>
+    <div class="card">
+      <h3>תוכניות אימון אישיות</h3>
+      <p>בונים אימון לפי המקום שבו מתאמנים והציוד שזמין: חדר כושר עם מכשירים ומשקולות, אימון ביתי עם גומיות או משקולות יד, וגם אימון משקל גוף ללא ציוד.</p>
+      <p>אפשר לבחור תרגילים בעצמך או ליצור הצעה לפי המטרה, הניסיון והזמן הפנוי. שומרים תוכניות אישיות בשמות שונים, חוזרים אליהן ועורכים את התרגילים, הסטים, החזרות והמנוחות לפי הצורך.</p>
+      <p>כך אפשר לשמור תוכנית לבית ותוכנית לחדר הכושר, ולבחור בכל פעם מה מתאים לאותו יום. שמירה ועריכה אינן מחליפות את האימון הנוכחי.</p>
+      <button type="button" class="btn btn-secondary" data-page-link="plans">לתוכניות האימון שלי</button>
+    </div>
+    <div class="card">
+      <h3>מה מייחד את AutoFit?</h3>
+      <p>התוכנית והאימון שביצעת הם שני דברים שונים. אפשר לשנות סדר, לבחור חלופה למכשיר תפוס או לקצר אימון ביום עמוס, בלי שהשינוי הזמני יהפוך לתוכנית של מחר. כך יש מקום גם לשגרה וגם למה שקורה בפועל בחדר הכושר.</p>
+      <p>במקום לפזר את המידע בין כמה מקומות, התרגילים, ההדרכות, הטיימרים וההיסטוריה נמצאים יחד. פחות לחפש מה עשית בפעם הקודמת, ויותר להתרכז בסט הבא.</p>
+    </div>
+    <div class="card">
+      <h3>לא צריך לזכור כל תרגיל בעל פה</h3>
+      <p>בספריית התרגילים אפשר לחפש לפי קבוצת שרירים, ציוד ומקום אימון, ולפתוח הסבר על הביצוע לפני שמוסיפים תרגיל לתוכנית. זה שימושי כשמתנסים בתרגיל חדש, חוזרים אחרי הפסקה או רוצים לגוון בין הבית לחדר הכושר.</p>
+      <p>אפשר להתחיל מאימון פשוט ולהרחיב בהמשך. סופר סטים, הערות ומשקלים שונים לכל סט זמינים כשצריכים אותם — לא חייבים להשתמש בכל האפשרויות כדי לתעד אימון טוב.</p>
+    </div>
+    <div class="card">
+      <h3>פחות התעסקות במהלך האימון</h3>
+      <p>משקלים וחזרות לכל סט, טיימרים למנוחה ולהחזקות, מקטעי אירובי וסופר סטים נמצאים באותו מסך. כל תרגיל נפתח לעריכה כשצריך, ולא תופס את כל העמוד.</p>
+      <p>באייפון אפשר גם לבחור תרגיל, לספור חזרות ולדווח על סט בקול. תמיד אפשר להמשיך עם הכפתורים וההזנה הידנית.</p>
+    </div>
+    <div class="card">
+      <h3>לראות מה עשית, לא לנחש</h3>
+      <p>בסיום מתקבל סיכום שאפשר לשתף. בהיסטוריה נשמרים הביצועים בפועל, ובסטטיסטיקה אפשר לראות עקביות, עומסים ומגמות לאורך זמן.</p>
+      <p>המלצות ההתקדמות נשענות על אימונים דומים שתועדו ומציגות את הסיבה להצעה. הן לא משנות את התוכנית בלי אישור שלך.</p>
+    </div>
+    <div class="card">
+      <h3>שמירה ופרטיות</h3>
+      <p>תיעוד האימונים נשמר במכשיר. שיתוף וגיבוי הם בחירה שלך. אפשר להתאמן ולקרוא את ההדרכות השמורות גם בלי אינטרנט; סרטונים חיצוניים ושליחת פנייה דורשים חיבור.</p>
+      <p>הממשק זמין בעברית ובאנגלית. פרטי הגוף והתמונה אינם חובה, ואפשר להשתמש בכינוי.</p>
+      <button type="button" class="btn btn-secondary" data-page-link="guide">פתח את המדריך</button>
+    </div>
+  </section>
+
+  <section id="tab-guide" class="tab-panel reading-page">
+    <h2 class="section-title">מדריך למשתמש</h2>
+    <p class="page-intro">בחר נושא כדי לראות איך עושים את זה. אפשר לחזור למדריך גם באמצע אימון.</p>
+    <details class="card guide-section" open>
+      <summary>איך בונים אימון?</summary>
+      <ol>
+        <li>פותחים את ספריית התרגילים ובוחרים קטגוריה. אפשר לסנן לפי ציוד ומקום אימון.</li>
+        <li>פותחים תרגיל, קוראים את ההדרכה ולוחצים על "הוסף לאימון שלי".</li>
+        <li>בקטגוריית "האימון שלי" מסדרים את התרגילים ובוחרים סטים, חזרות ומנוחות.</li>
+      </ol>
+      <p>רוצה להתחיל מהצעה? בתפריט פותחים "התוכניות שלי" ובוחרים "בניית תוכנית אישית". ממלאים את ההעדפות ובודקים את התוכנית לפני שמירה או הפעלה.</p>
+      <button type="button" class="btn btn-secondary" data-page-link="exercises">לספריית התרגילים</button>
+    </details>
+    <details class="card guide-section">
+      <summary>איך משנים אימון?</summary>
+      <p>לשינוי קבוע באימון שלי, פותחים את הקטגוריה שלו בתרגילים ולוחצים על העיפרון ליד התרגיל. שם עורכים סטים, חזרות ומנוחה. את הסדר משנים בידית הגרירה או במספר המיקום.</p>
+      <p>בזמן אימון, לחיצה על הפלוס פותחת את התרגיל לעדכון. השינויים במסך הזה שייכים לאימון הנוכחי; התוכנית המקורית נשארת לפעם הבאה.</p>
+      <p>מכשיר תפוס? אפשר לסמן שממתינים לציוד או לבחור חלופה מתוך ההצעות. אם הזמן קצר, בודקים את הצעת קיצור האימון לפני שמאשרים.</p>
+    </details>
+    <details class="card guide-section">
+      <summary>איך שומרים תוכנית וחוזרים אליה?</summary>
+      <ol>
+        <li>בתפריט פותחים "התוכניות שלי", נכנסים ל"תוכניות שמורות" ובוחרים "שמירת האימון שלי".</li>
+        <li>נותנים שם ושומרים. נשמרים התרגילים, הסדר והיעדים, ולא הביצועים הזמניים של אימון פעיל.</li>
+        <li>כדי להתאמן בתוכנית שמורה, פותחים אותה, בודקים את האימון ומאשרים הפעלה. אם כבר התחלת אימון, יש לסיים או לבטל אותו קודם.</li>
+      </ol>
+      <p>בתוכנית שנבנתה מהצעה, לוחצים בסוף על "שמירה כתוכנית חלופית". הפעולה שומרת אפשרות נוספת ולא מחליפה את האימון הפעיל.</p>
+    </details>
+    <details class="card guide-section">
+      <summary>איך מתאמנים ומתעדים סטים?</summary>
+      <p>פותחים את כפתור האימון שבמרכז הסרגל ולוחצים "התחל אימון". פותחים תרגיל לפי הצורך, מעדכנים את הביצוע ומסמנים את הסט שהושלם.</p>
+      <p>אפשר להשהות את האימון ולהמשיך מאוחר יותר. כשכל העבודה הושלמה, האימון נשמר אוטומטית ונפתח הסיכום. אפשר גם לסיים מוקדם יותר עם אישור.</p>
+      <p>הביצוע נשאר בהיסטוריה. באימון הבא חוזרים ליעדי התוכנית. אם לא הוגדר משקל קבוע, משקל תקין מהסט הראשון שהושלם נשמר כבסיס; משקל קיים לא מוחלף.</p>
+      <button type="button" class="btn btn-secondary" data-page-link="workout">למסך האימון</button>
+    </details>
+    <details class="card guide-section">
+      <summary>איפה רואים התקדמות ומשתפים אימון?</summary>
+      <p>בהיסטוריה בוחרים אימון כדי לראות מה בוצע, לערוך את התיעוד או לשתף אותו. אפשר לשתף גם מיד מסיכום האימון.</p>
+      <p>בסטטיסטיקה רואים מגמות לאורך זמן. להמלצות וליעדים אישיים פותחים "יעדים והתקדמות" בתפריט. כל הצעה מסבירה על אילו נתונים היא נשענת.</p>
+      <button type="button" class="btn btn-secondary" data-page-link="history">להיסטוריית האימונים</button>
+    </details>
+    <details id="voiceCommandsHelpCard" class="card guide-section">
+      <summary>פקודות קוליות</summary>
+      <p>הפקודות זמינות באפליקציית האייפון לאחר אישור מיקרופון וזיהוי דיבור. בדפדפן אפשר לקרוא את המדריך, אבל אין האזנה לפקודות. להפעלה או לשינוי המיקרופון נכנסים להגדרות.</p>
+      <button type="button" class="btn btn-secondary btn-small" data-page-link="settings">פתח הגדרות</button>
       <div class="field-hint">פקודות קוליות פועלות כשהאפליקציה פתוחה בטאב אימון. במצב אוטומטי המיקרופון הוא של האייפון או של אוזניות חוטיות, כדי לא להחליף את מסלול מוזיקת ה-Bluetooth. שם המיקרופון מוצג ליד ״מקשיב״. שמור את המיקרופון בטווח הדיבור. ההאזנה מושהית בזמן הכרזות האפליקציה ומתחדשת אחריהן. מוזיקה חזקה עלולה להקשות על הזיהוי; הזנה ידנית נשארת זמינה.</div>
       <ul class="voice-commands-list">
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
@@ -456,8 +608,8 @@
         <li><strong>"עשיתי 12 חזרות עם 40 קילו"</strong> — שומר משקל וחזרות ומשלים סט בפעולה אחת. אפשר גם משקל עשרוני או פאונד. אמור קודם שם תרגיל; אם אין תרגיל נוכחי ויש כמה אפשרויות, האפליקציה תבקש לבחור ולא תנחש. הדיווח אינו מיועד לאירובי או להחזקות</li>
         <li><strong>"הסט היה קל"</strong>, <strong>"היה בינוני"</strong> או <strong>"הסט היה קשה"</strong> — מדרג את הסט האחרון שסומן כהושלם, גם אם סומן ידנית. אפשר גם להוסיף בסוף הדיווח: <strong>"והיה קשה"</strong></li>
         <li>בהשלמת כל הסטים ומקטעי האירובי, האימון מסתיים ונשמר אוטומטית ללא אישור. לפני ההשלמה עדיין אפשר לסיים ידנית עם אישור. את דירוג הסט האחרון אפשר לכלול בדיווח הקולי או לערוך בהיסטוריה.</li>
-        <li>שינויים במסך אימון חלים רק על האימון הנוכחי. לאחר הסיום התרגילים, הסטים והיעדים חוזרים להגדרות התוכנית; הביצוע בפועל נשמר בהיסטוריה ולא מועתק אוטומטית לאימון הבא. ללא משקל יעד מוגדר, שדה המשקל נשאר ריק.</li>
-        <li><strong>"תוסיף חצי דקה מנוחה"</strong> — מוסיף 30 שניות למנוחה פעילה בלבד. אפשר גם <strong>"תוסיף 15 שניות מנוחה"</strong>. אישורים קצרים מושמעים כשהכרזות קוליות מופעלות; האפשרויות מוגדרות מראש, ללא AI בתשלום</li>
+        <li>שינויים במסך אימון חלים רק על האימון הנוכחי. לאחר הסיום התרגילים, הסטים והיעדים חוזרים להגדרות התוכנית והביצוע בפועל נשמר בהיסטוריה. אם אין משקל יעד קבוע, משקל תקין מהסט הראשון שהושלם נשמר אוטומטית כמשקל בסיס; משקל קבוע קיים או משקל שנוקה במפורש אינם מוחלפים.</li>
+        <li><strong>"תוסיף חצי דקה מנוחה"</strong> — מוסיף 30 שניות למנוחה פעילה בלבד. אפשר גם <strong>"תוסיף 15 שניות מנוחה"</strong>. אישורים קצרים מושמעים כשהכרזות קוליות מופעלות.</li>
         <li><strong>"דלג על מנוחה"</strong> / <strong>"זמן מנוחה הסתיים"</strong> — מדלג על טיימר המנוחה הפעיל</li>
         <li><strong>"תרגיל הבא"</strong> — בוחר וגולל אל התרגיל הבא אחרי התרגיל הנוכחי, בלי לסמן את הקודם כבוצע</li>
         <li>בסיום תרגיל הסימון עובר לתרגיל הבא שטרם הושלם. אחרי שהמנוחה הסתיימה או דולגה, אפשר להתחיל לספור מ־1, או לומר ״התחל סט״ או את שם התרגיל. הגעה ליעד אינה רושמת סט נוסף ללא התחלת ספירה חדשה. אפשר לומר ״סיימתי״ לפני היעד, ו״בטל״ לתיקון השלמה שגויה</li>
@@ -465,30 +617,17 @@
         <li><strong>"בטל אימון"</strong> / <strong>"ביטול אימון"</strong> — מבטל ומאפס את האימון הנוכחי ללא שמירה (פעולה לא הפיכה — בדיוק כמו הכפתור הידני)</li>
         <li><strong>"בטל"</strong> — מבטל את הדיווח הקולי האחרון: משקל, חזרות וסימון הסט יחד, או דירוג/הארכת מנוחה. שינוי ידני מאוחר יותר באותם נתונים לא יידרס. אם ממתינים לאישור סיום, מבטל רק את בקשת הסיום</li>
       </ul>
-    </div>
+    </details>
 
   </section>
 
   <!-- CONTACT TAB -->
   <section id="tab-contact" class="tab-panel">
-    <h2 class="section-title">יצירת קשר ואודות</h2>
-
-    <div class="card">
-      <div class="card-title">📱 AutoFit — מעקב אימוני כוח</div>
-      <p class="about-desc">אפליקציית מעקב כושר אישית לאימוני כוח: ניהול תרגילים, סטים וחזרות, טיימר מנוחה ואימון, היסטוריה וסטטיסטיקת התקדמות.</p>
-      <p id="aboutFeatures" class="about-desc">
-        בנה אימון שמתאים לך, עם בחירת תרגילים וסידורם לפי הסדר שלך.<br>
-        הישאר מרוכז באימון בעזרת טיימרים והכרזות קוליות, ובאייפון גם פקודות קוליות.<br>
-        עקוב אחרי המשקלים, החזרות והרצף שלך, וראה את ההתקדמות לאורך זמן.<br>
-        כל האימונים שלך במקום אחד, בממשק בעברית או באנגלית.
-      </p>
-      <p class="about-author">נוצר על ידי ששי דניאל</p>
-    </div>
+    <h2 class="section-title">יצירת קשר</h2>
 
     <div class="card">
       <div class="card-title">📝 שליחת פנייה</div>
       <form id="contactForm" action="https://formspree.io/f/xljgvvyb" method="post">
-        <p class="field-hint">הפרטים בטופס נשלחים ל-Formspree רק בלחיצה על שליחה. אין לשלוח סיסמאות, פרטי תשלום או מידע רפואי.</p>
         <button type="button" class="btn btn-secondary btn-small" data-open-privacy>קריאת מדיניות הפרטיות</button>
         <label for="contactName" class="field-label">שם מלא <span class="required-mark" aria-hidden="true">*</span></label>
         <input id="contactName" name="name" class="input" autocomplete="name" maxlength="100" pattern=".*\S.*" title="יש להזין שם מלא." required>
@@ -519,14 +658,12 @@
   </div>
 </div>
 
-<nav class="tabbar">
-  <button class="tab-btn active" data-tab="home"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10l9-7 9 7v11h-6v-7H9v7H3z"/></svg><span>ראשי</span></button>
-  <button class="tab-btn" data-tab="workout"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h20M3 8v8M7 5v14M17 5v14M21 8v8"/></svg><span>אימון</span></button>
+<nav class="tabbar" aria-label="ניווט ראשי">
+  <button class="tab-btn active" data-tab="home" aria-current="page"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10l9-7 9 7v11h-6v-7H9v7H3z"/></svg><span>ראשי</span></button>
   <button class="tab-btn" data-tab="history"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h2m4 0h2"/></svg><span>היסטוריה</span></button>
+  <button class="tab-btn workout-tab" data-tab="workout"><span class="workout-nav-icon"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h20M3 8v8M7 5v14M17 5v14M21 8v8"/></svg></span><span>אימון</span></button>
   <button class="tab-btn" data-tab="dashboard"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18h17M8 15l4-5 4 2 5-7"/></svg><span>סטטיסטיקה</span></button>
   <button class="tab-btn" data-tab="exercises"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5H4v16h16V5h-4"/><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 11h8m-8 5h8"/></svg><span>תרגילים</span></button>
-  <button class="tab-btn" data-tab="profile"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg><span>אישי</span></button>
-  <button class="tab-btn" data-tab="contact"><svg class="ui-icon nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 6l9 7 9-7"/></svg><span>קשר</span></button>
 </nav>
 
 <div id="toast" class="toast hidden"></div>

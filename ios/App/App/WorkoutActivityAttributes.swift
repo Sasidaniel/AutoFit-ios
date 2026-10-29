@@ -15,6 +15,7 @@ struct WorkoutActivityState: Codable, Hashable {
     let phaseEndsAt: Date?
     // Optional for activities encoded by older app versions.
     let language: String?
+    let feminineWording: Bool?
     let exerciseID: String?
     let setIndex: Int?
     let pausedElapsedSeconds: Double?
@@ -22,10 +23,15 @@ struct WorkoutActivityState: Codable, Hashable {
     var actionMessage: String?
     var actionPending: Bool?
     var isEnglish: Bool { language == "en" }
+    var usesFeminineWording: Bool { feminineWording == true }
+    var readyTitle: String {
+        isEnglish ? "Ready to train" : usesFeminineWording ? "מוכנה לאימון" : "מוכן לאימון"
+    }
 
     init(startMillis: Double, exerciseName: String, completedSets: Int, totalSets: Int,
          phase: String, phaseStartMillis: Double?, phaseEndMillis: Double?,
          nowMillis: Double = Date().timeIntervalSince1970 * 1000, language: String = "he",
+         feminineWording: Bool = false,
          exerciseID: String? = nil, setIndex: Int? = nil, pausedElapsedSeconds: Double? = nil,
          controlRevision: Int? = nil) throws {
         guard startMillis.isFinite, startMillis > 0, startMillis <= nowMillis + 60000,
@@ -63,6 +69,7 @@ struct WorkoutActivityState: Codable, Hashable {
         self.totalSets = totalSets
         self.phase = phase
         self.language = language
+        self.feminineWording = feminineWording
         self.exerciseID = exerciseID
         self.setIndex = setIndex
         self.pausedElapsedSeconds = pausedElapsedSeconds
@@ -131,7 +138,8 @@ struct WorkoutControlIntent: LiveActivityIntent {
             || command == "completeSet" && [.workout, .hold].contains(state.phase)
                 && state.exerciseID == exerciseID && state.setIndex == setIndex
         guard valid && controlRevision == (state.controlRevision ?? 0) else {
-            state.actionMessage = state.isEnglish ? "This control is out of date. Open AutoFit." : "הפעולה אינה עדכנית. פתח את AutoFit."
+            state.actionMessage = state.isEnglish ? "This control is out of date. Open AutoFit."
+                : state.usesFeminineWording ? "הפעולה אינה עדכנית. פתחי את AutoFit." : "הפעולה אינה עדכנית. פתח את AutoFit."
             state.actionPending = false
             await activity.update(ActivityContent(state: state, staleDate: state.phaseEndsAt))
             return .result()
@@ -167,7 +175,8 @@ struct WorkoutControlIntent: LiveActivityIntent {
         }
         var latest = activity.content.state
         latest.actionPending = false
-        latest.actionMessage = latest.isEnglish ? "Open AutoFit to finish this request." : "פתח את AutoFit להשלמת הבקשה."
+        latest.actionMessage = latest.isEnglish ? "Open AutoFit to finish this request."
+            : latest.usesFeminineWording ? "פתחי את AutoFit להשלמת הבקשה." : "פתח את AutoFit להשלמת הבקשה."
         await activity.update(ActivityContent(state: latest, staleDate: latest.phaseEndsAt))
         return .result()
     }

@@ -36,7 +36,7 @@ private struct WorkoutSummary: View {
 
     private var phaseTitle: String {
         switch state.phase {
-        case .ready: return state.isEnglish ? "Ready to train" : "מוכן לאימון"
+        case .ready: return state.readyTitle
         case .workout: return state.isEnglish ? "Workout time" : "זמן אימון"
         case .rest: return state.isEnglish ? "Rest" : "מנוחה"
         case .hold: return state.isEnglish ? "Hold" : "החזקה"
@@ -104,8 +104,8 @@ private struct WorkoutControls: View {
                         command: state.phase == .paused ? "resume" : "pause", controlRevision: state.controlRevision ?? 0)) {
                         let symbol = state.phase == .paused ? "play.fill" : "pause.fill"
                         let title = state.phase == .paused
-                            ? (state.isEnglish ? "Resume" : "המשך אימון")
-                            : (state.isEnglish ? "Pause" : "הפסק אימון")
+                            ? (state.isEnglish ? "Resume" : state.usesFeminineWording ? "המשיכי אימון" : "המשך אימון")
+                            : (state.isEnglish ? "Pause" : state.usesFeminineWording ? "הפסיקי אימון" : "הפסק אימון")
                         if compact { Image(systemName: symbol).accessibilityLabel(title) }
                         else { Label(title, systemImage: symbol) }
                     }

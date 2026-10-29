@@ -72,7 +72,7 @@ export function supersetNextEntry(session, entry) {
   if (!group || !entry.sets?.length) return null;
   const members = session.entries.filter((candidate) => candidate.exerciseSnapshot?.superset?.id === group.id);
   if (members.length !== 2) return null;
-  const remaining = members.filter((candidate) => candidate.sets.some((set) => !set.completed));
+  const remaining = members.filter((candidate) => !candidate.equipmentBusy && candidate.sets.some((set) => !set.completed));
   return remaining.sort((a, b) => a.sets.filter((set) => set.completed).length - b.sets.filter((set) => set.completed).length
     || a.exerciseSnapshot.superset.order - b.exerciseSnapshot.superset.order)[0] || null;
 }
@@ -144,7 +144,7 @@ export function planningCatalog(catalog) {
 
 export function planExercise(exercise) {
   return Object.fromEntries(['id', 'catalogId', 'name', 'category', 'inputType', 'defaultSets', 'defaultReps',
-    'targetReps', 'targetWeightKg', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals', 'superset']
+    'targetReps', 'targetWeightKg', 'autoLoadBaseline', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals', 'superset']
     .filter((key) => exercise[key] !== undefined).map((key) => [key, ['intervals', 'superset'].includes(key) ? copy(exercise[key]) : exercise[key]]));
 }
 
@@ -165,6 +165,45 @@ export function createSavedWorkout(name, state, id) {
     sessions: [{ exercises }], omitted: [] };
 }
 
+export function rememberMissingWorkoutLoads(exercises, settings, session) {
+  const unchanged = { exercises, settings, count: 0 };
+  const active = settings.training?.activePlan;
+  if ((active?.id || null) !== (session.planId || null)
+    || active && (session.planSnapshot?.id !== active.id || session.planSnapshot?.day !== active.day)) return unchanged;
+  const plan = active && settings.training.plans?.find((item) => item.id === active.id);
+  const day = plan?.sessions[active.day];
+  if (active && !day) return unchanged;
+  const missing = (exercise) => exercise.autoLoadBaseline !== false
+    && (exercise.targetWeightKg == null || String(exercise.targetWeightKg).trim() === '');
+  const same = (snapshot, exercise) => snapshot && snapshot.catalogId === exercise.catalogId
+    && (snapshot.inputType || 'reps') === (exercise.inputType || 'reps')
+    && snapshot.superset?.id === exercise.superset?.id && snapshot.superset?.order === exercise.superset?.order;
+  const learned = new Map();
+  for (const exercise of exercises) {
+    if (exercise.active === false || exercise.inputType === 'cardio' || !missing(exercise)) continue;
+    const entry = session.entries.find((item) => item.exerciseId === exercise.id);
+    if (!entry || entry.removedFromWorkout || !same(entry.exerciseSnapshot, exercise)
+      || entry.exerciseSnapshot.name !== exercise.name || (entry.exerciseSnapshot.notes || '') !== (exercise.notes || '')) continue;
+    const saved = day?.exercises.find((item) => item.id === exercise.id);
+    if (day && (!saved || !same(saved, exercise) || !missing(saved))) continue;
+    const first = entry.sets.find((set) => set.completed && ['number', 'string'].includes(typeof set.weightKg)
+      && String(set.weightKg).trim() !== '' && Number.isFinite(Number(set.weightKg))
+      && Number(set.weightKg) >= 0 && Number(set.weightKg) <= 5000);
+    if (first) learned.set(exercise.id, Number(first.weightKg));
+  }
+  if (!learned.size) return unchanged;
+  const nextExercises = exercises.map((exercise) => learned.has(exercise.id)
+    ? { ...exercise, targetWeightKg: learned.get(exercise.id) } : exercise);
+  let nextSettings = settings;
+  if (day) {
+    nextSettings = copy(settings);
+    const nextDay = nextSettings.training.plans.find((item) => item.id === plan.id).sessions[active.day];
+    nextDay.exercises = nextDay.exercises.map((exercise) => learned.has(exercise.id)
+      ? { ...exercise, targetWeightKg: learned.get(exercise.id) } : exercise);
+  }
+  return { exercises: nextExercises, settings: nextSettings, count: learned.size };
+}
+
 export function trainingMetadata(exercise) {
   // A generic seed guide is not evidence of the equipment variant actually performed.
   const key = exercise?.catalogId;
@@ -180,6 +219,74 @@ export function supportsPlanMuscles(muscles, exercise) {
     || exercise.superset?.id === 'leg-press-calves' && primary === 'שוקיים' && muscles.includes('רגליים');
 }
 
+export function workoutMuscleProgress(session, catalog) {
+  const entries = session.entries;
+  const done = (entry) => entry.type === 'cardio' ? entry.completed === true
+    : !!entry.sets?.length && entry.sets.every((set) => set.completed);
+  const records = entries.map((entry, index) => {
+    const exercise = { name: entry.exerciseName, category: entry.category,
+      ...catalog.find((item) => item.id === entry.exerciseId), ...entry.exerciseSnapshot };
+    const muscle = entry.type === 'cardio' ? null : exerciseGuide(exercise)?.muscles[0]
+      || [...PLAN_MUSCLES, 'גב תחתון', 'אמות', 'טרפז'].find((name) => name === exercise.category);
+    const label = muscle || (entry.type === 'cardio'
+      ? entry.exerciseId === 'warmup' ? 'חימום' : entry.exerciseId === 'cooldown' ? 'שחרור' : 'אירובי'
+      : 'תרגילים נוספים');
+    return { entry, index, muscle, label, key: `${muscle ? 'muscle' : 'activity'}:${label}`,
+      superset: exercise.superset?.id, supersetOrder: exercise.superset?.order || 0 };
+  });
+  const groups = [...new Set(records.map((record) => record.key))].map((key) => {
+    const own = records.filter((record) => record.key === key);
+    const members = records.filter((record) => own.includes(record)
+      || record.superset && own.some((item) => item.superset === record.superset));
+    return { key, label: own[0].label, muscle: !!own[0].muscle,
+      done: own.filter((record) => done(record.entry)).length, total: own.length,
+      complete: members.every((record) => done(record.entry)),
+      signature: JSON.stringify(members.map(({ entry, index }) => [index, entry.exerciseId])) };
+  });
+  const parents = new Map(groups.map((group) => [group.key, group.key]));
+  const root = (key) => {
+    while (parents.get(key) !== key) key = parents.get(key);
+    return key;
+  };
+  for (const record of records) {
+    if (!record.superset) continue;
+    for (const member of records.filter((item) => item.superset === record.superset)) {
+      parents.set(root(member.key), root(record.key));
+    }
+  }
+  const buckets = new Map();
+  for (const record of records) {
+    const key = root(record.key);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(record);
+  }
+  const orderedBuckets = [...buckets.values()].sort((a, b) => {
+    const priority = (bucket) => bucket[0].entry.exerciseId === 'warmup' ? -1
+      : bucket[0].entry.exerciseId === 'cooldown' ? 1 : 0;
+    return priority(a) - priority(b);
+  });
+  const sections = [], order = [];
+  for (const bucket of orderedBuckets) {
+    const ordered = [], seen = new Set();
+    for (const record of bucket) {
+      const pair = record.superset ? bucket.filter((item) => item.superset === record.superset)
+        .sort((a, b) => a.supersetOrder - b.supersetOrder) : [record];
+      for (const member of pair) if (!seen.has(member.index)) {
+        seen.add(member.index);
+        ordered.push(member);
+      }
+    }
+    const keys = [...new Set(ordered.map((item) => item.key))];
+    const selected = groups.filter((group) => keys.includes(group.key));
+    order.push(...ordered.map((record) => record.index));
+    sections.push({ entryIndex: ordered[0].index, label: selected.map((group) => group.label).join(' + '),
+      done: selected.reduce((sum, group) => sum + group.done, 0),
+      total: selected.reduce((sum, group) => sum + group.total, 0),
+      complete: selected.every((group) => group.complete) });
+  }
+  return { groups, sections, order };
+}
+
 export function editSavedPlanExercise(original, changes) {
   const next = copy(original);
   const limits = { defaultSets: [1, 100, true], targetReps: [1, 10000, true],
@@ -193,7 +300,7 @@ export function editSavedPlanExercise(original, changes) {
     } else if (Object.hasOwn(limits, key)) {
       if (value === '' && ['targetReps', 'targetWeightKg'].includes(key)) {
         if (key === 'targetReps') delete next[key];
-        else next[key] = null;
+        else { next[key] = null; next.autoLoadBaseline = false; }
         continue;
       }
       const number = Number(value);
@@ -203,6 +310,7 @@ export function editSavedPlanExercise(original, changes) {
       }
       if (original.intervals && key === 'durationMinutes') throw new Error('Keep the interval recipe intact');
       next[key] = number;
+      if (key === 'targetWeightKg') delete next.autoLoadBaseline;
     } else throw new Error('Unsupported saved exercise change');
   }
   return next;
@@ -274,6 +382,7 @@ export function alternatives(exercise, catalog) {
 }
 
 export function entryHasActivity(entry) {
+  if (entry.equipmentBusy) return true;
   return entry.type === 'cardio' ? !!(entry.completed || entry.startedAt || entry.resumeAfterPause || entry.elapsedSec > 0 || entry.userEdited)
     : !!entry.userEdited || entry.sets.some((set) => set.completed || set.holdStartedAt || set.resumeAfterPause || set.holdElapsedSec > 0 || set.notes
       || !entry.exerciseSnapshot && (set.weightKg !== '' || set.reps !== ''));
@@ -325,12 +434,66 @@ export function workoutHistoryEntries(session) {
   return [...session.entries, ...(session.removedExercises || []).map(({ entry }) => ({ ...entry, removedFromWorkout: true }))];
 }
 
-export function currentWorkoutEntry(session) {
+export function currentWorkoutEntry(session, catalog = []) {
   const unfinished = (entry) => entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed);
-  return session.entries.find((entry) => entry.exerciseId === session.currentExerciseId && unfinished(entry))
-    || session.entries.find((entry) => unfinished(entry) && (entry.type === 'cardio' ? entry.startedAt || entry.resumeAfterPause
+  const available = (entry) => !entry.equipmentBusy && unfinished(entry);
+  return session.entries.find((entry) => entry.exerciseId === session.currentExerciseId && available(entry))
+    || session.entries.find((entry) => available(entry) && (entry.type === 'cardio' ? entry.startedAt || entry.resumeAfterPause
       : entry.sets.some((set) => set.holdStartedAt || set.resumeAfterPause)))
-    || session.entries.find(unfinished);
+    || nextAvailableWorkoutEntry(session, null, catalog) || undefined;
+}
+
+export function nextAvailableWorkoutEntry(session, from = null, catalog = []) {
+  const unfinished = (entry) => entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed);
+  const paired = from && supersetNextEntry(session, from);
+  if (paired && paired !== from) return paired;
+  const ordered = workoutMuscleProgress(session, catalog).order.map((index) => session.entries[index]);
+  return ordered.find((entry) => entry !== from && !entry.equipmentBusy && unfinished(entry)
+    && (entry.exerciseId !== 'cooldown' || !session.entries.some((other) =>
+      other !== entry && unfinished(other)))) || null;
+}
+
+export function setEquipmentBusy(session, exerciseId, busy) {
+  const result = copy(session);
+  const entry = result.entries.find((entry) => entry.exerciseId === exerciseId);
+  if (!entry || entry.type === 'cardio' || entry.sets.every((set) => set.completed)) {
+    throw new Error('התרגיל השתנה. פתח שוב את הפעולה.');
+  }
+  if (busy) entry.equipmentBusy = true;
+  else delete entry.equipmentBusy;
+  if (busy && result.currentExerciseId === exerciseId) {
+    const next = nextAvailableWorkoutEntry(result, entry);
+    if (next) result.currentExerciseId = next.exerciseId;
+    else delete result.currentExerciseId;
+  }
+  result.activityControlRevision = (result.activityControlRevision || 0) + 1;
+  return result;
+}
+
+export function workoutEntryAnnouncement(entry, catalog, translate = (text) => text, translateName = (text) => text) {
+  if (!entry) return '';
+  const exercise = entry.exerciseSnapshot || catalog.find((item) => item.id === entry.exerciseId) || {};
+  const parts = [translateName(entry.exerciseName || exercise.name || '')];
+  if (entry.type === 'cardio') {
+    if (Number.isFinite(entry.durationSec) && entry.durationSec > 0) parts.push(translate(`${Math.round(entry.durationSec / 6) / 10} דקות`));
+    return parts.join('. ');
+  }
+  const remaining = entry.sets.filter((set) => !set.completed);
+  const next = remaining[0];
+  parts.push(translate(`${entry.sets.length} סטים, ${remaining.length} נותרו`));
+  if (next) {
+    parts.push(translate(`סט ${entry.sets.indexOf(next) + 1}`));
+    const reps = exercise.inputType === 'hold' ? exercise.holdSeconds
+      : next.voiceTargetReps ?? (next.reps !== '' && next.reps != null ? next.reps : entry.targetReps ?? exercise.targetReps ?? exercise.defaultReps);
+    if (reps !== '' && reps != null && /^\d+(?:\s*[–-]\s*\d+)?$/.test(String(reps))) {
+      parts.push(translate(`${reps} ${exercise.inputType === 'hold' ? 'שניות החזקה' : 'חזרות'}`));
+    }
+    const weight = next.weightKg;
+    if (weight !== '' && weight != null && Number.isFinite(Number(weight)) && Number(weight) >= 0) {
+      parts.push(translate(`${exercise.loadKind === 'assistance' || exercise.catalogId === 'assisted' ? 'סיוע: ' : ''}${Number(weight)} קילו`));
+    }
+  }
+  return parts.filter(Boolean).join('. ');
 }
 
 export function durationSession(program, setCount = (exercise) => Math.max(1, exercise.defaultSets || 1)) {
@@ -781,6 +944,7 @@ export function activatePlanExercises(catalog, proposed) {
   // Preserve canonical names, custom notes, images and every unselected library entry.
   return [...proposed.map((item) => ({ ...copy(catalog.find((exercise) => exercise.id === item.id)), active: true,
     defaultSets: item.defaultSets, defaultReps: item.defaultReps, targetReps: item.targetReps,
+    autoLoadBaseline: item.autoLoadBaseline,
     superset: item.superset ? copy(item.superset) : null,
     ...Object.fromEntries(['targetWeightKg', 'holdSeconds', 'pace'].filter((key) => Object.hasOwn(item, key)).map((key) => [key, item[key]])),
     ...(item.inputType === 'cardio' ? { intervals: item.intervals ? copy(item.intervals) : null } : {}),

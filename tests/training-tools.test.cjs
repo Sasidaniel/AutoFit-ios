@@ -11,11 +11,11 @@ function load(file, names, values = {}) {
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
-const tools = load('www/js/training-tools.js', ['trainingMetadata', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
+const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
-  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration',
+  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'workoutEntryAnnouncement', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
-  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'editSavedPlanExercise', 'replaceSavedPlan',
+  'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'rememberMissingWorkoutLoads', 'editSavedPlanExercise', 'replaceSavedPlan',
   'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan',
   'removeWorkoutExercise', 'restoreWorkoutExercise', 'workoutHistoryEntries',
   'generateRopePlan', 'ropeIntervalSchedule', 'cardioIntervalPhase', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
@@ -27,6 +27,113 @@ function entry(exercise, sets = [set(), set()]) {
   return { exerciseId: exercise.id, exerciseName: exercise.name, targetReps: 12, sets };
 }
 function session(entries) { return { id: 'local-session', running: false, entries }; }
+
+test('workout muscle headings group matching exercises while preserving source data and counting busy earlier work', () => {
+  const row = { id: 'test-row', catalogId: 'row', name: 'חתירה', category: 'גב' }, chest = find('chest');
+  const current = session([
+    { type: 'cardio', exerciseId: 'warmup', completed: false },
+    { ...entry(row, [set(20, 12, true)]), exerciseId: 'row-one', exerciseSnapshot: row },
+    { ...entry(chest), exerciseSnapshot: chest },
+    { ...entry(row), exerciseId: 'row-two', equipmentBusy: true, exerciseSnapshot: row },
+    { exerciseId: 'custom', sets: [set()] },
+  ]);
+  const original = plain(current);
+  const model = tools.workoutMuscleProgress(current, []);
+  assert.deepEqual(plain(model.sections.map(({ entryIndex, label }) => ({ entryIndex, label }))), [
+    { entryIndex: 0, label: 'חימום' }, { entryIndex: 1, label: 'גב' },
+    { entryIndex: 2, label: 'חזה' },
+    { entryIndex: 4, label: 'תרגילים נוספים' },
+  ]);
+  assert.deepEqual(plain(model.order), [0, 1, 3, 2, 4]);
+  const back = model.groups.find((group) => group.label === 'גב');
+  assert.equal(back.done, 1);
+  assert.equal(back.total, 2);
+  assert.equal(back.complete, false);
+  assert.equal(model.groups.some((group) => group.label === 'יד קדמית'), false);
+  assert.deepEqual(plain(current), original);
+  current.entries[3].sets.forEach((value) => { value.completed = true; });
+  assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, true);
+  current.entries[3].sets = [];
+  assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, false);
+});
+
+test('mixed-muscle supersets share a heading and completion waits for both parts and later matching work', () => {
+  const pair = tools.supersetExercises('chest-row', [], 1);
+  const current = session(pair.map((exercise) => ({ ...entry(exercise, [set()]), exerciseSnapshot: exercise })));
+  const laterRow = { ...pair[1], id: 'later-row', superset: undefined };
+  current.entries.push({ ...entry(laterRow, [set()]), exerciseSnapshot: laterRow });
+  let model = tools.workoutMuscleProgress(current, []);
+  assert.equal(model.sections[0].label, 'חזה + גב');
+  assert.deepEqual(plain(model.sections.map((section) => section.entryIndex)), [0]);
+  current.entries[0].sets[0].completed = true;
+  assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'חזה').complete, false);
+  current.entries[1].sets[0].completed = true;
+  model = tools.workoutMuscleProgress(current, []);
+  assert.equal(model.groups.find((group) => group.label === 'חזה').complete, true);
+  assert.equal(model.groups.find((group) => group.label === 'גב').complete, false);
+  current.entries[2].sets[0].completed = true;
+  assert.equal(tools.workoutMuscleProgress(current, []).groups.every((group) => group.complete), true);
+});
+
+test('upcoming guidance follows the grouped workout display without changing stored program order', () => {
+  const row = { catalogId: 'row', name: 'חתירה' }, chest = find('chest');
+  const current = session([
+    { exerciseId: 'back-one', exerciseName: 'חתירה', sets: [set(20, 12, true)], exerciseSnapshot: row },
+    { exerciseId: 'chest', sets: [set()], exerciseSnapshot: chest },
+    { exerciseId: 'back-two', exerciseName: 'חתירה', sets: [set()], exerciseSnapshot: row },
+    { exerciseId: 'cooldown', type: 'cardio', completed: false },
+  ]);
+  const before = plain(current);
+  assert.equal(tools.nextAvailableWorkoutEntry(current, current.entries[0]).exerciseId, 'back-two');
+  assert.equal(tools.currentWorkoutEntry(current).exerciseId, 'back-two');
+  assert.deepEqual(plain(current), before);
+  current.entries[2].equipmentBusy = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, current.entries[0]).exerciseId, 'chest');
+  current.entries[1].sets[0].completed = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, current.entries[0]), null);
+});
+
+test('grouping keeps separated superset parts adjacent and warmup/cooldown at the ends without moving source records', () => {
+  const pair = tools.supersetExercises('chest-row', [], 1);
+  const current = session([
+    { exerciseId: 'cooldown', type: 'cardio', completed: false },
+    { ...entry(pair[0]), exerciseSnapshot: pair[0] },
+    { ...entry(find('chest')), exerciseSnapshot: find('chest') },
+    { exerciseId: 'warmup', type: 'cardio', completed: false },
+    { ...entry(pair[1]), exerciseSnapshot: pair[1] },
+  ]);
+  const before = plain(current);
+  const model = tools.workoutMuscleProgress(current, []);
+  assert.deepEqual(plain(model.order), [3, 1, 4, 2, 0]);
+  assert.deepEqual(plain(model.sections.map((section) => section.label)), ['חימום', 'חזה + גב', 'שחרור']);
+  assert.deepEqual(plain(current), before);
+});
+
+test('the actual completion controller combines the last muscle cue with workout completion and adds no final rest', () => {
+  const { context } = pauseController();
+  context.activeSession.entries = ['first', 'second'].map((id) => ({
+    exerciseId: id, exerciseName: 'חתירה', sets: [set(20, 12)],
+    exerciseSnapshot: { id, name: 'חתירה', catalogId: 'row', inputType: 'reps', restSeconds: 90 },
+  }));
+  context.exercises = context.activeSession.entries.map((entry) => entry.exerciseSnapshot);
+  context.settings.voiceAnnouncements = true;
+  const spoken = [];
+  context.speak = (text) => spoken.push(text);
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'),
+    source.indexOf('function cardioCompletionMessage(')), context);
+  context.workoutMuscleCompletionCue(false);
+  const [first, second] = context.activeSession.entries;
+  context.setWorkoutSetCompletion(first, first.sets[0], context.exercises[0], 0, true);
+  assert.equal(spoken.some((text) => text.includes('תרגילי הקבוצה')), false);
+  context.setWorkoutSetCompletion(second, second.sets[0], context.exercises[1], 0, true);
+  context.finishWorkout();
+  assert.match(spoken.at(-1), /תרגילי הקבוצה הושלמו: גב/);
+  assert.match(spoken.at(-1), /כל הכבוד על האימון/);
+  assert.equal(spoken.filter((text) => text.includes('תרגילי הקבוצה')).length, 1);
+  assert.equal(context.restTimer.isRunning(), false);
+});
+
 function record(id, date, exercise = { ...find('chest'), targetReps: 12 }, sets = [set(20, 12, true, { difficulty: 'right' }), set(20, 12, true, { difficulty: 'easy' })]) {
   return { id, dateISO: date, entries: [insights.completedEntrySnapshot(entry(exercise, sets), exercise)] };
 }
@@ -199,6 +306,87 @@ test('actual workout controller alternates superset focus and starts no rest bet
   assert.equal(rests, 2, 'No final rest at genuine workout completion');
 });
 
+test('dynamic next exercise returns to earlier unfinished work and never sends busy work into cooldown', () => {
+  const entries = ['earlier', 'middle', 'done', 'later'].map((id) => ({
+    exerciseId: id, exerciseName: id, sets: [set('', '', id === 'done')],
+  }));
+  const cooldown = { exerciseId: 'cooldown', type: 'cardio', completed: false };
+  const current = session([...entries, cooldown]);
+  assert.equal(tools.nextAvailableWorkoutEntry(current, entries[2]), entries[0]);
+  entries[0].equipmentBusy = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, entries[2]), entries[1]);
+  entries[1].equipmentBusy = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, entries[2]), entries[3]);
+  entries[3].sets[0].completed = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, entries[3]), null);
+  assert.equal(tools.currentWorkoutEntry(current), undefined);
+  delete entries[0].equipmentBusy;
+  assert.equal(tools.nextAvailableWorkoutEntry(current, entries[3]), entries[0]);
+  assert.equal(cooldown.completed, false);
+});
+
+test('equipment waiting is a reversible session-only choice and preserves logged measurements', () => {
+  const exercise = find('chest');
+  const current = session([entry(exercise, [set(20, 12, true), set(25, 10)])]);
+  current.currentExerciseId = exercise.id;
+  const before = plain(current);
+  const waiting = tools.setEquipmentBusy(current, exercise.id, true);
+  assert.deepEqual(current, before);
+  assert.equal(waiting.entries[0].equipmentBusy, true);
+  assert.equal(tools.entryHasActivity(waiting.entries[0]), true);
+  assert.equal(waiting.currentExerciseId, undefined);
+  assert.deepEqual(plain(waiting.entries[0].sets), before.entries[0].sets);
+  const available = tools.setEquipmentBusy(waiting, exercise.id, false);
+  assert.equal(available.entries[0].equipmentBusy, undefined);
+  assert.deepEqual(plain(available.entries[0].sets), before.entries[0].sets);
+});
+
+test('upcoming speech uses the actual next set, kilograms and honest hold/cardio/unknown prescriptions', () => {
+  const exercise = { ...find('chest'), defaultReps: '8–12' };
+  const current = { ...entry(exercise, [set(20, 12, true), set(27.5, 9), set(30, 8)]), exerciseSnapshot: exercise };
+  const speech = tools.workoutEntryAnnouncement(current, catalog);
+  assert.match(speech, /3 סטים, 2 נותרו/);
+  assert.match(speech, /סט 2/);
+  assert.match(speech, /9 חזרות/);
+  assert.match(speech, /27.5 קילו/);
+  assert.doesNotMatch(speech, /lbs|פאונד|30 קילו/);
+  current.sets[1] = set();
+  delete current.targetReps;
+  current.exerciseSnapshot.targetWeightKg = 20;
+  assert.match(tools.workoutEntryAnnouncement(current, catalog), /8–12 חזרות/);
+  assert.doesNotMatch(tools.workoutEntryAnnouncement(current, catalog), /קילו/);
+  const hold = { ...entry(exercise, [set()]), exerciseSnapshot: { inputType: 'hold', holdSeconds: 30 } };
+  assert.match(tools.workoutEntryAnnouncement(hold, []), /30 שניות החזקה/);
+  assert.match(tools.workoutEntryAnnouncement({ type: 'cardio', exerciseName: 'הליכה', durationSec: 300 }, []), /5 דקות/);
+  const assistance = { ...entry(exercise, [set(35, 10)]), exerciseSnapshot: { catalogId: 'assisted' } };
+  assert.match(tools.workoutEntryAnnouncement(assistance, []), /סיוע: 35 קילו/);
+});
+
+test('live rest guidance recomputes earlier available work instead of replaying a stale next exercise', () => {
+  const { context } = pauseController();
+  const a = { exerciseId: 'a', exerciseName: 'Earlier', sets: [set(25, 12)] };
+  const b = { exerciseId: 'b', exerciseName: 'Finished', sets: [set(20, 10, true)] };
+  const c = { exerciseId: 'c', exerciseName: 'Later', sets: [set(30, 8)] };
+  context.activeSession.entries = [a, b, c];
+  context.exercises = [{ id: 'a', inputType: 'reps' }, { id: 'b', inputType: 'reps' }, { id: 'c', inputType: 'reps' }];
+  const spoken = [];
+  context.speak = (text) => spoken.push(text);
+  context.settings.voiceAnnouncements = true;
+  context.voiceReportInProgress = false;
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'), source.indexOf('function cardioCompletionMessage(')), context);
+  context.startRestTimer({ id: 'b', name: 'Finished', restSeconds: 90 }, true, 'Later');
+  assert.match(spoken[0], /התרגיל הבא: Earlier/);
+  assert.match(spoken[0], /25 קילו/);
+  a.equipmentBusy = true;
+  context.persistActiveSession();
+  assert.match(context.restDoneMessage, /^Later/);
+  c.equipmentBusy = true;
+  context.persistActiveSession();
+  assert.match(context.restDoneMessage, /ממתינים לציוד/);
+  assert.doesNotMatch(context.restDoneMessage, /האימון הושלם/);
+});
+
 test('editing one of three existing plans preserves custom triangle pulldown identity, ranges, nested targets, order and other plans', () => {
   const plans = threeSavedPlans(), before = plain(plans), draft = plain(plans[0]);
   draft.name = 'A עודכן';
@@ -267,7 +455,8 @@ test('unnamed rope workout titles retain the saved level and duration with share
   const workout = { planSnapshot: tools.planIdentity(plan, 0) };
   assert.equal(tools.sessionWorkoutTitle(workout), 'קפיצה על חבל · בינונית · 15 דקות');
   const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: library.LIBRARY_TRANSLATIONS });
-  const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN });
+  const { HE_FEMALE } = load('www/js/translations-he-female.js', ['HE_FEMALE']);
+  const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN, HE_FEMALE });
   i18n.setLanguage('en');
   assert.equal(tools.sessionWorkoutTitle(workout, i18n.text), 'Jump rope · Intermediate · 15 minutes');
   workout.planSnapshot.name = 'החבל שלי';
@@ -355,7 +544,8 @@ test('removal and undo immediately recompute mixed cardio/strength counts and pe
   };
   const original = session([entry(find('chest'), [set(40, 12, true)]),
     entry(find('floor'), [set(), set()]), { exerciseId: 'warmup', type: 'cardio', completed: true }]);
-  const context = vm.createContext({ activeSession: original, el, i18n: { text: (text) => text }, refreshDifficultyFeedback() {} });
+  const context = vm.createContext({ activeSession: original, el, i18n: { text: (text) => text },
+    refreshWorkoutMuscleHeadings() {}, refreshDifficultyFeedback() {} });
   const source = read('www/js/app.js');
   vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'), source.indexOf('function refreshDifficultyFeedback()')), context);
   context.updateProgress();
@@ -719,7 +909,8 @@ test('expanded per-side exercises count both sides without doubling rests, trans
 
 test('one average estimate formats minute/hour boundaries through the real Hebrew and English translator', () => {
   const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: {} });
-  const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN });
+  const { HE_FEMALE } = load('www/js/translations-he-female.js', ['HE_FEMALE']);
+  const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN, HE_FEMALE });
   const { durationEstimateText } = load('www/js/training-ui.js', ['durationEstimateText'], { i18n });
   const examples = [
     [0, '0 דקות', '0 minutes'], [1, 'דקה', '1 minute'], [59, '59 דקות', '59 minutes'],
@@ -764,6 +955,7 @@ function pauseController(savedSession) {
       { exerciseId: 'native:cardio', exerciseName: 'Walk', type: 'cardio', durationSec: 600, elapsedSec: 40, startedAt: now - 20000 },
     ] };
   const context = vm.createContext({ ...timers, activeSession, formatHMS, privacyErasing: false,
+    qsa: () => [], voiceReportInProgress: false,
     finishingWorkout: false, pendingWorkoutAutoFinish: null,
     settings: { voiceAnnouncements: false, voiceCommandsEnabled: true }, workouts: [],
     exercises: [{ id: 'native:chest', name: 'Chest', inputType: 'reps', restSeconds: 90 },
@@ -779,8 +971,9 @@ function pauseController(savedSession) {
       voiceStopListening: async () => calls.push('stopListening'),
       acknowledgeWorkoutActivityAction: async (value) => { calls.push(plain(value)); return { ok: true }; },
       voiceStartListening: async () => { calls.push('startListening'); return { listening: true }; } },
-    db: { saveActiveSession: (value) => saved.push(plain(value)), saveWorkouts() {}, clearActiveSession() {} },
-    i18n: { text: (value) => value, translateDOM() {}, exerciseName: (value) => value, getLanguage: () => 'he', locale: () => 'he-IL' },
+    db: { saveActiveSession: (value) => saved.push(plain(value)), saveWorkouts() {}, clearActiveSession() {},
+      saveProgramState() {} },
+    i18n: { text: (value) => value, translateDOM() {}, exerciseName: (value) => value, getLanguage: () => 'he', getGender: () => 'general', locale: () => 'he-IL' },
     document: { visibilityState: 'visible' }, currentTab: 'workout', voiceListeningActive: !!activeSession.running,
     voiceListeningRevision: 0, voiceActivationPending: false, voiceListeningError: '', voiceInputName: '',
     voiceReports: { voiceReportHints: () => [] }, voiceExerciseNames: () => [],
@@ -1069,6 +1262,23 @@ test('storage failure cannot leave timers or listening active or claim a pause w
   assert.ok(calls.includes('stopListening') && calls.includes('stopBackground'), JSON.stringify(calls));
   assert.equal(context.activeSession.paused, true);
   assert.equal(messages.length, 0);
+});
+
+test('Live Activity carries only the grammatical preference and keeps its canonical exercise identity', () => {
+  const { context } = pauseController();
+  const before = context.buildWorkoutActivityPayload();
+  assert.equal(before.feminineWording, false);
+  context.i18n.getGender = () => 'female';
+  const female = context.buildWorkoutActivityPayload();
+  assert.equal(female.feminineWording, true);
+  assert.equal(female.exerciseID, before.exerciseID);
+  assert.equal(female.exerciseName, before.exerciseName);
+  assert.equal(female.gender, undefined);
+  const state = read('ios/App/App/WorkoutActivityAttributes.swift');
+  assert.match(state, /let feminineWording: Bool\?/);
+  assert.match(state, /var readyTitle: String/);
+  assert.match(state, /מוכנה לאימון/);
+  assert.match(read('ios/App/App/LiveActivityBridgePlugin.swift'), /getBool\("feminineWording"\)/);
 });
 
 function widgetRequest(context, command, id = 'widget-request') {
@@ -1437,6 +1647,10 @@ test('cardio completion replaces only its own card and keeps unrelated focused i
     Date: { now: () => 3000 }, settings: { voiceAnnouncements: false },
     el: () => null, qs: (selector) => { assert.match(selector, /data-entry-index="1"/); return previous; },
     renderCardioCard: (value, number) => { assert.equal(value, entry); assert.equal(number, 2); return replacement; },
+    configureWorkoutCard: (card, value, index) => {
+      assert.equal(card, replacement); assert.equal(value, entry); assert.equal(index, 1);
+      card.collapsed = true;
+    },
     renderWorkoutTab: () => assert.fail('Completing cardio must not rebuild the exercise list'),
     advanceWorkoutFocus() {}, persistActiveSession() {}, playBeep() {}, cardioCompletionMessage: () => 'done',
     showToast() {}, notify() {}, updateProgress: () => progress++, refreshVoiceSelection() {}, syncWorkoutActivity() {},
@@ -1448,6 +1662,7 @@ test('cardio completion replaces only its own card and keeps unrelated focused i
   assert.equal(otherInput.value, '37.5');
   assert.equal(nodes[1], replacement);
   assert.equal(replacement.dataset.entryIndex, 1);
+  assert.equal(replacement.collapsed, true);
   assert.equal(progress, 1);
   context.tickCardioTimers();
   assert.equal(progress, 1);
@@ -2168,9 +2383,9 @@ test('finishing restores original exercises, set counts and targets while histor
   assert.deepEqual(next.entries.map((item) => item.exerciseId), original.map((item) => item.id));
   assert.deepEqual(next.entries.map((item) => item.sets.length), [3, 2]);
   assert.ok(next.entries[0].sets.every((item) => item.weightKg === 20 && item.reps === 12 && !item.completed));
-  assert.ok(next.entries[1].sets.every((item) => item.weightKg === '' && item.reps === 8 && !item.completed));
+  assert.ok(next.entries[1].sets.every((item) => item.weightKg === 99 && item.reps === 8 && !item.completed));
   assert.equal(next.removedExercises, undefined);
-  assert.deepEqual(plain(context.exercises), original);
+  assert.deepEqual(plain(context.exercises), [original[0], { ...original[1], targetWeightKg: 99 }]);
   const removed = logged.entries.find((item) => item.exerciseId === original[0].id);
   assert.equal(removed.removedFromWorkout, true);
   assert.deepEqual(removed.sets[0], set(100, 5, true, { notes: 'Actual performance', difficulty: 'hard' }));
@@ -2192,9 +2407,115 @@ test('fresh drafts leave unknown/ranged loads and repetitions blank rather than 
   assert.equal(tools.entryHasActivity(fresh), false);
 });
 
+test('missing loads learn the first completed measured set once without copying later performance or other targets', () => {
+  const missing = { ...find('floor'), active: true, defaultSets: 3 };
+  const fixed = { ...find('chest'), active: true, defaultSets: 3, targetWeightKg: 20 };
+  const exercises = [missing, fixed], settings = { programWeek: 3 };
+  const current = session(exercises.map((exercise) => ({
+    ...entry(exercise, [set(17.5, 12, true), set(25, 8, true), set(30, 6, true)]),
+    exerciseSnapshot: exercise,
+  })));
+  const before = JSON.stringify({ exercises, settings, current });
+  const next = tools.rememberMissingWorkoutLoads(exercises, settings, current);
+  assert.equal(next.count, 1);
+  assert.equal(next.exercises[0].targetWeightKg, 17.5);
+  assert.equal(next.exercises[1].targetWeightKg, 20);
+  assert.equal(next.exercises[0].defaultSets, 3);
+  assert.equal(next.exercises[0].defaultReps, missing.defaultReps);
+  assert.equal(JSON.stringify({ exercises, settings, current }), before);
+  current.entries[0].sets[0].weightKg = 99;
+  assert.equal(tools.rememberMissingWorkoutLoads(next.exercises, settings, current).count, 0);
+});
+
+test('automatic loads remain isolated to the original saved plan and day', () => {
+  const exercise = { ...find('floor'), active: true, defaultSets: 2 };
+  const plans = ['A', 'B'].map((id) => ({ id, name: id, options: { goal: 'custom' }, sessions: [
+    { exercises: [tools.planExercise(exercise)] }, { exercises: [{ ...tools.planExercise(exercise), targetWeightKg: 50 }] },
+  ] }));
+  const settings = { training: { plans, activePlan: { id: 'A', day: 0 } } };
+  const current = { ...session([{ ...entry(exercise, [set(12.5, 12, true), set(15, 10, true)]), exerciseSnapshot: exercise }]),
+    planId: 'A', planSnapshot: tools.planIdentity(plans[0], 0) };
+  const before = plain(settings);
+  const next = tools.rememberMissingWorkoutLoads([exercise], settings, current);
+  assert.equal(next.count, 1);
+  assert.equal(next.settings.training.plans[0].sessions[0].exercises[0].targetWeightKg, 12.5);
+  assert.equal(next.settings.training.plans[0].sessions[1].exercises[0].targetWeightKg, 50);
+  assert.deepEqual(plain(next.settings.training.plans[1]), before.training.plans[1]);
+  assert.deepEqual(plain(settings), before);
+  assert.equal(tools.rememberMissingWorkoutLoads([exercise], { training: { ...settings.training, activePlan: { id: 'B', day: 0 } } }, current).count, 0);
+  assert.equal(tools.rememberMissingWorkoutLoads([exercise], { training: { ...settings.training, activePlan: { id: 'A', day: 1 } } }, current).count, 0);
+});
+
+test('load learning ignores missing, undone, invalid, swapped, removed or explicitly cleared targets', () => {
+  const exercise = { ...find('floor'), active: true, defaultSets: 1 };
+  const current = (weightKg, completed = true) => session([{ ...entry(exercise, [set(weightKg, 12, completed)]), exerciseSnapshot: exercise }]);
+  for (const weight of ['', ' ', null, undefined, -1, NaN, Infinity, 'oops', true, 5001]) {
+    assert.equal(tools.rememberMissingWorkoutLoads([exercise], {}, current(weight)).count, 0, String(weight));
+  }
+  assert.equal(tools.rememberMissingWorkoutLoads([exercise], {}, current(20, false)).count, 0);
+  const swapped = current(20);
+  swapped.entries[0].exerciseSnapshot = find('chest');
+  assert.equal(tools.rememberMissingWorkoutLoads([exercise], {}, swapped).count, 0);
+  const removed = tools.removeWorkoutExercise(current(20), exercise.id);
+  assert.equal(tools.rememberMissingWorkoutLoads([exercise], {}, removed).count, 0);
+  const cleared = tools.editSavedPlanExercise({ ...exercise, targetWeightKg: 25 }, { targetWeightKg: '' });
+  assert.equal(cleared.autoLoadBaseline, false);
+  assert.equal(tools.planExercise(cleared).autoLoadBaseline, false);
+  const activated = tools.activatePlanExercises([exercise], [cleared]);
+  assert.equal(activated[0].autoLoadBaseline, false);
+  assert.equal(tools.rememberMissingWorkoutLoads(activated, {}, current(20)).count, 0);
+  const zero = tools.rememberMissingWorkoutLoads([exercise], {}, current(0));
+  assert.equal(zero.exercises[0].targetWeightKg, 0);
+  assert.equal(tools.rememberMissingWorkoutLoads([{ ...exercise, targetWeightKg: 0 }], {}, current(20)).count, 0);
+});
+
+function missingLoadFinishController() {
+  const fixture = pauseController(), { context } = fixture;
+  context.exercises = [{ ...find('floor'), active: true, defaultSets: 2, targetReps: 12 }];
+  context.settings.programWeek = 3;
+  context.db.uid = () => 'fresh-baseline';
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  context.activeSession = { ...context.buildDraftSession(), id: 'first-load', accumulatedSec: 60,
+    startedAt: '2026-10-29T07:00:00Z' };
+  context.activeSession.entries[0].sets = [set(17.5, 12, true), set(25, 8, true)];
+  return fixture;
+}
+
+test('finishing persists a first-load baseline before rebuilding and leaves actual per-set history intact', () => {
+  const { context } = missingLoadFinishController();
+  const persisted = [];
+  context.db.saveProgramState = (...values) => persisted.push(plain(values));
+  context.finishWorkout();
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0][0][0].targetWeightKg, 17.5);
+  assert.ok(context.activeSession.entries[0].sets.every((set) => set.weightKg === 17.5 && set.reps === 12 && !set.completed));
+  assert.deepEqual(plain(context.workouts[0].entries[0].sets.map((set) => set.weightKg)), [17.5, 25]);
+  context.activeSession.id = 'later-performance';
+  context.activeSession.entries[0].sets = [set(99, 5, true), set(100, 4, true)];
+  context.finishWorkout();
+  assert.equal(persisted.length, 1);
+  assert.ok(context.activeSession.entries[0].sets.every((set) => set.weightKg === 17.5));
+  assert.deepEqual(plain(context.workouts[1].entries[0].sets.map((set) => set.weightKg)), [99, 100]);
+});
+
+test('a baseline storage failure preserves the completed workout for retry without duplicate history or partial in-memory targets', () => {
+  const { context } = missingLoadFinishController();
+  context.db.saveProgramState = () => { throw new Error('quota'); };
+  assert.throws(() => context.finishWorkout(), /quota/);
+  assert.equal(context.exercises[0].targetWeightKg, undefined);
+  assert.equal(context.activeSession.id, 'first-load');
+  assert.equal(context.workouts.length, 1);
+  context.db.saveProgramState = () => {};
+  context.finishWorkout();
+  assert.equal(context.workouts.length, 1);
+  assert.equal(context.exercises[0].targetWeightKg, 17.5);
+  assert.ok(context.activeSession.entries[0].sets.every((set) => set.weightKg === 17.5));
+});
+
 test('all authored training UI labels use the shared bilingual dictionary', () => {
   const context = vm.createContext();
-  for (const file of ['exercise-library.js', 'translations-en.js', 'seed.js', 'i18n.js']) {
+  for (const file of ['exercise-library.js', 'translations-en.js', 'translations-he-female.js', 'seed.js', 'i18n.js']) {
     vm.runInContext(read(`www/js/${file}`).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   }
   context.setLanguage('en');
