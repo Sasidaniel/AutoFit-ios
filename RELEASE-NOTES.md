@@ -1,6 +1,21 @@
 # AutoFit release notes
 
-## Release candidate 1.0 (38) - full catalog audit and male profile default (2026-10-29)
+## 1.0 (38) - verified internal TestFlight release (2026-10-29)
+
+- Binary source: `d82a6be08a591d1d273d81ed09a9bfb7ae8cdecb`.
+  Apple build ID: `acdd97db-d383-4190-9a73-8937a4825490`.
+- [Build/upload run](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40880286993):
+  all 623 JavaScript tests, four Swift suites, app/widget archive, signing,
+  export and upload passed. Its final availability API request returned
+  HTTP 422 after Apple reported VALID / READY_FOR_BETA_TESTING.
+- [Existing-build verification](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40881446911)
+  succeeded at 2026-10-29 13:23:26 UTC: **VALID / IN_BETA_TESTING**.
+  Exactly one binary upload; no rebuild/reupload, main merge, external beta
+  submission or App Store release. Physical-device acceptance remains pending.
+- All earlier unreleased entries below through the category/default audit are
+  included in 38. Their original headings preserve the local-review chronology.
+
+### Full catalog audit and male profile default
 
 - Owner explicitly approved a new internal TestFlight release after auditing
   all changes and fixing test failures. Do not equate upload with availability.
@@ -22,9 +37,9 @@
   Browser checks verified muscle placement, both male defaults, preservation
   of saved wording, unsaved edits remaining unapplied and unchanged persisted
   AutoFit keys across both review origins, without horizontal overflow at 385px.
-  Cache: `autofit-v94`. macOS Swift/archive/upload and Apple internal
-  availability must still be verified before reporting release success.
-- Detailed handoff: PRE-RELEASE-REVIEW sections 59-61.
+  Cache: `autofit-v94`. macOS compilation and Apple availability are verified
+  above; microphone/player behavior still needs physical-device testing.
+- Detailed handoff: PRE-RELEASE-REVIEW sections 59-62.
 
 ## Unreleased - remove the unclassified equipment category (2026-10-29)
 
