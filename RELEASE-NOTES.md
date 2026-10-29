@@ -1,10 +1,27 @@
 # AutoFit release notes
 
-## Unreleased - device follow-up after 40 (new release approved)
+## 1.0 (41) - verified internal TestFlight release (2026-10-29)
 
-**Isolated diagnosis completed before resuming the approved build 41.**
-No build 41 upload is confirmed yet. Successful code-level speech tests do not
-prove that physical Apple Music/microphone behavior is fixed.
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-10-29 18:30:37 UTC.**
+Source: `554effb8b603bc0cecc79930037096a63d356a65`.
+Apple build ID: `f4636ed4-bf17-47ac-a22d-180241b02a4e`.
+The binary was uploaded once. Successful code-level speech tests do not prove
+that physical Apple Music/microphone behavior is fixed.
+
+- [Build and upload](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40927167226):
+  653 JS regressions, four Swift suites, the compiled native-to-JS counting
+  contract, all 144 widget renders, archive, signing, export and upload passed.
+  The first availability check received HTTP 422 after observing
+  `VALID / READY_FOR_BETA_TESTING`; the overall build workflow is therefore red.
+- [Existing-binary verification](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40931456010)
+  succeeded without another build or upload and confirmed internal availability.
+  External state remains `READY_FOR_BETA_SUBMISSION`; no external beta or
+  App Store submission occurred. No main merge occurred.
+- There were six release dispatches during this phase: two stopped at layout
+  validation, one never acquired a runner, one was cancelled at the owner's
+  request, one stopped at a stale workflow assertion, and the final one uploaded.
+  The isolated diagnosis and all local regressions passed before that upload.
+  The approval for this release is consumed; another version needs fresh approval.
 
 - The owner reported that 40 still stopped counting after two, Music played for
   half a second and paused, and the widget was too small/clipped. The prior
@@ -38,12 +55,12 @@ prove that physical Apple Music/microphone behavior is fixed.
   exercise uses the remaining width, and the secondary clock has a bounded
   single-line caption. Four-point row spacing and ten-point outer padding keep
   the large-text controls inside the same unchanged 160/138-point limits.
-- New regressions failed before the fixes. All 652 JS tests now pass and 20
+- New regressions failed before the fixes. All 653 JS tests now pass and 20
   frontend modules parse. Browser geometry checks pass in Hebrew/English at
   320/375/393 pixels, including hour-long time, 100% and busy Music labels.
   Added a Simulator harness that measures the **actual production SwiftUI views**
-  across phases, wording, widths and text sizes before signing/upload; native
-  validation results are pending. The release workflow also runs the real
+  across phases, wording, widths and text sizes before signing/upload; all
+  144 renders passed in isolation and again in the release. The workflow also runs the real
   Swift-buffer-to-JS counting contract with punctuated number groups.
 - Cache: `autofit-v98`. Physical iPhone/Apple Music acceptance remains unverified;
   no claim that these code-level reproductions identify every device failure.
@@ -56,13 +73,13 @@ prove that physical Apple Music/microphone behavior is fixed.
   receipt. Later failures were real widget layout overflows, not app compilation
   or upload failures. The full matrix at `f811998` reported nine failing cases
   out of 144: 393-point width, larger text, rest/hold/cardio, 161 points high
-  against the unchanged 160-point limit. A subsequent padding change still needs
-  isolated validation. The first-failure-only harness and attempts to validate
+  against the unchanged 160-point limit. The subsequent padding change was
+  validated by the isolated run below. The first-failure-only harness and attempts to validate
   layout through full release runs created an avoidable serial retry loop.
 - Run `40924446671` was stopped at the owner's request during native layout
-  validation, before signing/archive/upload. No replacement run was dispatched.
-  Further diagnosis must use focused non-distribution checks and inspect the
-  complete failure matrix and rendered images before considering release.
+  validation, before signing/archive/upload. No replacement release was dispatched
+  during diagnosis. Focused non-distribution checks, the complete failure matrix
+  and rendered images were inspected before resuming release.
 - Isolated non-release validation
   [40925742819](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40925742819)
   passed all 144 actual SwiftUI renders at `d520ba63997c8e71bd19acef457455daa9fe7a83`.
