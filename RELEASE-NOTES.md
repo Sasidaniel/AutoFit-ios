@@ -43,6 +43,10 @@
   Swift-buffer-to-JS counting contract with punctuated number groups.
 - Cache: `autofit-v98`. Physical iPhone/Apple Music acceptance remains unverified;
   no claim that these code-level reproductions identify every device failure.
+- One subsequent release attempt could not acquire an ARM runner at all and
+  ended without executing steps or uploading. The release uses the standard
+  `macos-15-intel` pool with the same explicitly selected Xcode 26.3; regression,
+  native rendering, signing and Apple availability gates remain in place.
 
 ## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
