@@ -30,7 +30,15 @@
   runs tests and unsigned app/widget Simulator compilation, never distribution.
   The native job also sends the real Swift buffer's emitted count stream through
   the JS workout controller, checking all twelve counts and exact completion.
-  Execution and physical iPhone/Apple Music acceptance remain pending.
+  [Unsigned macOS validation 40902511531](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40902511531)
+  passed all 650 JS tests, four Swift suites, the additional real Swift-to-JS
+  twelve-count contract, and app/widget Simulator compilation from source
+  `8215fc8312e42f0fc56b3bc97fec65d1a87de502`.
+  Earlier validation 40901797372 also passed. No release workflow, distribution
+  signing or TestFlight upload was performed. Physical iPhone/Apple Music
+  acceptance remains pending; these checks do not prove the reported device
+  issue is fixed. Hebrew/English grouped-goal browsing, an actual target save,
+  preserved history and isolated mocked-player button layout were checked.
 - Detailed handoff: PRE-RELEASE-REVIEW sections 66-67.
 
 ## 1.0 (39) - verified internal TestFlight release (2026-10-29)
