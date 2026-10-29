@@ -2,12 +2,16 @@ name: iOS audio validation (no release)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios-audio-validation.yml'
 
 permissions:
   contents: read
 
 jobs:
   validate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[validate-audio]')
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

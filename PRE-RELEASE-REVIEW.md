@@ -867,6 +867,9 @@ JavaScript, ארבע חבילות Swift ובניית האפליקציה והוו
   הורחבו לתיקוני תמלול ולסף שיקום קלט. נוסף תהליך ידני נפרד לאימות macOS:
   בדיקות וקומפילציית Simulator ללא חתימה, ארכוב הפצה או העלאה.
   תוצאת הרצת macOS עדיין ממתינה; אין להסיק מבדיקות המדמה שהמוזיקה עובדת במכשיר.
+- GitHub דחה את הבקשה הידנית הראשונה כי התהליך החדש לא קיים בענף ברירת
+  המחדל. אין מיזוג ל־main: אתחול האימות מוגבל לשינוי קובץ התהליך עם תגית
+  commit מפורשת `[validate-audio]`. אין טריגר לכל שינוי אפליקציה, חתימה או העלאה.
 - עקרונות השמע אומתו מול תיעוד Apple:
   [mixWithOthers](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/mixwithothers)
   ו־[setActive](https://developer.apple.com/documentation/avfaudio/avaudiosession/setactive(_:options:)).

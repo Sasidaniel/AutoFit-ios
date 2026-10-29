@@ -215,7 +215,8 @@ test('native audio validation cannot sign, archive, dispatch releases or upload 
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /xcodebuild build/);
   assert.match(workflow, /CODE_SIGNING_ALLOWED=NO/);
-  assert.doesNotMatch(workflow, /secrets\.|xcodebuild archive|altool|upload-app|workflow run|build_number|push:/);
+  assert.match(workflow, /if: github.event_name == 'workflow_dispatch' \|\| contains\(github.event.head_commit.message, '\[validate-audio\]'\)/);
+  assert.doesNotMatch(workflow, /secrets\.|xcodebuild archive|altool|upload-app|workflow run|build_number/);
 });
 
 test('progress browsing reuses library groups, keeps personal exercises and separates groups without mutating definitions', () => {
