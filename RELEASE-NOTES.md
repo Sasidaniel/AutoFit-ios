@@ -2,6 +2,11 @@
 
 ## Unreleased - device follow-up after 40 (new release approved)
 
+**Release paused at the owner's request.** No build 41 upload is confirmed.
+Do not dispatch another release during diagnosis. The latest candidate's widget
+padding change is not yet validated; successful code-level speech tests do not
+prove that physical Apple Music/microphone behavior is fixed.
+
 - The owner reported that 40 still stopped counting after two, Music played for
   half a second and paused, and the widget was too small/clipped. The prior
   checks did not establish physical-device success. Fresh explicit authorization:
@@ -47,6 +52,18 @@
   ended without executing steps or uploading. The release uses the standard
   `macos-15-intel` pool with the same explicitly selected Xcode 26.3; regression,
   native rendering, signing and Apple availability gates remain in place.
+- Investigation of the repeated failures: early failures included an incorrectly
+  shared Swift test fixture and a harness that did not produce its completion
+  receipt. Later failures were real widget layout overflows, not app compilation
+  or upload failures. The full matrix at `f811998` reported nine failing cases
+  out of 144: 393-point width, larger text, rest/hold/cardio, 161 points high
+  against the unchanged 160-point limit. A subsequent padding change still needs
+  isolated validation. The first-failure-only harness and attempts to validate
+  layout through full release runs created an avoidable serial retry loop.
+- Run `40924446671` was stopped at the owner's request during native layout
+  validation, before signing/archive/upload. No replacement run was dispatched.
+  Further diagnosis must use focused non-distribution checks and inspect the
+  complete failure matrix and rendered images before considering release.
 
 ## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
