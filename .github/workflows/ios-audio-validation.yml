@@ -55,13 +55,13 @@ jobs:
               tail -n 120 "$RUNNER_TEMP/audio-build.log"
               exit 1
             }
-      - name: Measure production widget layouts in iPhone Simulator
+      - name: Measure production widget layouts and single-line branding in iPhone Simulator
         timeout-minutes: 10
         run: bash .github/scripts/test-widget-layout.sh
-      - name: Preserve failed widget rendering
-        if: failure()
+      - name: Preserve measured widget rendering
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: widget-layout
-          path: ${{ runner.temp }}/widget-layout.png
+          path: ${{ runner.temp }}/widget-layout*.png
           retention-days: 3

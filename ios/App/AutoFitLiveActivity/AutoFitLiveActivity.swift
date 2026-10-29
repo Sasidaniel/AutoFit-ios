@@ -52,10 +52,11 @@ private struct WorkoutSummary: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(state.exerciseName).font(.headline).lineLimit(1)
-                    .minimumScaleFactor(0.8).layoutPriority(1).privacySensitive()
+                    .minimumScaleFactor(0.8).privacySensitive()
                 if !island {
                     Spacer(minLength: 0)
                     Label("AutoFit", systemImage: "dumbbell.fill").font(.caption).foregroundStyle(accent)
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
             }
             HStack(alignment: .center, spacing: 6) {
@@ -65,9 +66,11 @@ private struct WorkoutSummary: View {
                 Spacer(minLength: 0)
                 if !island && state.phase != .workout && state.phase != .ready && state.phase != .paused {
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption2).foregroundStyle(.secondary)
+                        Text(state.isEnglish ? "Workout time" : "זמן אימון").font(.caption2)
+                            .lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(.secondary)
                         ActivityClock(state: state, elapsed: true).font(.headline).frame(width: 88, alignment: .trailing)
                     }
+                    .frame(width: 88, alignment: .trailing)
                 }
             }
             HStack(spacing: 8) {

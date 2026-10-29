@@ -28,6 +28,11 @@
   views retain completion progress; controls, pending/error feedback and
   Hebrew/English/gender-aware wording remain. The floating web bar prevents
   compression of its timer, percentage and Music action.
+- Native rendering caught a real header compression bug: the higher-priority
+  exercise name squeezed the AutoFit label into a vertical column (211 points
+  total height). The brand now retains its single-line intrinsic width, the
+  exercise uses the remaining width, and the secondary clock has a bounded
+  single-line caption. The 160/138-point layout limits remain unchanged.
 - New regressions failed before the fixes. All 652 JS tests now pass and 20
   frontend modules parse. Browser geometry checks pass in Hebrew/English at
   320/375/393 pixels, including hour-long time, 100% and busy Music labels.

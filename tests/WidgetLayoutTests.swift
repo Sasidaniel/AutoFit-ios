@@ -63,6 +63,14 @@ struct WidgetLayoutTestApp: App {
                             }
                             if island { maximumIslandHeight = max(maximumIslandHeight, size.height) }
                             else { maximumLockHeight = max(maximumLockHeight, size.height) }
+                            if !island && width == 320 && (
+                                (language == "he" && !largeText && ["ready", "workout"].contains(phase)) ||
+                                (language == "en" && largeText && phase == "hold")
+                            ) {
+                                let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                                    .appendingPathComponent("widget-layout-\(language)-\(phase).png")
+                                try! image.pngData()!.write(to: url)
+                            }
                             checks += 1
                         }
                     }

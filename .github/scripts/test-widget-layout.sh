@@ -40,7 +40,11 @@ CONTAINER="$(xcrun simctl get_app_container "$DEVICE" com.autofit.layoutchecks d
 RESULT="$CONTAINER/Documents/layout-result.txt"
 for ((attempt=0; attempt<60; attempt++)); do
   if [[ -f "$RESULT" ]]; then
-    if grep -q 'LAYOUT_CHECKS_PASSED' "$RESULT"; then cat "$RESULT"; exit 0; fi
+    if grep -q 'LAYOUT_CHECKS_PASSED' "$RESULT"; then
+      cat "$RESULT"
+      cp "$CONTAINER"/Documents/widget-layout-*.png "$RUNNER_TEMP/"
+      exit 0
+    fi
     if grep -q 'LAYOUT_FAILED' "$RESULT"; then
       cat "$RESULT"
       if [[ -f "$CONTAINER/Documents/widget-layout.png" ]]; then
