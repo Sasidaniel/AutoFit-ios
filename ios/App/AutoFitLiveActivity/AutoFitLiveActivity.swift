@@ -77,7 +77,7 @@ private struct WorkoutSummary: View {
                 Text("\(state.completedSets) / \(state.totalSets) \(state.isEnglish ? "sets" : "סטים")")
                     .font(.caption2).monospacedDigit().lineLimit(1)
                 ProgressView(value: Double(state.completedSets), total: Double(max(1, state.totalSets)))
-                    .tint(accent)
+                    .progressViewStyle(.linear).tint(accent).frame(height: 4)
             }
             if #available(iOS 17.0, *) {
                 WorkoutControls(state: state, sessionID: sessionID)
@@ -151,7 +151,7 @@ private struct AdaptiveWorkoutSummary: View {
                     Text("\(context.state.completedSets)/\(context.state.totalSets)")
                         .font(.caption2).monospacedDigit()
                     ProgressView(value: Double(context.state.completedSets), total: Double(max(1, context.state.totalSets)))
-                        .tint(accent)
+                        .progressViewStyle(.linear).tint(accent).frame(height: 4)
                 }
                 WorkoutControls(state: context.state, sessionID: context.attributes.sessionID, compact: true)
             }

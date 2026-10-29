@@ -40,9 +40,13 @@ struct WidgetLayoutTestApp: App {
                         for island in [false, true] {
                             let view = WorkoutSummary(state: state, sessionID: "layout-test", island: island)
                                 .environment(\.dynamicTypeSize, largeText ? .xLarge : .large)
-                            let host = UIHostingController(rootView: view)
-                            host.safeAreaRegions = []
-                            let size = host.sizeThatFits(in: CGSize(width: width, height: 1000))
+                            let renderer = ImageRenderer(content: view)
+                            renderer.proposedSize = ProposedViewSize(width: width, height: nil)
+                            guard let image = renderer.uiImage else {
+                                report("LAYOUT_FAILED production SwiftUI image could not be rendered")
+                                exit(1)
+                            }
+                            let size = image.size
                             let maximum = island ? 138.0 : 160.0
                             guard size.height <= maximum, size.width <= width + 0.5 else {
                                 report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
