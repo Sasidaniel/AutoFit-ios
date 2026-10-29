@@ -49,7 +49,7 @@ private struct WorkoutSummary: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(state.exerciseName).font(.headline).lineLimit(1)
                     .minimumScaleFactor(0.8).privacySensitive()

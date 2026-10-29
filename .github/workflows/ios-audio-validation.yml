@@ -55,7 +55,7 @@ jobs:
               tail -n 120 "$RUNNER_TEMP/audio-build.log"
               exit 1
             }
-      - name: Measure production widget layouts and single-line branding in iPhone Simulator
+      - name: Measure all 144 production widget layouts in iPhone Simulator
         timeout-minutes: 10
         run: bash .github/scripts/test-widget-layout.sh
       - name: Preserve measured widget rendering

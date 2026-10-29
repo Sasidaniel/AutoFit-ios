@@ -20,6 +20,7 @@ struct WidgetLayoutTestApp: App {
         report("LAYOUT_CHECKS_STARTED")
         let now = Date().timeIntervalSince1970 * 1000
         var checks = 0
+        var failures: [String] = []
         var maximumLockHeight = 0.0
         var maximumIslandHeight = 0.0
         for language in ["he", "he-female", "en"] {
@@ -48,7 +49,7 @@ struct WidgetLayoutTestApp: App {
                             }
                             let size = image.size
                             let maximum = island ? 138.0 : 160.0
-                            guard size.height <= maximum, size.width <= width + 0.5 else {
+                            if size.height > maximum || size.width > width + 0.5 {
                                 let clock = ImageRenderer(content: ActivityClock(state: state).font(.system(size: 26, weight: .bold)))
                                 clock.proposedSize = ProposedViewSize(width: 108, height: nil)
                                 let controls = ImageRenderer(content: WorkoutControls(state: state, sessionID: "layout-test"))
@@ -57,9 +58,8 @@ struct WidgetLayoutTestApp: App {
                                 text.proposedSize = ProposedViewSize(width: width - 24, height: nil)
                                 let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                                     .appendingPathComponent("widget-layout.png")
-                                try! image.pngData()!.write(to: url)
-                                report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size); clock=\(String(describing: clock.uiImage?.size)), controls=\(String(describing: controls.uiImage?.size)), text=\(String(describing: text.uiImage?.size))")
-                                exit(1)
+                                if failures.isEmpty { try! image.pngData()!.write(to: url) }
+                                failures.append("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size); clock=\(String(describing: clock.uiImage?.size)), controls=\(String(describing: controls.uiImage?.size)), text=\(String(describing: text.uiImage?.size))")
                             }
                             if island { maximumIslandHeight = max(maximumIslandHeight, size.height) }
                             else { maximumLockHeight = max(maximumLockHeight, size.height) }
@@ -76,6 +76,10 @@ struct WidgetLayoutTestApp: App {
                     }
                 }
             }
+        }
+        if !failures.isEmpty {
+            report(failures.joined(separator: "\n"))
+            exit(1)
         }
         report("LAYOUT_CHECKS_PASSED \(checks) real SwiftUI layouts; maximum Lock Screen height \(maximumLockHeight), island body height \(maximumIslandHeight)")
         exit(0)
