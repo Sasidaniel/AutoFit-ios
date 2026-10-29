@@ -50,7 +50,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "requestPermission", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startListening", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recoverAudio", returnType: CAPPluginReturnPromise)
     ]
 
     // Requested listening survives the temporary capture pause during app speech.
@@ -75,6 +76,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pendingUtterance: DispatchWorkItem?
     private var pendingRestart: DispatchWorkItem?
     private var pendingRotation: DispatchWorkItem?
+    private var pendingFocusEnd: DispatchWorkItem?
     private var generation = UUID()
     private var captureGeneration = UUID()
     private var lastInputName = ""
@@ -124,11 +126,19 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func applicationEnteredBackground() {
+        do {
+            try releaseFocusedListening()
+        } catch {
+            notifyListeners("voiceError", data: ["reason": "Cannot release focused listening: \(error.localizedDescription)"])
+        }
         end()
     }
 
     @objc private func applicationBecameActive() {
-        audioInterrupted = false
+        guard WorkoutAudioSession.canAutomaticallyResume else {
+            notifyListeningState(reason: "interrupted")
+            return
+        }
         consecutiveFailures = 0
         if Self.canCapture && !Self.isListening && !BackgroundAnnouncerPlugin.isAnnouncing {
             restart(after: 0.2)
@@ -156,8 +166,17 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.audioInterrupted {
                 WorkoutAudioSession.wasInterrupted()
                 self.end()
-            } else if AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
-                self.restart(after: 0.2)
+                do { try self.releaseFocusedListening() }
+                catch { self.notifyListeners("voiceError", data: ["reason": "Cannot release interrupted microphone: \(error.localizedDescription)"]) }
+            } else {
+                let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                do {
+                    try WorkoutAudioSession.interruptionEnded(shouldResume: shouldResume)
+                    if shouldResume { self.restart(after: 0.2) }
+                    else { self.notifyListeningState(reason: "interrupted") }
+                } catch {
+                    self.notifyListeners("voiceError", data: ["reason": "Cannot release interrupted audio: \(error.localizedDescription)"])
+                }
             }
         }
     }
@@ -185,8 +204,25 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let preferHeadset = microphoneMode == "headset"
+            let focused = call.getBool("focused") ?? false
+            guard !focused || UIApplication.shared.applicationState == .active else {
+                call.reject("Focused listening is available only while the app is active")
+                return
+            }
+            do {
+                if WorkoutAudioSession.focusedListening != focused {
+                    self.end()
+                    try self.releaseFocusedListening()
+                }
+            } catch {
+                call.reject("Cannot change listening mode: \(error.localizedDescription)")
+                return
+            }
+            WorkoutAudioSession.userRequestedRecovery()
+            self.audioInterrupted = false
             if WorkoutAudioSession.preferHeadsetMicrophone != preferHeadset { self.end() }
             WorkoutAudioSession.preferHeadsetMicrophone = preferHeadset
+            WorkoutAudioSession.focusedListening = focused
             if language != self.recognitionLanguage {
                 self.endRecognition()
                 self.recognizer = nil
@@ -199,10 +235,16 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 .filter { !$0.isEmpty && $0.count <= 120 }.prefix(80))
             do {
                 if Self.canCapture && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
-                call.resolve(["inputName": AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? ""])
+                if focused { self.scheduleFocusEnd() }
+                call.resolve(["inputName": AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "",
+                              "listening": Self.isListening, "requested": Self.wantsMicrophone,
+                              "focused": WorkoutAudioSession.focusedListening,
+                              "reason": BackgroundAnnouncerPlugin.isAnnouncing ? "announcement" : ""])
             } catch {
                 Self.wantsMicrophone = false
                 self.end()
+                do { try self.releaseFocusedListening() }
+                catch { self.notifyListeners("voiceError", data: ["reason": "Cannot release focused audio: \(error.localizedDescription)"]) }
                 call.reject("Voice recognition could not start: \(error.localizedDescription)")
             }
         }
@@ -212,6 +254,11 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             Self.wantsMicrophone = false
             self.end()
+            do { try self.releaseFocusedListening() }
+            catch {
+                call.reject("Cannot release focused listening: \(error.localizedDescription)")
+                return
+            }
             if !BackgroundAnnouncerPlugin.isKeepingAlive && !BackgroundAnnouncerPlugin.isAnnouncing {
                 do {
                     try WorkoutAudioSession.deactivate()
@@ -222,6 +269,64 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve()
         }
+    }
+
+    @objc func recoverAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            Self.wantsMicrophone = false
+            self.end()
+            WorkoutAudioSession.userRequestedRecovery()
+            self.audioInterrupted = false
+            do {
+                try self.releaseFocusedListening()
+                try WorkoutAudioSession.deactivate(force: true)
+                NotificationCenter.default.post(name: BackgroundAnnouncerPlugin.microphoneReleased, object: nil)
+                self.notifyListeningState(reason: "released")
+                call.resolve(["released": true])
+            } catch {
+                call.reject("Cannot release workout audio: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func releaseFocusedListening() throws {
+        pendingFocusEnd?.cancel()
+        pendingFocusEnd = nil
+        guard WorkoutAudioSession.focusedListening else { return }
+        end()
+        WorkoutAudioSession.focusedListening = false
+        if !BackgroundAnnouncerPlugin.isAnnouncing {
+            try WorkoutAudioSession.deactivate(force: true)
+            NotificationCenter.default.post(name: BackgroundAnnouncerPlugin.microphoneReleased, object: nil)
+        }
+        notifyListeningState(reason: "released")
+    }
+
+    private func scheduleFocusEnd() {
+        pendingFocusEnd?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            do {
+                try self.releaseFocusedListening()
+                if Self.canCapture { self.restart(after: 0.2) }
+            } catch {
+                Self.wantsMicrophone = false
+                self.end()
+                do { try self.releaseFocusedListening() }
+                catch { self.notifyListeners("voiceError", data: ["reason": "Cannot release failed capture: \(error.localizedDescription)"]) }
+                self.notifyListeners("voiceError", data: ["reason": "Cannot end focused listening: \(error.localizedDescription)"])
+            }
+        }
+        pendingFocusEnd = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + WorkoutAudioPolicy.focusedListeningSeconds, execute: work)
+    }
+
+    private func notifyListeningState(reason: String = "") {
+        notifyListeners("voiceListeningChanged", data: [
+            "listening": Self.isListening, "requested": Self.wantsMicrophone,
+            "focused": WorkoutAudioSession.focusedListening, "reason": reason,
+            "inputName": lastInputName
+        ])
     }
 
     private func begin() throws {
@@ -247,12 +352,13 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         let commands = recognitionLanguage == "en-US" ? [
             "Start workout", "Finish workout", "Cancel workout", "Start set",
             "Set complete", "Set done", "Done", "Skip rest", "Next exercise",
-            "Start", "Stop", "Pause", "Warmup", "Cooldown", "Plank", "Undo"
+            "Start", "Stop", "Pause", "Warmup", "Cooldown", "Plank", "Undo", "Listen", "Resume music"
         ] : [
             "התחל אימון", "סיים אימון", "בטל אימון", "התחל סט",
             "סט הושלם", "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא",
             "התחל", "התחל חימום", "חימום", "שחרור", "פלאנק", "פלנק",
             "עצור", "השהה", "עצור חימום", "עצור שחרור",
+            "הקשב לי", "הקשיבי לי", "מצב האזנה", "המשך מוזיקה", "המשיכי מוזיקה",
             "התחילי אימון", "סיימי אימון", "בטלי אימון", "התחילי סט",
             "עצרי", "השהי", "המשיכי אימון", "דלגי על מנוחה", "מאשרת סיום"
         ]
@@ -298,6 +404,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             try audioEngine.start()
         }
         VoiceCommandPlugin.isListening = true
+        notifyListeningState()
         let inputName = AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? ""
         if inputName != lastInputName {
             lastInputName = inputName
@@ -354,7 +461,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
-        if !Self.usesRecordingSession {
+        if !Self.usesRecordingSession && !WorkoutAudioSession.focusedListening {
             NotificationCenter.default.post(name: BackgroundAnnouncerPlugin.microphoneReleased, object: nil)
             if !BackgroundAnnouncerPlugin.isKeepingAlive && !BackgroundAnnouncerPlugin.isAnnouncing {
                 do {
@@ -362,6 +469,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 } catch {
                     notifyListeners("voiceError", data: ["reason": "Cannot release microphone audio: \(error.localizedDescription)"])
                 }
+                notifyListeningState(reason: audioInterrupted || !WorkoutAudioSession.canAutomaticallyResume ? "interrupted"
+                    : BackgroundAnnouncerPlugin.isAnnouncing ? "announcement" : "inactive")
             }
         }
     }
@@ -376,6 +485,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             guard self.generation == currentGeneration, Self.canCapture, !self.audioInterrupted,
+                  WorkoutAudioSession.canAutomaticallyResume,
                   !BackgroundAnnouncerPlugin.isAnnouncing else { return }
             do {
                 try self.begin()
@@ -398,6 +508,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let delay = WorkoutAudioPolicy.recognitionRetryDelay(failures: consecutiveFailures) else {
             Self.wantsMicrophone = false
             end()
+            do { try releaseFocusedListening() }
+            catch { notifyListeners("voiceError", data: ["reason": "Cannot release failed recognition: \(error.localizedDescription)"]) }
             notifyListeners("voiceError", data: ["reason": error.localizedDescription])
             return
         }

@@ -14,15 +14,199 @@ function loadPhaseOneModule(file, exports, values = {}) {
   return nodeVM.runInContext(`({ ${exports.join(', ')} })`, context);
 }
 const library = loadPhaseOneModule('www/js/exercise-library.js', [
-  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'browsableLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'exerciseIllustration', 'catalogStats',
+  'LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'expandedLibrary', 'browsableLibrary', 'exerciseGuide', 'matchesLibraryFilters', 'matchesLibraryBrowse', 'LIBRARY_EQUIPMENT_GROUPS', 'exerciseIllustration', 'catalogStats',
 ]);
 const insights = loadPhaseOneModule('www/js/workout-insights.js', [
-  'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary',
+  'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary', 'statisticsHistory', 'statisticsOverview', 'exerciseProgress',
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
   ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
     'nextAvailableWorkoutEntry', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+
+test('environment browsing uses authored locations, supports portable outdoor exercises and never guesses custom equipment', () => {
+  const squat = library.LIBRARY_EXERCISES.find((exercise) => exercise.catalogId === 'squat');
+  const machine = library.PLANNING_EXERCISES.find((exercise) => exercise.catalogId === 'legPress');
+  const custom = { id: 'my:unknown', name: 'My personal exercise', category: 'גב', inputType: 'reps' };
+  const before = JSON.stringify([squat, machine, custom]);
+  assert.equal(library.matchesLibraryBrowse(squat, 'outside', 'bodyweight'), true);
+  assert.equal(library.matchesLibraryBrowse(machine, 'gym', 'machines'), true);
+  assert.equal(library.matchesLibraryBrowse(machine, 'home', 'machines'), false);
+  assert.equal(library.matchesLibraryBrowse(custom, '', 'personal'), true);
+  assert.equal(library.matchesLibraryBrowse(custom, 'gym', 'machines'), false);
+  assert.equal(library.matchesLibraryBrowse(custom, 'home', 'all'), false);
+  assert.equal(library.matchesLibraryBrowse(custom, '', 'all'), true);
+  assert.equal(library.matchesLibraryBrowse(squat, 'home', 'unknown'), false);
+  assert.equal(JSON.stringify([squat, machine, custom]), before);
+  for (const exercise of library.LIBRARY_EXERCISES) {
+    if (library.exerciseGuide(exercise)?.places?.length === 1
+      && library.exerciseGuide(exercise).places[0] === 'gym') {
+      assert.equal(library.matchesLibraryBrowse(exercise, 'outside'), false, exercise.name);
+    }
+  }
+});
+
+function statisticsFixture() {
+  const exercise = library.LIBRARY_EXERCISES.find((value) => value.catalogId === 'goblet');
+  const snapshot = (weight, reps) => insights.completedEntrySnapshot({ exerciseId: exercise.id,
+    exerciseName: exercise.name, sets: [{ weightKg: weight, reps, completed: true }] }, exercise);
+  const record = (id, dateISO, entry) => ({ id, dateISO, durationSec: 600, entries: [entry] });
+  return { exercise, snapshot, record, now: new Date('2026-10-29T12:00:00Z') };
+}
+
+test('simple statistics count only recorded work, deduplicate history and reject invalid or future dates', () => {
+  const { snapshot, record, now } = statisticsFixture();
+  const latest = record('latest', '2026-10-28T10:00:00Z', snapshot(20, 12));
+  const prior = record('previous-period', '2026-09-20T10:00:00Z', snapshot(20, 12));
+  const invalid = record('not-completed', '2026-10-28T11:00:00Z', { sets: [{ reps: 12, completed: false }] });
+  const history = [latest, latest, prior, invalid, record('future', '2027-01-01', snapshot(20, 12)),
+    record('invalid', 'not-a-date', snapshot(20, 12)), { id: 'broken', dateISO: latest.dateISO }];
+  const before = JSON.stringify(history);
+  const result = insights.statisticsOverview(history, now);
+  assert.equal(result.records.length, 2);
+  assert.equal(result.recent.length, 1);
+  assert.equal(result.previous.length, 1);
+  assert.equal(result.activeSeconds, 600);
+  assert.equal(result.completedSets, 1);
+  assert.equal(result.latest.id, 'latest');
+  assert.equal(JSON.stringify(history), before);
+  assert.equal(insights.statisticsOverview([], now).latest, null);
+});
+
+for (const [label, currentWeight, currentReps, expected] of [
+  ['same performance', 20, 12, 'same'], ['more reps', 20, 14, 'more-reps'],
+  ['higher load with same reps', 22, 12, 'more-weight'], ['more load but fewer reps', 22, 10, 'insufficient'],
+]) {
+  test(`plain-language progress uses the shared comparison guards: ${label}`, () => {
+    const { exercise, snapshot, record, now } = statisticsFixture();
+    const result = insights.exerciseProgress([
+      record('old', '2026-10-20T10:00:00Z', snapshot(20, 12)),
+      record('new', '2026-10-28T10:00:00Z', snapshot(currentWeight, currentReps)),
+    ], exercise.id, now);
+    assert.equal(result.kind, expected);
+    assert.equal(result.evidence[0].dateISO, '2026-10-28T10:00:00Z');
+    assert.equal(result.evidence.length, 2);
+    if (expected === 'more-reps') assert.equal(result.delta, 2);
+  });
+}
+
+for (const [label, mutate] of [
+  ['extra sets do not prove strength', (entry) => entry.sets.push({ weightKg: 20, reps: 12, completed: true })],
+  ['unknown custom variation', (entry) => { delete entry.catalogId; }],
+  ['legacy measurement', (entry) => { delete entry.inputType; }],
+  ['changed variation', (entry) => { entry.comparisonKey += ':changed'; }],
+  ['hold measurements', (entry) => { entry.inputType = 'hold'; }],
+  ['cardio measurements', (entry) => { entry.type = 'cardio'; entry.completed = true; entry.durationSec = 60; }],
+  ['assistance is not external load', (entry) => { entry.loadKind = 'assistance'; }],
+]) {
+  test(`statistics withhold unsupported conclusions: ${label}`, () => {
+    const { exercise, snapshot, record, now } = statisticsFixture();
+    const latest = snapshot(20, 12);
+    mutate(latest);
+    const history = [record('old', '2026-10-20T10:00:00Z', snapshot(20, 12)),
+      record('new', '2026-10-28T10:00:00Z', latest)];
+    assert.equal(insights.exerciseProgress(history, exercise.id, now).kind, 'insufficient');
+    assert.equal(insights.exerciseProgress([history[1]], exercise.id, now).reason, 'history');
+  });
+}
+
+test('volume excludes assistance, holds, unfinished sets and invalid measurements without altering history', () => {
+  const context = vm.createContext({});
+  vm.runInContext(section('function computeVolume(', 'function formatDate('), context);
+  const history = { entries: [
+    { sets: [{ weightKg: 20, reps: 12, completed: true }, { weightKg: 100, reps: 20, completed: false },
+      { weightKg: -20, reps: 12 }, { weightKg: 'invalid', reps: 12 }] },
+    { loadKind: 'assistance', sets: [{ weightKg: 50, reps: 12 }] },
+    { inputType: 'hold', sets: [{ weightKg: 20, reps: 40 }] },
+  ] };
+  const before = JSON.stringify(history);
+  assert.equal(context.computeVolume(history), 240);
+  assert.equal(JSON.stringify(history), before);
+});
+
+test('bridge reports actual paused capture and requires native confirmation before claiming focused listening', async () => {
+  let received;
+  const context = bridgeContext({ VoiceCommand: {
+    startListening: async (options) => { received = options; return { listening: false, requested: true, focused: true, reason: 'announcement' }; },
+  } });
+  const result = await context.voiceStartListening([], 'he-IL', 'automatic', true);
+  assert.equal(received.focused, true);
+  assert.equal(result.listening, false);
+  assert.equal(result.requested, true);
+  assert.equal(result.reason, 'announcement');
+  const unsupported = bridgeContext({ VoiceCommand: { startListening: async () => ({ inputName: 'Old native build' }) } });
+  assert.equal((await unsupported.voiceStartListening([], 'he-IL', 'automatic', true)).listening, false);
+});
+
+function focusedVoiceFixture() {
+  const calls = [], messages = [], controls = new Map();
+  const context = vm.createContext({
+    native: { isNative: () => true,
+      voiceStartListening: async (...args) => { calls.push(['start', args[3]]); return { listening: true, requested: true, focused: args[3] }; },
+      voiceStopListening: async () => { calls.push(['stop']); return true; },
+      voiceRecoverAudio: async () => { calls.push(['release']); return { released: true }; } },
+    settings: { voiceCommandsEnabled: true }, activeSession: { entries: [], paused: false },
+    document: { visibilityState: 'visible' }, voiceExerciseNames: () => [],
+    voiceReports: { voiceReportHints: () => [] }, voiceCountingState: null, pendingVoiceFinish: null,
+    updateVoiceBadgeForListeningState() {}, showToast: (message) => messages.push(message),
+    el: (id) => { if (!controls.has(id)) controls.set(id, {}); return controls.get(id); },
+    console: { error() {} },
+  });
+  vm.runInContext(section('let voiceListeningActive = false;', 'function startRestTimer('), context);
+  vm.runInContext("currentTab = 'workout'", context);
+  return { context, calls, messages };
+}
+
+test('focused listening is explicit and reversible, and native capture events distinguish speech and interruption pauses', async () => {
+  const { context, calls } = focusedVoiceFixture();
+  await context.updateVoiceListeningState();
+  await context.setFocusedListening(true);
+  assert.equal(vm.runInContext('voiceFocusedRequested', context), true);
+  context.handleVoiceListeningChanged({ listening: false, requested: true, focused: true, reason: 'announcement' });
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.equal(vm.runInContext('voiceListeningRequested', context), true);
+  context.handleVoiceListeningChanged({ listening: true, requested: true, focused: true });
+  assert.equal(vm.runInContext('voiceListeningActive', context), true);
+  await context.setFocusedListening(false);
+  context.handleVoiceListeningChanged({ listening: false, requested: true, focused: false, reason: 'interrupted' });
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.match(vm.runInContext('voiceListeningError', context), /הפרעה/);
+  assert.deepEqual(calls, [['start', false], ['start', true], ['start', false]]);
+});
+
+test('audio recovery releases focus before restarting mixed listening and never enables a disabled microphone', async () => {
+  for (const enabled of [false, true]) {
+    const { context, calls, messages } = focusedVoiceFixture();
+    context.settings.voiceCommandsEnabled = enabled;
+    await context.recoverWorkoutAudio();
+    assert.equal(calls[0][0], 'release');
+    assert.equal(calls.filter(([kind]) => kind === 'start').length, enabled ? 1 : 0);
+    assert.equal(context.settings.voiceCommandsEnabled, enabled);
+    assert.match(messages.at(-1), /בנגן/);
+  }
+});
+
+test('failed audio recovery is reported honestly and does not claim release or start recognition', async () => {
+  const { context, calls, messages } = focusedVoiceFixture();
+  context.native.voiceRecoverAudio = async () => ({ released: false, reason: 'audio busy' });
+  await context.recoverWorkoutAudio();
+  assert.match(messages[0], /audio busy/);
+  assert.equal(calls.length, 0);
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+});
+
+test('pending microphone activation is never displayed as actual capture', async () => {
+  const { context } = focusedVoiceFixture();
+  let resolve;
+  context.native.voiceStartListening = () => new Promise((done) => { resolve = done; });
+  const pending = context.updateVoiceListeningState();
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.equal(vm.runInContext('voiceActivationPending', context), true);
+  resolve({ listening: true, requested: true, focused: false });
+  await pending;
+  assert.equal(vm.runInContext('voiceListeningActive', context), true);
+});
+
 test('workout card toggles hide rather than replace controls and retain explicit expansion across renders', () => {
   const node = () => ({
     children: [], attributes: {}, listeners: {}, hidden: false,
@@ -1095,6 +1279,7 @@ test('language changes are durable, restart recognition in the new locale and do
     qsa: () => buttons, settings: { language: 'he' }, activeSession: session,
     db: { saveSettings: (value) => calls.push(['saved', value.language]) },
     appInitialized: true, currentTab: 'workout', voiceListeningActive: true, voiceListeningRevision: 0,
+    voiceListeningRequested: true, voiceFocusedRequested: false, voiceActivationPending: false,
     window: { speechSynthesis: { cancel() {} } }, console,
     syncNativeAnnouncementPlan() {}, syncWorkoutActivity() {}, renderBrand() {}, renderHomeTab() {},
     native: { voiceStopListening: async () => { calls.push(['stop']); return true; } },
@@ -1779,7 +1964,7 @@ function homeScreenContext(records = [], entries = [{ exerciseId: 'bench', sets:
     countThisWeek: () => 2, computeStreak: () => 3, formatHMS: (seconds) => `${seconds}s`,
     trainingTools: { sessionWorkoutTitle: (session) => session.planSnapshot?.name || 'האימון שלי' },
     el: element, qsa: () => [], switchTab: (tab) => tabs.push(tab),
-    renderExercisesTab: () => libraryRenders++, openHomeProgressModal() {},
+    renderExercisesTab: () => libraryRenders++, clearLibraryFilters() {}, openHomeProgressModal() {},
     wireProfilePhoto() {}, renderProfilePhotos() {},
     exerciseLibraryCategory: null,
   });
@@ -3895,7 +4080,7 @@ test('native announcements use system-managed speech, without permanently duckin
   assert.deepEqual(calls, ['test announcement']);
   assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /usesApplicationAudioSession = true/);
   assert.doesNotMatch(read('ios/App/App/VoiceCommandPlugin.swift'), /\.duckOthers/);
-  assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking \{ options.insert\(.duckOthers\) \}/);
+  assert.match(read('ios/App/App/AppDelegate.swift'), /if ducking && !focusedListening \{ options.insert\(.duckOthers\) \}/);
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(announcer, /usesRecordingSession,\s*ducking: true/);
   assert.match(announcer, /audioEngine.stop\(\)[\s\S]*WorkoutAudioSession.deactivate\(\)/);
@@ -3915,11 +4100,12 @@ test('native beep and speech never create a WebView audio context that could int
   assert.deepEqual(calls, ['beep', 'סט הושלם, זמן מנוחה']);
 });
 
-test('audio activates only on demand, mixes for every owner, and recognition ignores app announcements', () => {
+test('audio activates on demand, mixes by default, and only explicit focused listening requests exclusive audio', () => {
   const delegate = read('ios/App/App/AppDelegate.swift');
   const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   const voice = read('ios/App/App/VoiceCommandPlugin.swift');
-  assert.match(delegate, /options: AVAudioSession.CategoryOptions = \[.mixWithOthers\]/);
+  assert.match(delegate, /static var focusedListening = false/);
+  assert.match(delegate, /options: AVAudioSession.CategoryOptions = focusedListening \? \[\] : \[.mixWithOthers\]/);
   assert.match(delegate, /let changed = !matches\(recording: recording, ducking: ducking\)/);
   assert.doesNotMatch(delegate.slice(delegate.indexOf('@UIApplicationMain')), /setCategory|setActive|WorkoutAudioSession.activate/);
   assert.match(announcer, /WorkoutAudioSession.activate\(recording: VoiceCommandPlugin.usesRecordingSession,\s*force: audioInterrupted\)/);
@@ -3929,6 +4115,21 @@ test('audio activates only on demand, mixes for every owner, and recognition ign
   assert.match(voice, /BackgroundAnnouncerPlugin.announcementEnded/);
   assert.match(delegate, /notifyOthersOnDeactivation/);
   assert.doesNotMatch(announcer + voice, /setCategory\(/);
+});
+
+test('focused audio handoff preserves announcements and explicit recovery invalidates speech before releasing the session', () => {
+  const policy = read('ios/App/App/WorkoutAudioPolicy.swift');
+  assert.match(policy, /^struct WorkoutAudioOwnership \{/m);
+  assert.match(policy, /^struct WorkoutAudioInterruption \{/m);
+  const voice = read('ios/App/App/VoiceCommandPlugin.swift');
+  const release = voice.slice(voice.indexOf('private func releaseFocusedListening()'),
+    voice.indexOf('private func scheduleFocusEnd()'));
+  assert.match(release, /focusedListening = false[\s\S]*if !BackgroundAnnouncerPlugin.isAnnouncing \{[\s\S]*deactivate\(force: true\)/);
+  const announcer = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  const prepare = announcer.slice(announcer.indexOf('private func prepareForAudioRelease()'),
+    announcer.indexOf('\n    @objc', announcer.indexOf('private func prepareForAudioRelease()') + 10));
+  assert.match(prepare, /speechQueue.interrupt\(\)[\s\S]*pendingSpeech.removeAll\(\)[\s\S]*stopSpeaking\(at: .immediate\)[\s\S]*Self.isAnnouncing = false/);
+  assert.doesNotMatch(voice + announcer, /systemMusicPlayer|MPRemoteCommandCenter|applicationMusicPlayer/);
 });
 
 test('music routing keeps HFP opt-in only and capability-gates microphone enhancements', () => {
@@ -3941,7 +4142,7 @@ test('music routing keeps HFP opt-in only and capability-gates microphone enhanc
   assert.match(swift, /case .builtIn: preferred = inputs.first \{ \$0.portType == .builtInMic \}/);
   assert.match(swift, /#available\(iOS 18.2, \*\), session.isEchoCancelledInputAvailable/);
   assert.match(swift, /setPrefersEchoCancelledInput\(true\)/);
-  assert.match(swift, /if !active \|\| changed/);
+  assert.match(swift, /if !ownership.active \|\| changed/);
   assert.match(read('ios/App/App/BackgroundAnnouncerPlugin.swift'), /WorkoutAudioSession.wasInterrupted/);
   assert.match(read('ios/App/App.xcodeproj/project.pbxproj'), /WorkoutAudioPolicy.swift in Sources/);
   assert.match(read('.github/workflows/ios-build.yml'), /WorkoutAudioPolicyTests.swift/);
@@ -3967,25 +4168,30 @@ test('native interruption recovery wiring clears speech ownership before late de
   assert.match(interruption, /notifyListeners\("announcementError"/);
   const cleanup = audio.slice(audio.indexOf('private func releaseAnnouncementSession'),
     audio.indexOf('private func startSilentLoop'));
-  assert.match(cleanup, /if !audioInterrupted \{[\s\S]*WorkoutAudioSession.deactivate\(\)/);
+  assert.match(cleanup, /if !audioInterrupted && !WorkoutAudioSession.focusedListening \{[\s\S]*WorkoutAudioSession.deactivate\(\)/);
   assert.match(cleanup, /Self.isAnnouncing = false[\s\S]*NotificationCenter.default.post\(name: Self.announcementEnded/);
   assert.match(audio, /guard speechQueue.finish\(utterance, cancelled: cancelled\) else \{ return \}/);
   assert.match(audio, /if cancelled \{[\s\S]*notifyListeners\("announcementError"/);
   assert.doesNotMatch(audio, /pendingSpeechCount|recentAnnouncementIDs/);
 });
 
-test('native foreground and new announcement attempts cannot be permanently blocked by a stale interruption flag', () => {
+test('native foreground respects interruption permission and explicit audio recovery can unblock a missing end notification', () => {
   for (const file of ['VoiceCommandPlugin.swift', 'BackgroundAnnouncerPlugin.swift']) {
     const swift = read(`ios/App/App/${file}`);
     assert.match(swift, /UIApplication.didBecomeActiveNotification/);
-    assert.match(swift, /applicationBecameActive\(\) \{[\s\S]*?audioInterrupted = false/);
+    const first = swift.indexOf('private func applicationBecameActive()');
+    const foreground = swift.slice(first, swift.indexOf('\n    @objc', first + 10));
+    assert.match(foreground, /guard WorkoutAudioSession.canAutomaticallyResume else/);
+    assert.doesNotMatch(foreground, /audioInterrupted = false/);
   }
   const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   const speak = audio.slice(audio.indexOf('private func speak('), audio.indexOf('public func speechSynthesizer'));
   assert.doesNotMatch(speak, /guard !audioInterrupted/);
   assert.match(speak, /ducking: true, force: audioInterrupted\)[\s\S]*audioInterrupted = false/);
   assert.match(speak, /catch \{\s*releaseAnnouncementSession\(\)\s*throw error/);
-  assert.match(read('ios/App/App/AppDelegate.swift'), /if !active \|\| changed \|\| force \{[\s\S]*setActive\(true\)/);
+  assert.match(read('ios/App/App/AppDelegate.swift'), /if !ownership.active \|\| changed \|\| force \{[\s\S]*setActive\(true\)/);
+  assert.match(read('ios/App/App/VoiceCommandPlugin.swift'), /func recoverAudio[\s\S]*WorkoutAudioSession.userRequestedRecovery\(\)/);
+  assert.match(audio, /name: WorkoutAudioSession.recoveryRequested/);
 });
 
 test('native capture and shared-session intent have distinct foreground guards and rotation is scheduled outside callbacks', () => {
@@ -3993,7 +4199,7 @@ test('native capture and shared-session intent have distinct foreground guards a
   assert.match(swift, /usesRecordingSession: Bool \{\s*WorkoutAudioPolicy.recordingSession\([\s\S]*?keepingAlive: BackgroundAnnouncerPlugin.isKeepingAlive\)/);
   assert.match(swift, /canCapture: Bool \{\s*WorkoutAudioPolicy.captureMicrophone\([\s\S]*?applicationState == .active\)/);
   assert.match(swift, /UIApplication.willResignActiveNotification/);
-  assert.match(swift, /applicationEnteredBackground\(\) \{\s*end\(\)/);
+  assert.match(swift, /applicationEnteredBackground\(\) \{[\s\S]*?releaseFocusedListening\(\)[\s\S]*?end\(\)/);
   assert.match(swift, /private func begin\(\) throws \{\s*guard Self.canCapture else \{ return \}/);
   assert.match(swift, /guard self.generation == currentGeneration, Self.canCapture, !self.audioInterrupted/);
   const begin = swift.slice(swift.indexOf('private func begin()'), swift.indexOf('private func endRecognition()'));
@@ -4014,7 +4220,7 @@ test('native recognition recovery coalesces restarts, ignores own category churn
   assert.match(swift, /self.handle\(transcript:[^\n]*\n\s*guard self.generation == currentGeneration else \{ return \}/);
   assert.match(swift, /== .categoryChange,\s*self.audioEngine.isRunning, WorkoutAudioSession.matches\(recording: true\) \{ return \}/);
   const session = read('ios/App/App/AppDelegate.swift');
-  assert.match(session, /if !active \|\| changed \|\| force \{\s*try session.setActive\(true\)\s*active = true/);
+  assert.match(session, /if !ownership.active \|\| changed \|\| force \{\s*try session.setActive\(true\)\s*\}[\s\S]*ownership.activated/);
   assert.match(session, /if recording \{ try selectInput\(session\) \}/);
 });
 
@@ -4125,11 +4331,12 @@ test('workout stopwatch paints once per displayed second rather than on every hi
 });
 
 test('listening badge identifies the actual microphone alongside the selected exercise', () => {
-  const badge = { classList: { add() {}, remove() {}, toggle() {} }, textContent: '' };
+  const badge = { classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, textContent: '' };
   const context = vm.createContext({
     native: { isNative: () => true }, el: () => badge,
     activeSession: { currentExerciseId: 'bench', entries: [{ exerciseId: 'bench', exerciseName: 'Bench' }] },
     voiceListeningActive: true, voiceListeningError: '', voiceCountingState: null,
+    voiceActivationPending: false, voiceFocusedRequested: false,
     voiceInputName: 'iPhone microphone', voiceTargetEntryIndex: () => 0,
   });
   vm.runInContext(section('function setVoiceBadge(', 'function handleVoiceTranscript('), context);
@@ -5242,7 +5449,7 @@ test('native lifecycle stops microphone input and recovers background playback w
   const voice = read('ios/App/App/VoiceCommandPlugin.swift');
   const audio = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
   assert.match(voice, /UIApplication.didEnterBackgroundNotification/);
-  assert.match(voice, /applicationEnteredBackground\(\) \{\s*end\(\)/);
+  assert.match(voice, /applicationEnteredBackground\(\) \{[\s\S]*?releaseFocusedListening\(\)[\s\S]*?end\(\)/);
   assert.match(voice, /WorkoutAudioPolicy.captureMicrophone\([\s\S]*?applicationState == .active/);
   assert.match(audio, /\.AVAudioEngineConfigurationChange, object: audioEngine/);
   assert.match(audio, /UIApplication.didEnterBackgroundNotification/);

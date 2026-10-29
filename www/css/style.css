@@ -497,6 +497,13 @@ html[dir="ltr"] .card-hint { text-align: left; }
 
 /* Stats grid */
 .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+.statistics-details > summary, #libraryAdvancedFilters > summary, #libraryUpdateCard > summary {
+  cursor: pointer; min-height: 44px; padding-block: 10px; font-weight: 700;
+}
+.statistics-chart { margin-block-start: 22px; min-width: 0; }
+.statistics-evidence { border-inline-start: 3px solid var(--primary); padding-inline-start: 12px; }
+.statistics-evidence span { overflow-wrap: anywhere; }
+.statistics-details canvas { max-width: 100%; }
 .chart-controls-row { display: flex; gap: 8px; }
 .chart-controls-row .select { flex: 1; }
 .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; box-shadow: var(--shadow); }
@@ -505,6 +512,8 @@ html[dir="ltr"] .card-hint { text-align: left; }
 
 /* Exercise manage list */
 .exercise-category-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 20px; }
+.exercise-category-grid.library-browse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.library-browse-trail { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .exercise-category-button {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
   min-height: 88px; padding: 12px 6px; border: 1px solid var(--border); border-radius: 14px;
@@ -682,6 +691,9 @@ input[type="tel"].input, input[type="email"].input, input[type="number"].input {
 .voice-commands-list li { margin-bottom: 4px; }
 .voice-status-badge { background: var(--accent-soft, #eef4ff); color: var(--accent, #2a6df5); font-size: 12px; font-weight: 600; text-align: center; padding: 6px 10px; border-radius: 8px; margin-bottom: 10px; transition: background .2s; }
 .voice-status-badge.counting { background: #fff3cd; color: #8a6400; }
+.workout-audio-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-block-end: 10px; }
+.workout-audio-controls .field-hint { flex-basis: 100%; margin: 0; }
+.workout-audio-controls [aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); }
 .exercise-card.voice-highlight, .exercise-card.voice-selected { box-shadow: 0 0 0 3px var(--accent, #2a6df5); transition: box-shadow .2s; }
 .settings-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 

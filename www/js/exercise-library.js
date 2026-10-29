@@ -1,7 +1,11 @@
 // Original instructional text and schematic illustrations. Existing programs remain unchanged.
 const pair = (he, en) => ({ he, en });
 const guide = (name, muscles, equipment, pose, steps, cue, options = {}) => ({
-  name, muscles, equipment, pose, steps, cue, level: 'מתחילים', ...options,
+  name, muscles, equipment, pose, steps, cue, level: 'מתחילים',
+  places: equipment.includes('מכונה') ? ['gym']
+    : equipment.every((item) => ['משקל גוף', 'ללא ציוד', 'מזרן', 'משקולות יד', 'גומייה', 'חבל קפיצה', 'קיר'].includes(item))
+      ? ['home', 'gym', 'outside'] : ['home', 'gym'],
+  ...options,
 });
 
 export const EXERCISE_GUIDES = {
@@ -877,6 +881,32 @@ export function matchesLibraryFilters(exercise, filters, translate = (value) => 
     info?.name.he, info?.name.en, ...(info?.muscles || []), ...(info?.equipment || [])];
   const text = searchable.filter(Boolean).flatMap((value) => [value, translate(value)]).join(' ').normalize('NFKC').toLocaleLowerCase();
   return words.every((word) => text.includes(word));
+}
+
+export const LIBRARY_EQUIPMENT_GROUPS = [
+  { id: 'all', label: 'כל התרגילים', icon: '📚' },
+  { id: 'bodyweight', label: 'משקל גוף', icon: '🧍' },
+  { id: 'weights', label: 'משקולות ומוטות', icon: '🏋️' },
+  { id: 'machines', label: 'מכשירים ופולי', icon: '⚙️' },
+  { id: 'accessories', label: 'גומיות ואביזרים', icon: '🔗' },
+  { id: 'cardio', label: 'אירובי', icon: '🚶' },
+  { id: 'personal', label: 'תרגילים אישיים ללא סיווג', icon: '✏️' },
+];
+
+export function matchesLibraryBrowse(exercise, place = '', equipmentGroup = 'all') {
+  if (!matchesLibraryFilters(exercise, { place })) return false;
+  const info = exerciseGuide(exercise);
+  if (equipmentGroup === 'all') return true;
+  if (equipmentGroup === 'personal') return !info;
+  if (equipmentGroup === 'cardio') return exercise.inputType === 'cardio';
+  if (!info || exercise.inputType === 'cardio') return false;
+  if (equipmentGroup === 'bodyweight') return info.equipment.every((item) =>
+    ['משקל גוף', 'ללא ציוד', 'מזרן', 'קיר'].includes(item));
+  if (equipmentGroup === 'weights') return info.equipment.some((item) => ['משקולות יד', 'מוט'].includes(item));
+  if (equipmentGroup === 'machines') return info.equipment.includes('מכונה');
+  if (equipmentGroup === 'accessories') return info.equipment.some((item) =>
+    !['משקל גוף', 'ללא ציוד', 'משקולות יד', 'מוט', 'מכונה'].includes(item));
+  return false;
 }
 
 export const LIBRARY_TRANSLATIONS = {

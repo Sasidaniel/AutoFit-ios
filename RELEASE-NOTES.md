@@ -1,5 +1,42 @@
 # AutoFit release notes
 
+## Unreleased - focused listening, audio handoff and clearer browsing/statistics (2026-10-29)
+
+- Added explicit iPhone-only focused listening, entered by button or supported
+  Hebrew/English commands, with feminine aliases. It temporarily requests
+  exclusive audio for at most two minutes; ordinary recognition still mixes.
+  Exit is explicit or automatic on timeout, background, interruption or terminal
+  failure. Voice status now distinguishes requested capture from actual capture.
+  The entry command itself requires working regular recognition; the button is
+  the fallback. No native listening is simulated in the browser.
+- Shared audio ownership now retains pending handoff through interruptions.
+  Foreground does not override an iOS refusal to resume. Added explicit recovery,
+  safe speech invalidation before forced release, and focused-mode exit that
+  preserves a currently playing announcement. Recovery does not enable a disabled
+  microphone or issue external-player Play commands. Actual third-party playback
+  resumption remains subject to iOS/player behavior.
+- Replaced the initial muscle-category grid with environment, then available
+  equipment, then exercises. My Workout remains directly accessible. Search and
+  optional advanced filters remain; personal unknown metadata is not invented.
+  Browsing preserves programs and history; supersets respect both parts' places.
+- Statistics now leads with four plain counts, consistency explanations and a
+  selected recorded-exercise comparison with dated evidence. It reuses existing
+  comparison guards, withholds unsupported strength conclusions and never edits
+  targets. Detailed charts are optional/collapsed; assistance/holds are excluded
+  from external-load volume, and timed records retain time metrics.
+- All 593 JavaScript regressions passed, as did frontend syntax and diff checks.
+  Swift policy tests were added but NOT executed: this Windows host has no
+  Xcode/Swift. Calls, app switching, exclusive audio and player recovery still
+  require macOS compilation and physical-device verification before release.
+- Reviewed empty statistics and a separate two-workout synthetic demo at
+  `http://review.localhost:8962/?previewSkip=1`, including female Hebrew, English,
+  optional charts and a 385px view without horizontal overflow. The earlier
+  preview and its saved program were preserved. App cache: `autofit-v88`.
+- Detailed continuation and device checklist: sections 45–48 of
+  [PRE-RELEASE-REVIEW.md](PRE-RELEASE-REVIEW.md). This is an owner-authorized
+  work-branch code/documentation backup only; no main merge, build/release
+  workflow, PR, version release or TestFlight upload is authorized or performed.
+
 ## Documentation and branch backup - owner approved (2026-10-29)
 
 The owner requested a detailed numbered Markdown handoff and a GitHub backup

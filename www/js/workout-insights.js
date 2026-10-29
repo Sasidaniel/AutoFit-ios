@@ -71,6 +71,55 @@ export function compareEntries(current, previous) {
   return null;
 }
 
+export function statisticsHistory(history, now = new Date()) {
+  const seen = new Set();
+  return history.filter((record) => {
+    const time = Date.parse(record.dateISO);
+    if (!record.id || seen.has(record.id) || !Number.isFinite(time) || time > now.getTime()
+      || !Array.isArray(record.entries)) return false;
+    seen.add(record.id);
+    return record.entries.some((entry) => entry.type === 'cardio'
+      ? entry.completed === true && Number(entry.durationSec) > 0
+      : measuredSets(entry).some((set) => Number.isFinite(Number(set.reps)) && Number(set.reps) > 0));
+  }).sort((a, b) => Date.parse(b.dateISO) - Date.parse(a.dateISO));
+}
+
+export function statisticsOverview(history, now = new Date()) {
+  const records = statisticsHistory(history, now);
+  const start = new Date(now);
+  start.setDate(start.getDate() - 28);
+  const previousStart = new Date(start);
+  previousStart.setDate(previousStart.getDate() - 28);
+  const recent = records.filter((record) => Date.parse(record.dateISO) >= start.getTime());
+  const previous = records.filter((record) => Date.parse(record.dateISO) < start.getTime()
+    && Date.parse(record.dateISO) >= previousStart.getTime());
+  return {
+    records, recent, previous,
+    activeSeconds: recent.reduce((sum, record) => sum + (Number.isFinite(Number(record.durationSec))
+      && Number(record.durationSec) > 0 ? Number(record.durationSec) : 0), 0),
+    completedSets: recent.reduce((sum, record) => sum + record.entries.reduce((count, entry) =>
+      count + (entry.type === 'cardio' ? 0 : measuredSets(entry).filter((set) =>
+        Number.isFinite(Number(set.reps)) && Number(set.reps) > 0).length), 0), 0),
+    latest: records[0] || null,
+  };
+}
+
+export function exerciseProgress(history, exerciseId, now = new Date()) {
+  const evidence = statisticsHistory(history, now).map((record) => ({
+    dateISO: record.dateISO, entry: record.entries.find((entry) => entry.exerciseId === exerciseId),
+  })).filter((record) => record.entry).slice(0, 2);
+  const insufficient = (reason) => ({ kind: 'insufficient', reason, evidence });
+  if (evidence.length < 2) return insufficient('history');
+  const [current, previous] = evidence.map((record) => record.entry);
+  if (current.type === 'cardio' || previous.type === 'cardio'
+    || current.inputType === 'hold' || previous.inputType === 'hold') return insufficient('measurement');
+  if (!current.comparisonKey || !previous.comparisonKey
+    || current.inputType !== 'reps' || previous.inputType !== 'reps'
+    || !Object.hasOwn(EXERCISE_GUIDES, current.catalogId || '')) return insufficient('legacy');
+  const comparison = compareEntries(current, previous);
+  return comparison ? { ...comparison, evidence } : insufficient('conditions');
+}
+
 export function progressRecommendation(exercise, history, now = new Date()) {
   const current = completedEntrySnapshot({ exerciseId: exercise.id, exerciseName: exercise.name, sets: [] }, exercise);
   const seen = new Set();

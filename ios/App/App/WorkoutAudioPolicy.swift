@@ -29,6 +29,48 @@ enum WorkoutAudioPolicy {
         guard failures < 5 else { return nil }
         return Double(max(1, min(failures, 4)))
     }
+
+    static let focusedListeningSeconds: Double = 120
+}
+
+struct WorkoutAudioInterruption {
+    private(set) var interrupted = false
+    private(set) var mayResume = true
+
+    mutating func begin() {
+        interrupted = true
+        mayResume = false
+    }
+
+    mutating func end(shouldResume: Bool) {
+        interrupted = false
+        mayResume = shouldResume
+    }
+
+    mutating func userRequestedRecovery() {
+        interrupted = false
+        mayResume = true
+    }
+}
+
+struct WorkoutAudioOwnership {
+    private(set) var active = false
+    private(set) var handoffPending = false
+
+    mutating func activated(temporarilyExclusive: Bool) {
+        active = true
+        handoffPending = handoffPending || temporarilyExclusive
+    }
+
+    mutating func interrupted() {
+        handoffPending = handoffPending || active
+        active = false
+    }
+
+    mutating func released() {
+        active = false
+        handoffPending = false
+    }
 }
 
 struct WorkoutAnnouncementQueue {

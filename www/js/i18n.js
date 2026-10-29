@@ -195,8 +195,9 @@ export function canonicalVoice(value) {
     ['התחילי', 'התחל'], ['סיימי', 'סיים'], ['בטלי', 'בטל'], ['עצרי', 'עצור'],
     ['השהי', 'השהה'], ['המשיכי', 'המשך'], ['דלגי', 'דלג'], ['מאשרת', 'מאשר'],
     ['תוסיפי', 'תוסיף'], ['הוסיפי', 'הוסף'], ['הפעילי', 'הפעל'], ['בחרי', 'בחר'],
+    ['הקשיבי', 'הקשב'], ['תקשיבי', 'תקשיב'], ['חזרי', 'חזור'],
   ]);
-  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי)(?=\s|$)/gu,
+  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי|הקשיבי|תקשיבי|חזרי)(?=\s|$)/gu,
     (_, before, word) => before + feminineCommands.get(word));
   result = result.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?\b/g,
     (_, tens, units) => String((['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'].indexOf(tens) + 2) * 10 + (units ? numbers.indexOf(units) : 0)));

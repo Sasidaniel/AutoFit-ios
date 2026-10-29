@@ -266,15 +266,25 @@ export async function voiceRequestPermission() {
   }
 }
 
-export async function voiceStartListening(contextualStrings = [], language = 'he-IL', microphoneMode = 'automatic') {
+export async function voiceStartListening(contextualStrings = [], language = 'he-IL', microphoneMode = 'automatic', focused = false) {
   const V = plugin('VoiceCommand');
   if (!V) return { listening: false, reason: unavailableReason('VoiceCommand') };
   try {
-    const result = await V.startListening({ contextualStrings, language, microphoneMode });
-    return { listening: true, inputName: result?.inputName || '' };
+    const result = await V.startListening({ contextualStrings, language, microphoneMode, ...(focused ? { focused: true } : {}) });
+    if (focused && result?.focused !== true) return { listening: false, requested: false,
+      reason: 'Focused listening requires the updated iPhone app.' };
+    return { listening: result?.listening !== false, requested: result?.requested !== false,
+      focused: result?.focused === true, reason: result?.reason || '', inputName: result?.inputName || '' };
   } catch (e) {
     return { listening: false, reason: String(e) };
   }
+}
+
+export async function voiceRecoverAudio() {
+  const V = plugin('VoiceCommand');
+  if (!V?.recoverAudio) return { released: false, reason: unavailableReason('VoiceCommand.recoverAudio') };
+  try { return { released: false, ...await V.recoverAudio() }; }
+  catch (error) { return { released: false, reason: String(error) }; }
 }
 
 export async function voiceStopListening() {
@@ -299,6 +309,11 @@ export function onVoiceError(callback) {
 export function onVoiceInputChanged(callback) {
   const V = plugin('VoiceCommand');
   if (V && V.addListener) V.addListener('voiceInputChanged', callback);
+}
+
+export function onVoiceListeningChanged(callback) {
+  const V = plugin('VoiceCommand');
+  if (V && V.addListener) V.addListener('voiceListeningChanged', callback);
 }
 
 /* ---------------- Lock Screen / Dynamic Island Live Activity ---------------- */

@@ -211,6 +211,11 @@
       <h2 id="workoutName" class="workout-name" data-no-translate></h2>
       <div id="voiceStatusBadge" class="voice-status-badge hidden" role="status"></div>
       <button id="btnEnableWorkoutVoice" class="btn btn-secondary btn-small hidden">🎙️ הפעל מיקרופון ופקודות קוליות</button>
+      <div id="workoutAudioControls" class="workout-audio-controls hidden">
+        <button id="btnFocusedListening" type="button" class="btn btn-secondary btn-small" aria-pressed="false">האזנה ממוקדת</button>
+        <button id="btnRecoverWorkoutAudio" type="button" class="btn btn-secondary btn-small">שחרור אודיו וניסיון חידוש</button>
+        <p id="focusedListeningHint" class="field-hint">האזנה ממוקדת עד שתי דקות עשויה לעצור מוזיקה. אפשר לצאת בכל רגע; החזרה למוזיקה תלויה בנגן.</p>
+      </div>
       <div id="liveActivityStatus" class="field-hint hidden" role="status"></div>
       <div class="workout-timer-row">
         <div>
@@ -262,23 +267,33 @@
   <!-- DASHBOARD TAB -->
   <section id="tab-dashboard" class="tab-panel">
     <h2 class="section-title">סטטיסטיקה</h2>
+    <p class="about-desc">התמונה שלך במילים פשוטות: התמדה, עבודה שתועדה והשוואה הוגנת בין אימונים.</p>
     <div class="stats-grid" id="statsGrid"></div>
-
+    <div class="card" id="statisticsConclusions" aria-live="polite"></div>
     <div class="card">
-      <div class="card-title">נפח אימון (ק"ג × חזרות) — לאורך זמן</div>
-      <div class="card-hint">נפח = סכום (משקל × חזרות) על פני כל הסטים שהושלמו באימון</div>
-      <canvas id="volumeChart" height="180"></canvas>
+      <h3 class="card-title">מה השתנה בתרגיל שלך?</h3>
+      <label class="field-label" for="exercisePickerChart">תרגיל מתועד</label>
+      <select id="exercisePickerChart" class="select"></select>
+      <div id="exerciseProgressSummary" aria-live="polite"></div>
     </div>
+    <details id="statisticsDetails" class="card statistics-details">
+      <summary>גרפים ונתונים מפורטים</summary>
+      <p class="field-hint">הגרפים מציגים נתונים שתועדו, לא ציון כושר. יותר סטים או נפח אינם בהכרח שיפור בכוח.</p>
+      <p id="statisticsChartUnavailable" class="field-hint hidden">הגרפים אינם זמינים כרגע. הסיכום והמסקנות למעלה עדיין זמינים.</p>
+      <div class="statistics-chart">
+      <div class="card-title">נפח אימון (ק"ג × חזרות) — לאורך זמן</div>
+      <div class="card-hint">עומס חיצוני כפול חזרות בסטים שהושלמו. משקלי סיוע והחזקות אינם נכללים.</div>
+      <canvas id="volumeChart" height="180"></canvas>
+      </div>
 
-    <div class="card">
+      <div class="statistics-chart">
       <div class="card-title">סה"כ סטים לאימון — לאורך זמן</div>
       <canvas id="setsChart" height="160"></canvas>
-    </div>
+      </div>
 
-    <div class="card">
-      <div class="card-title">התקדמות לפי תרגיל</div>
+      <div class="statistics-chart">
+      <div class="card-title">נתוני התרגיל שנבחר</div>
       <div class="chart-controls-row">
-        <select id="exercisePickerChart" class="select"></select>
         <select id="exerciseMetricPicker" class="select">
           <option value="weight">משקל מקסימלי</option>
           <option value="reps">חזרות מקסימליות</option>
@@ -287,39 +302,45 @@
         </select>
       </div>
       <canvas id="exerciseChart" height="180"></canvas>
-    </div>
+      </div>
 
-    <div class="card">
+      <div class="statistics-chart">
       <div class="card-title">עקביות שבועית — אימונים לשבוע</div>
       <canvas id="consistencyChart" height="140"></canvas>
-    </div>
+      </div>
 
-    <div class="card">
+      <div class="statistics-chart">
       <div class="card-title">מגמת משקל גוף</div>
       <div class="card-hint">מבוסס על עדכוני המשקל שנשמרו באזור האישי</div>
       <canvas id="bodyWeightChart" height="160"></canvas>
-    </div>
+      </div>
+    </details>
   </section>
 
   <!-- EXERCISES TAB -->
   <section id="tab-exercises" class="tab-panel">
     <div class="exercise-library-topbar">
-      <button id="btnExerciseCategoryBack" type="button" class="btn btn-secondary exercise-category-back hidden" aria-label="חזרה לכל הקטגוריות">
+      <button id="btnExerciseCategoryBack" type="button" class="btn btn-secondary exercise-category-back hidden" aria-label="חזרה">
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6l-6 6 6 6"/></svg><span>חזרה</span>
       </button>
       <h2 class="section-title">ספריית תרגילים</h2>
     </div>
-    <div class="card" id="catalogSummary" aria-live="polite"></div>
-    <p class="about-desc">בחר קטגוריה, מצא תרגילים והוסף אותם לאימון שלך.</p>
-    <div id="libraryUpdateCard" class="card hidden">
+    <div class="field-hint" id="catalogSummary"></div>
+    <p id="libraryBrowsePrompt" class="about-desc">איפה מתאמנים? בחר סביבה ואז ציוד.</p>
+    <details id="libraryUpdateCard" class="hidden">
+      <summary>עדכון הספרייה השמורה</summary>
       <p class="field-hint">כל המאגר כבר זמין בקטגוריות. אפשר גם לשמור את התרגילים החדשים בספרייה שלך בלי לשנות את האימון הקיים.</p>
       <button id="btnExpandLibrary" type="button" class="btn btn-secondary">הוסף תרגילים חדשים לספרייה</button>
-    </div>
-    <div id="exerciseLibraryFilters" class="library-filters">
+    </details>
+    <div id="exerciseLibraryFilters">
       <label class="library-search">
         <span class="field-label">חיפוש בספרייה</span>
         <input id="librarySearch" class="input" type="search" placeholder="חפש תרגיל, שריר או ציוד">
       </label>
+      <details id="libraryAdvancedFilters">
+      <summary>סינון נוסף לפי שריר, ציוד ורמה</summary>
+      <div class="library-filters">
+      <label><span class="field-label">קבוצת שרירים</span><select id="libraryMuscle" class="select"><option value="">כל קבוצות השרירים</option></select></label>
       <label><span class="field-label">סוג פעילות</span><select id="libraryType" class="select">
         <option value="">כל סוגי הפעילות</option><option value="reps">כוח</option>
         <option value="hold">החזקות סטטיות</option><option value="cardio">אירובי</option>
@@ -339,11 +360,14 @@
         <option value="">כל הרמות</option><option value="מתחילים">מתחילים</option><option value="בינוניים">בינוניים</option>
       </select></label>
       <button id="btnClearLibraryFilters" class="btn btn-secondary btn-small">נקה סינון</button>
+      </div>
+      </details>
     </div>
+    <p id="libraryBrowseTrail" class="library-browse-trail"></p>
     <div id="exerciseCategoryGrid" class="exercise-category-grid" aria-label="קטגוריות תרגילים"></div>
     <button type="button" class="btn btn-secondary page-shortcut" data-page-link="plans">התוכניות שלי</button>
     <div id="exerciseLibraryPanel" class="hidden">
-      <button id="btnBackExerciseCategories" class="btn btn-primary exercise-library-back">לכל הקטגוריות</button>
+      <button id="btnBackExerciseCategories" class="btn btn-secondary exercise-library-back">חזרה</button>
       <div class="exercise-library-heading">
         <h3 id="exerciseLibraryTitle"></h3>
         <span id="exerciseLibraryCount" class="exercise-meta"></span>
@@ -598,6 +622,9 @@
       <button type="button" class="btn btn-secondary btn-small" data-page-link="settings">פתח הגדרות</button>
       <div class="field-hint">פקודות קוליות פועלות כשהאפליקציה פתוחה בטאב אימון. במצב אוטומטי המיקרופון הוא של האייפון או של אוזניות חוטיות, כדי לא להחליף את מסלול מוזיקת ה-Bluetooth. שם המיקרופון מוצג ליד ״מקשיב״. שמור את המיקרופון בטווח הדיבור. ההאזנה מושהית בזמן הכרזות האפליקציה ומתחדשת אחריהן. מוזיקה חזקה עלולה להקשות על הזיהוי; הזנה ידנית נשארת זמינה.</div>
       <ul class="voice-commands-list">
+        <li><strong>״הקשב לי״ / “Listen”</strong><span> — מעבר להאזנה ממוקדת עד שתי דקות. מוזיקה עשויה להיעצר; אפשר גם ללחוץ על הכפתור באימון אם הפקודה לא מזוהה.</span></li>
+        <li><strong>״המשך מוזיקה״ / “Resume music”</strong><span> — יציאה מהאזנה ממוקדת ושחרור האודיו לנגן. ההאזנה הרגילה נשארת זמינה; אין הפעלה כפויה של נגן חיצוני.</span></li>
+        <li>אחרי שיחה או הפרעת שמע, החידוש האוטומטי מכבד את החלטת iOS. אם ההאזנה או המוזיקה לא חזרו, אפשר ללחוץ על ״שחרור אודיו וניסיון חידוש״. אם הנגן נשאר מושהה, יש להמשיך בו ידנית.</li>
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
         <li><strong>"לחיצת חזה"</strong> או קיצור חד־משמעי כמו <strong>"חזה"</strong> — בוחר ומדגיש את התרגיל ומתחיל להקשיב לספירה בסט הבא שטרם הושלם. אין צורך לומר בנפרד ״התחל סט״. אמירת השם שוב בזמן ספירה אינה מאפסת אותה</li>
         <li><strong>"חימום"</strong>, <strong>"שחרור"</strong> או <strong>"פלאנק"</strong> — בוחר בלבד; אומרים ״התחל״ כדי להפעיל את הטיימר. לבחירה בלבד בתרגיל חזרות אפשר לומר <strong>"בחר לחיצת חזה"</strong></li>

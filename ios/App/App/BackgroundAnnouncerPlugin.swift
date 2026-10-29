@@ -54,6 +54,10 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         speechSynthesizer.delegate = self
         NotificationCenter.default.addObserver(self, selector: #selector(restorePlaybackAfterMicrophone),
             name: Self.microphoneReleased, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(prepareForAudioRelease),
+            name: WorkoutAudioSession.willDeactivate, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(userRequestedRecovery),
+            name: WorkoutAudioSession.recoveryRequested, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(audioConfigurationChanged),
             name: .AVAudioEngineConfigurationChange, object: audioEngine)
         NotificationCenter.default.addObserver(self, selector: #selector(audioConfigurationChanged),
@@ -71,7 +75,8 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     }
 
     @objc private func restorePlaybackAfterMicrophone() {
-        guard Self.isKeepingAlive, !Self.isAnnouncing, !audioInterrupted else { return }
+        guard Self.isKeepingAlive, !Self.isAnnouncing, !audioInterrupted,
+              WorkoutAudioSession.canAutomaticallyResume else { return }
         guard WorkoutAudioPolicy.needsPlaybackRecovery(engineRunning: audioEngine.isRunning,
             playerPlaying: playerNode.isPlaying,
             configurationMatches: WorkoutAudioSession.matches(recording: VoiceCommandPlugin.usesRecordingSession)) else { return }
@@ -90,10 +95,25 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     }
 
     @objc private func applicationBecameActive() {
-        // iOS may omit interruption-ended while suspended. Activation remains
-        // authoritative: an unavailable session still throws a visible error.
-        audioInterrupted = false
+        guard WorkoutAudioSession.canAutomaticallyResume else { return }
         restorePlaybackAfterMicrophone()
+    }
+
+    @objc private func prepareForAudioRelease() {
+        playerNode.stop()
+        beepNode.stop()
+        audioEngine.stop()
+        if Self.isAnnouncing && !speechQueue.isEmpty {
+            speechQueue.interrupt()
+            pendingSpeech.removeAll()
+            speechSynthesizer.stopSpeaking(at: .immediate)
+            Self.isAnnouncing = false
+            NotificationCenter.default.post(name: Self.announcementEnded, object: nil)
+        }
+    }
+
+    @objc private func userRequestedRecovery() {
+        audioInterrupted = false
     }
 
     @objc private func audioSessionInterrupted(_ notification: Notification) {
@@ -116,8 +136,14 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                         "reason": "Announcement interrupted by another audio session"
                     ])
                 }
-            } else if AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
-                self.restorePlaybackAfterMicrophone()
+            } else {
+                let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                do {
+                    try WorkoutAudioSession.interruptionEnded(shouldResume: shouldResume)
+                    if shouldResume { self.restorePlaybackAfterMicrophone() }
+                } catch {
+                    self.notifyListeners("announcementError", data: ["reason": "Cannot release interrupted audio: \(error.localizedDescription)"])
+                }
             }
         }
     }
@@ -316,7 +342,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         playerNode.stop()
         beepNode.stop()
         audioEngine.stop()
-        if !audioInterrupted {
+        if !audioInterrupted && !WorkoutAudioSession.focusedListening {
             do {
                 try WorkoutAudioSession.deactivate()
             } catch {

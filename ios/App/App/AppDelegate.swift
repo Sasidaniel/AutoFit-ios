@@ -4,12 +4,17 @@ import AVFoundation
 import UserNotifications
 
 enum WorkoutAudioSession {
-    private static var active = false
+    private static var ownership = WorkoutAudioOwnership()
+    private static var interruption = WorkoutAudioInterruption()
+    static var focusedListening = false
     static var preferHeadsetMicrophone = false
+    static let willDeactivate = Notification.Name("AutoFitAudioWillDeactivate")
+    static let recoveryRequested = Notification.Name("AutoFitAudioRecoveryRequested")
+    static var canAutomaticallyResume: Bool { interruption.mayResume && !interruption.interrupted }
 
     private static func options(recording: Bool, ducking: Bool) -> AVAudioSession.CategoryOptions {
-        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
-        if ducking { options.insert(.duckOthers) }
+        var options: AVAudioSession.CategoryOptions = focusedListening ? [] : [.mixWithOthers]
+        if ducking && !focusedListening { options.insert(.duckOthers) }
         if recording {
             options.formUnion([.allowBluetoothA2DP, .defaultToSpeaker])
             if preferHeadsetMicrophone { options.insert(.allowBluetooth) }
@@ -24,16 +29,20 @@ enum WorkoutAudioSession {
     }
 
     static func activate(recording: Bool, ducking: Bool = false, force: Bool = false) throws {
+        guard canAutomaticallyResume else {
+            throw NSError(domain: "AutoFit.Audio", code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "Audio is paused after an interruption. Use the audio recovery button to retry."])
+        }
         let session = AVAudioSession.sharedInstance()
         let category: AVAudioSession.Category = recording ? .playAndRecord : .playback
         let changed = !matches(recording: recording, ducking: ducking)
         if changed {
             try session.setCategory(category, mode: .default, options: options(recording: recording, ducking: ducking))
         }
-        if !active || changed || force {
+        if !ownership.active || changed || force {
             try session.setActive(true)
-            active = true
         }
+        ownership.activated(temporarilyExclusive: ducking || focusedListening)
         if recording { try selectInput(session) }
     }
 
@@ -68,14 +77,27 @@ enum WorkoutAudioSession {
         }
     }
 
-    static func deactivate() throws {
-        guard active else { return }
+    static func deactivate(force: Bool = false) throws {
+        guard !interruption.interrupted, ownership.active || ownership.handoffPending || force else { return }
+        NotificationCenter.default.post(name: willDeactivate, object: nil)
         try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        active = false
+        ownership.released()
     }
 
     static func wasInterrupted() {
-        active = false
+        ownership.interrupted()
+        interruption.begin()
+    }
+
+    static func interruptionEnded(shouldResume: Bool) throws {
+        interruption.end(shouldResume: shouldResume)
+        // The active flag is already false, but interrupted duck/exclusive audio still needs a handoff.
+        if ownership.handoffPending { try deactivate() }
+    }
+
+    static func userRequestedRecovery() {
+        interruption.userRequestedRecovery()
+        NotificationCenter.default.post(name: recoveryRequested, object: nil)
     }
 }
 

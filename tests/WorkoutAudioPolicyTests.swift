@@ -31,10 +31,44 @@ struct WorkoutAudioPolicyTests {
         precondition(WorkoutAudioPolicy.recognitionRetryDelay(failures: 6) == nil)
         testForegroundHandover()
         testAnnouncementRecovery()
+        testInterruptionOwnership()
         print("Audio routing, foreground handover, bounded recognition retries and announcement recovery passed")
     }
 
     private final class Utterance {}
+
+    private static func testInterruptionOwnership() {
+        precondition(WorkoutAudioPolicy.focusedListeningSeconds == 120)
+        var interruption = WorkoutAudioInterruption()
+        precondition(interruption.mayResume && !interruption.interrupted)
+        interruption.begin()
+        precondition(!interruption.mayResume && interruption.interrupted)
+        interruption.end(shouldResume: false)
+        precondition(!interruption.mayResume && !interruption.interrupted)
+        interruption.userRequestedRecovery()
+        precondition(interruption.mayResume && !interruption.interrupted)
+        interruption.begin()
+        interruption.end(shouldResume: true)
+        precondition(interruption.mayResume)
+        for exclusive in [false, true] {
+            var ownership = WorkoutAudioOwnership()
+            ownership.activated(temporarilyExclusive: exclusive)
+            precondition(ownership.active && ownership.handoffPending == exclusive)
+            ownership.interrupted()
+            precondition(!ownership.active && ownership.handoffPending)
+            ownership.interrupted()
+            precondition(ownership.handoffPending)
+            ownership.released()
+            precondition(!ownership.active && !ownership.handoffPending)
+        }
+        var ownership = WorkoutAudioOwnership()
+        ownership.activated(temporarilyExclusive: true)
+        ownership.activated(temporarilyExclusive: false)
+        precondition(ownership.handoffPending)
+        ownership.released()
+        ownership.interrupted()
+        precondition(!ownership.handoffPending)
+    }
 
     private static func testForegroundHandover() {
         for requested in [false, true] {
