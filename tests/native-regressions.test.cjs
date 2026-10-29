@@ -33,7 +33,7 @@ test('environment browsing uses authored locations, supports portable outdoor ex
   assert.equal(library.matchesLibraryBrowse(squat, 'outside', 'bodyweight'), true);
   assert.equal(library.matchesLibraryBrowse(machine, 'gym', 'machines'), true);
   assert.equal(library.matchesLibraryBrowse(machine, 'home', 'machines'), false);
-  assert.equal(library.matchesLibraryBrowse(custom, '', 'personal'), true);
+  assert.equal(library.matchesLibraryBrowse(custom, '', 'personal'), false);
   assert.equal(library.matchesLibraryBrowse(custom, 'gym', 'machines'), false);
   assert.equal(library.matchesLibraryBrowse(custom, 'home', 'all'), false);
   assert.equal(library.matchesLibraryBrowse(custom, '', 'all'), true);
@@ -82,7 +82,7 @@ test('outdoor browse audits the complete catalog and excludes dumbbell, barbell,
   for (const exercise of seeds.filter((item) => library.UNSPECIFIED_VARIANTS.has(item.name))) {
     assert.equal(library.matchesLibraryBrowse(exercise, 'home'), false, exercise.name);
     assert.equal(library.matchesLibraryBrowse(exercise, '', 'weights'), false, exercise.name);
-    assert.equal(library.matchesLibraryBrowse(exercise, '', 'personal'), true, exercise.name);
+    assert.equal(library.matchesLibraryBrowse(exercise, '', 'personal'), false, exercise.name);
     assert.equal(library.matchesLibraryBrowse(exercise), true, exercise.name);
     assert.ok(library.exerciseGuide(exercise), 'Existing media remains available');
   }
@@ -95,6 +95,22 @@ test('home has a dedicated jump-rope exercise category while full interval worko
   assert.equal(library.matchesLibraryBrowse(rope, 'home', 'cardio'), true);
   assert.doesNotMatch(read('www/index.html'), /btnLibraryRopePlan/);
   assert.match(read('www/js/training-ui.js'), /template.goal === 'rope'[\s\S]*ropeBuilder/);
+});
+
+test('removed unclassified equipment category does not remove original or custom exercises from the catalog', () => {
+  const seeds = nodeVM.runInContext('SEED_EXERCISES', localizationContext());
+  const custom = { id: 'my:personal', name: 'My personal exercise', category: 'גב', inputType: 'reps' };
+  const exercises = [...seeds, custom];
+  const before = JSON.stringify(exercises);
+  const catalog = library.browsableLibrary(exercises, seeds);
+  assert.ok(!library.LIBRARY_EQUIPMENT_GROUPS.some((group) => group.id === 'personal'));
+  for (const exercise of exercises) {
+    assert.ok(catalog.some((item) => item.id === exercise.id), exercise.name);
+    assert.equal(library.matchesLibraryBrowse(exercise), true, exercise.name);
+  }
+  assert.equal(JSON.stringify(exercises), before);
+  assert.doesNotMatch(read('www/js/exercise-library.js'), /ללא סיווג ציוד מאומת|תרגילים אישיים ללא סיווג/);
+  assert.doesNotMatch(read('www/js/translations-en.js'), /ללא סיווג ציוד מאומת|תרגילים אישיים ללא סיווג/);
 });
 
 test('muscle SVG icons have explicit visible dimensions instead of collapsing to zero size', () => {

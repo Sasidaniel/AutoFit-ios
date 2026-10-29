@@ -2,7 +2,6 @@ import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
   'מתח ומקבילים': 'Pull-up bars and parallel bars',
-  'ללא סיווג ציוד מאומת': 'Without verified equipment classification',
   'תוכניות': 'Plans',
   'תוכניות שמורות שלי': 'My saved plans',
   'תוכניות מוכנות': 'Ready-made plans',
@@ -100,7 +99,6 @@ export const EN = {
   'משקולות ומוטות': 'Dumbbells and barbells',
   'מכשירים ופולי': 'Machines and cables',
   'גומיות ואביזרים': 'Bands and accessories',
-  'תרגילים אישיים ללא סיווג': 'Unclassified personal exercises',
   'עדכון הספרייה השמורה': 'Update saved library',
   'סינון נוסף לפי שריר, ציוד ורמה': 'More filters: muscle, equipment and level',
   'קבוצת שרירים': 'Muscle group',

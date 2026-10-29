@@ -921,14 +921,12 @@ export const LIBRARY_EQUIPMENT_GROUPS = [
   { id: 'accessories', label: 'גומיות ואביזרים', icon: '🔗' },
   { id: 'rope', label: 'קפיצה על חבל', icon: '➰' },
   { id: 'cardio', label: 'אירובי', icon: '🚶' },
-  { id: 'personal', label: 'ללא סיווג ציוד מאומת', icon: '✏️' },
 ];
 
 export function matchesLibraryBrowse(exercise, place = '', equipmentGroup = 'all') {
   if (!matchesLibraryFilters(exercise, { place })) return false;
   const info = exerciseBrowseInfo(exercise);
   if (equipmentGroup === 'all') return true;
-  if (equipmentGroup === 'personal') return !info;
   if (equipmentGroup === 'cardio') return exercise.inputType === 'cardio';
   if (equipmentGroup === 'rope') return exercise.catalogId === 'jumpRope';
   if (!info || exercise.inputType === 'cardio') return false;

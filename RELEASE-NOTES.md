@@ -1,5 +1,19 @@
 # AutoFit release notes
 
+## Unreleased - remove the unclassified equipment category (2026-10-29)
+
+- Removed the misleading unclassified-equipment category entirely, including
+  its filter branch and both current/old Hebrew and English labels.
+- Preserved original/custom exercises, names, guides, selected workout and
+  history. Chest press and other original entries remain available in All
+  Library and its muscle categories; no equipment identity was invented.
+- Added a regression ensuring category removal does not remove any original
+  or custom exercises from the catalog. Cache: `autofit-v93`.
+- All 616 JavaScript tests passed. Browser checks verified removal in all four
+  environments, chest press still available by muscle, and unchanged stored
+  exercises/settings/workouts/session across both preview origins.
+- Work-branch code/documentation backup only; no release or TestFlight upload.
+
 ## Unreleased - corrected exercise placement, visible icons and focused library root (2026-10-29)
 
 - Removed the separate Jump-rope workout button from the library root as
