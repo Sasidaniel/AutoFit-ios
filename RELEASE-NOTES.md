@@ -1,10 +1,10 @@
 # AutoFit release notes
 
-## Unreleased - audio reliability and focused goals after iPhone 39 feedback
+## 1.0 (40) - verified internal TestFlight release (2026-10-29)
 
 - Treat music plus hands-free commands/counting as the highest-priority product
-  path. These fixes are not in the installed 39 binary; another release requires
-  fresh owner approval. Offline cache: `autofit-v97`.
+  path. These fixes are included in 40 following fresh owner approval; they
+  are not in the previous 39 binary. Offline cache: `autofit-v97`.
 - Replaced the Music status-check dead end with an explicit Play/Pause action.
   Interrupted/unknown states permit user-requested play, not blind automatic
   recovery. Confirmed state, permission gating and shared buttons remain.
@@ -34,12 +34,28 @@
   passed all 650 JS tests, four Swift suites, the additional real Swift-to-JS
   twelve-count contract, and app/widget Simulator compilation from source
   `8215fc8312e42f0fc56b3bc97fec65d1a87de502`.
-  Earlier validation 40901797372 also passed. No release workflow, distribution
-  signing or TestFlight upload was performed. Physical iPhone/Apple Music
+  Earlier validation 40901797372 also passed. Those preliminary validation runs
+  did not sign or distribute a binary. Physical iPhone/Apple Music
   acceptance remains pending; these checks do not prove the reported device
   issue is fixed. Hebrew/English grouped-goal browsing, an actual target save,
   preserved history and isolated mocked-player button layout were checked.
-- Detailed handoff: PRE-RELEASE-REVIEW sections 66-67.
+- The owner then explicitly approved a new TestFlight release:
+  "כן, העלה גרסה חדשה ל־TestFlight לבדיקה".
+  Binary source: `5abcf34599bf7ea51592ca80df93e07396717f6b`, on the work branch;
+  changes since the validated code source above were documentation only.
+- [Build/upload and availability run 40906247748](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/40906247748)
+  succeeded: all 650 JS tests, four Swift suites, app/widget archive, signing,
+  export, one binary upload and internal availability verification passed.
+- Apple confirmed **VALID / IN_BETA_TESTING** at **2026-10-29 15:59:01 UTC**.
+  Apple build ID: `1feb36f8-4a4f-41da-9e92-6fea8f7e8846`.
+  Exactly one release dispatch/upload; no separate verification run was needed.
+  No main merge, external beta submission or App Store publication.
+- Update to **1.0 (40)** in TestFlight without uninstalling. Physical-device
+  acceptance remains open: Music already playing when opening Workout, twelve
+  counts and another set, announcements/rest, floating play/pause, permissions,
+  headphones, calls and app switching. This approval is consumed by 40 and
+  does not authorize another release.
+- Detailed handoff: PRE-RELEASE-REVIEW sections 66-68.
 
 ## 1.0 (39) - verified internal TestFlight release (2026-10-29)
 
