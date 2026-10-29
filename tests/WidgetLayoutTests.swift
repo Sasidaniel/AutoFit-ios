@@ -49,7 +49,16 @@ struct WidgetLayoutTestApp: App {
                             let size = image.size
                             let maximum = island ? 138.0 : 160.0
                             guard size.height <= maximum, size.width <= width + 0.5 else {
-                                report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size)")
+                                let clock = ImageRenderer(content: ActivityClock(state: state).font(.system(size: 26, weight: .bold)))
+                                clock.proposedSize = ProposedViewSize(width: 108, height: nil)
+                                let controls = ImageRenderer(content: WorkoutControls(state: state, sessionID: "layout-test"))
+                                controls.proposedSize = ProposedViewSize(width: width - 24, height: nil)
+                                let text = ImageRenderer(content: Text(state.exerciseName).font(.headline).lineLimit(1))
+                                text.proposedSize = ProposedViewSize(width: width - 24, height: nil)
+                                let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                                    .appendingPathComponent("widget-layout.png")
+                                try! image.pngData()!.write(to: url)
+                                report("LAYOUT_FAILED \(language) \(phase) width=\(width) large=\(largeText) island=\(island) size=\(size); clock=\(String(describing: clock.uiImage?.size)), controls=\(String(describing: controls.uiImage?.size)), text=\(String(describing: text.uiImage?.size))")
                                 exit(1)
                             }
                             if island { maximumIslandHeight = max(maximumIslandHeight, size.height) }

@@ -41,7 +41,13 @@ RESULT="$CONTAINER/Documents/layout-result.txt"
 for ((attempt=0; attempt<60; attempt++)); do
   if [[ -f "$RESULT" ]]; then
     if grep -q 'LAYOUT_CHECKS_PASSED' "$RESULT"; then cat "$RESULT"; exit 0; fi
-    if grep -q 'LAYOUT_FAILED' "$RESULT"; then cat "$RESULT"; exit 1; fi
+    if grep -q 'LAYOUT_FAILED' "$RESULT"; then
+      cat "$RESULT"
+      if [[ -f "$CONTAINER/Documents/widget-layout.png" ]]; then
+        cp "$CONTAINER/Documents/widget-layout.png" "$RUNNER_TEMP/widget-layout.png"
+      fi
+      exit 1
+    fi
   fi
   sleep 2
 done
