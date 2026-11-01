@@ -1,6 +1,12 @@
 # AutoFit release notes
 
-## 1.0 (42) - approved internal TestFlight release in progress (2026-11-01)
+## 1.0 (42) - verified internal TestFlight release (2026-11-01)
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-01 11:54:58 UTC.**
+Source: `d4b4e3aa7b2d5a64bbb8f5cc4bf884f86ca058e3`.
+Apple build ID: `e6d63a3f-07a0-4555-81f6-f0479f07685b`.
+Uploaded once at 11:52:26 UTC; no separate status/reupload run was necessary.
+The source and final receipt are backed up on the existing work branch.
 
 Fresh explicit owner approval: **"תוציא גרסה לטסט פלייט"**.
 This authorizes one next internal release of the verified post-41 voice fixes,
@@ -9,10 +15,13 @@ not a main merge, external beta or App Store publication.
 The production code passed unsigned run
 [41287832751](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41287832751)
 on `f33be1570f6684bd9df2df9f4a9be8f68ebd7267`; subsequent changes are documentation
-only. Build 42 will rerun the complete release gates. Upload and Apple internal
-availability are not yet confirmed. 41 remains the available binary until then.
-Do not upload a second binary to remedy an availability-only failure; verify the
-existing build through the separate status workflow.
+only until the validation-harness repair below.
+[Successful build/upload/verification 41302926248](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41302926248)
+passed **665 JS tests**, four Swift suites, both native-to-JS counting contracts,
+all 144 widget layouts, signing, archive, export, upload and Apple internal
+availability. External state is `READY_FOR_BETA_SUBMISSION`; no external submission
+or main merge occurred. Two release dispatches, one binary upload. This approval
+is consumed; another version requires fresh explicit approval.
 
 The first release attempt
 [41301504878](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41301504878)
@@ -24,10 +33,14 @@ progress; a pre-check receipt copy could also preserve STARTED after a passing r
 The validation-only repair runs once, yields between cases, writes incremental
 measurements and preserves terminal/partial evidence on exit. Its app wait is
 bounded at five minutes; height limits remain 160/138 and all 144 cases remain.
-665 local regressions pass. An isolated widget run must pass before retrying the
-same approved 42. Production app/widget behavior is unchanged; uploads remain zero.
+665 local regressions passed before the retry.
+[Isolated widget proof 41302346640](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41302346640)
+passed first; its terminal receipt and all 144 downloaded measurements were
+independently verified: maximum Lock Screen **157/160**, island body **129/138**.
+The same 42 was then resumed, without changing production app/widget behavior.
+Physical iPhone microphone and Apple Music acceptance still require owner testing.
 
-## Unreleased - core voice repairs after physical testing of 41
+## Changes included in 42 - core voice repairs after physical testing of 41
 
 The owner reported ten becoming nineteen, unreliable focused listening, missing
 warmup/cooldown reset/completion and rest-skip commands, and continuing Apple
@@ -71,9 +84,9 @@ Validation passed before the final documentation backup:
 - Existing local preview at `http://127.0.0.1:8962/?previewSkip=1` serves the
   15-second guidance and correctly hides native microphone controls in a browser.
 
-Code is backed up on the existing work branch; no main push, new build number,
-release dispatch or upload occurred. Automated tests and Simulator compilation
-cannot establish physical iPhone microphone/Apple Music acceptance.
+The repair phase was backed up without release; the subsequently approved 42
+release is recorded above. Automated tests and Simulator compilation cannot
+establish physical iPhone microphone/Apple Music acceptance.
 
 ## 1.0 (41) - verified internal TestFlight release (2026-10-29)
 
