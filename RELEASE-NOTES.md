@@ -31,8 +31,21 @@ Music pauses. **41 remains the available binary. No new release is authorized.**
   The unsigned workflow uses the proven Intel macOS pool and preserves full
   measurements/build logs. Updating release validation does not dispatch it.
 
-Validation is being completed before final backup. Automated tests and Simulator
-compilation cannot establish physical iPhone microphone/Apple Music acceptance.
+Validation passed before the final documentation backup:
+
+- **664/664 local JS regressions** and module syntax/whitespace checks.
+- [Unsigned native run 41287832751](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41287832751)
+  passed once on source `f33be1570f6684bd9df2df9f4a9be8f68ebd7267`:
+  664 JS tests, four Swift suites, both real Swift-to-JS counting contracts,
+  app/widget Simulator compilation and all 144 widget layouts.
+- Downloaded measurements independently verified: 72 Lock Screen cases, maximum
+  **157/160 points**; 72 island-body cases, maximum **129/138 points**.
+- Existing local preview at `http://127.0.0.1:8962/?previewSkip=1` serves the
+  15-second guidance and correctly hides native microphone controls in a browser.
+
+Code is backed up on the existing work branch; no main push, new build number,
+release dispatch or upload occurred. Automated tests and Simulator compilation
+cannot establish physical iPhone microphone/Apple Music acceptance.
 
 ## 1.0 (41) - verified internal TestFlight release (2026-10-29)
 
