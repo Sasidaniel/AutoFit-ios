@@ -1,10 +1,25 @@
 # AutoFit release notes
 
+## 1.0 (42) - approved internal TestFlight release in progress (2026-11-01)
+
+Fresh explicit owner approval: **"תוציא גרסה לטסט פלייט"**.
+This authorizes one next internal release of the verified post-41 voice fixes,
+not a main merge, external beta or App Store publication.
+
+The production code passed unsigned run
+[41287832751](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41287832751)
+on `f33be1570f6684bd9df2df9f4a9be8f68ebd7267`; subsequent changes are documentation
+only. Build 42 will rerun the complete release gates. Upload and Apple internal
+availability are not yet confirmed. 41 remains the available binary until then.
+Do not upload a second binary to remedy an availability-only failure; verify the
+existing build through the separate status workflow.
+
 ## Unreleased - core voice repairs after physical testing of 41
 
 The owner reported ten becoming nineteen, unreliable focused listening, missing
 warmup/cooldown reset/completion and rest-skip commands, and continuing Apple
-Music pauses. **41 remains the available binary. No new release is authorized.**
+Music pauses. This repair phase was initially local-only; the new approval and
+release status are recorded above.
 
 - Hebrew live counting now resolves consecutive nine/ten from the expected
   sequence without changing an explicit nineteen or a performance report.
