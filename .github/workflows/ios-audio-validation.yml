@@ -37,7 +37,7 @@ jobs:
           retention-days: 3
   validate:
     if: (github.event_name == 'workflow_dispatch' && !inputs.widget_only) || contains(github.event.head_commit.message, '[validate-audio]')
-    runs-on: macos-15
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,7 +66,8 @@ jobs:
         run: |
           set -e
           "$RUNNER_TEMP/speech-tests" --count-stream > "$RUNNER_TEMP/count-stream.json"
-          AUTOFIT_NATIVE_COUNT_STREAM="$RUNNER_TEMP/count-stream.json" node --test --test-name-pattern="native streaming contract" tests/native-regressions.test.cjs
+          "$RUNNER_TEMP/speech-tests" --hebrew-count-stream > "$RUNNER_TEMP/hebrew-count-stream.json"
+          AUTOFIT_NATIVE_COUNT_STREAM="$RUNNER_TEMP/count-stream.json" AUTOFIT_NATIVE_HEBREW_COUNT_STREAM="$RUNNER_TEMP/hebrew-count-stream.json" node --test --test-name-pattern="native.*streaming contract" tests/native-regressions.test.cjs
       - name: Compile app and widget for simulator without signing or distribution
         run: |
           set -e
@@ -88,5 +89,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: widget-layout
-          path: ${{ runner.temp }}/widget-layout*.png
+          path: |
+            ${{ runner.temp }}/widget-layout*.png
+            ${{ runner.temp }}/layout-measurements.txt
+            ${{ runner.temp }}/layout-result.txt
+            ${{ runner.temp }}/audio-build.log
           retention-days: 3

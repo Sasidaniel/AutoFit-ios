@@ -2299,13 +2299,37 @@ function parseSpokenRepCount(text, previous = 0) {
     for (let count = 1; count <= 100; count++) {
       sequence += count;
       if (sequence === digits) {
-        if (normalized === '12' && previous > 2) return 12;
+        if (normalized === '12' && previous > 2) return previous === 11 ? 12 : null;
         return Math.max(previous, count);
       }
       if (!digits.startsWith(sequence)) break;
     }
   }
-  return parseSpokenNumber(text);
+  const words = normalized.split(' ');
+  for (const start of new Set([1, previous, previous + 1])) {
+    let position = 0;
+    let expected = start;
+    while (position < words.length) {
+      let length = 0;
+      for (let size = 3; size >= 1; size--) {
+        const phrase = words.slice(position, position + size).join(' ');
+        let value = /^\d+$/.test(phrase) ? Number(phrase) : HE_NUM_WORDS[phrase];
+        if (size === 1 && value === undefined) value = HE_NUM_WORDS[phrase.replace(/^ו/, '')];
+        if (size === 2 && ['עשרים', 'שלושים'].includes(words[position])) {
+          const unit = HE_NUM_WORDS[(words[position + 1] || '').replace(/^ו/, '')];
+          if (unit > 0 && unit < 10) value = HE_NUM_WORDS[words[position]] + unit;
+        }
+        if (value === expected && position + size <= words.length) { length = size; break; }
+      }
+      if (!length) break;
+      position += length;
+      expected++;
+    }
+    if (position === words.length) return Math.max(previous, expected - 1);
+  }
+  const value = parseSpokenNumber(text);
+  if (previous > 0 && value > previous + 1) return null;
+  return value === null ? null : Math.max(previous, value);
 }
 
 function normalizeVoiceText(text) {
@@ -2325,7 +2349,9 @@ function classifyVoiceCommand(text) {
   if (/^(התחל|תתחיל|מתחיל|נספור|לספור)( את)? ה?סט$/.test(t)) return 'startSet';
   if (/^(התחל|תתחיל|מתחיל)( (את )?ה?תרגיל)?$/.test(t)) return 'startExercise';
   if (/^(עצור|תעצור|השהה)( (את )?ה?תרגיל)?$/.test(t)) return 'stopExercise';
-  if (/^(דלג( על)? (זמן )?ה?מנוחה|זמן ה?מנוחה (הסתיים|נגמר)|ה?מנוחה (הסתיימה|נגמרה))$/.test(t)) return 'skipRest';
+  if (/^(דלג|דלג( על)? (זמן )?ה?מנוחה|זמן ה?מנוחה (הסתיים|נגמר)|ה?מנוחה (הסתיימה|נגמרה))$/.test(t)) return 'skipRest';
+  if (/^(אפס|איפוס)( את)?( ה?(טיימר|תרגיל))?$/.test(t)) return 'resetExercise';
+  if (/^(סמן|סימון) כ?בוצע$|^בוצע$|^ה?תרגיל (בוצע|הושלם|הסתיים)$/.test(t)) return 'markDone';
   if (/^ה?תרגיל הבא$/.test(t)) return 'nextExercise';
   if (/^(ה?סט (הושלם|הסתיים|בוצע|הבא)|סיימתי( את)? ה?סט|סיימתי|הסתיים|סיום)$/.test(t)) return 'setDone';
   if (/^חזרה (אחת|ראשונה|שנייה|\d+) הסתיימה$/.test(t)) return 'setDone';
@@ -2573,13 +2599,20 @@ function matchVoiceExercise(text) {
   const stopSuffix = text.match(/^(.+?) (?:עצור|תעצור|השהה)$/);
   const stop = !!(stopPrefix || stopSuffix);
   if (stop) name = (stopPrefix || stopSuffix)[1];
+  const resetMatch = text.match(/^(?:אפס|איפוס)(?: את)? (.+)$/)
+    || text.match(/^(.+?) (?:אפס|איפוס)$/);
+  const completeMatch = text.match(/^סמן(?: את)? (.+?) כבוצע$/)
+    || text.match(/^(?:סיים|השלם)(?: את)? (.+)$/)
+    || text.match(/^(.+?) (?:בוצע|הושלם|הסתיים)$/);
+  if (resetMatch || completeMatch) name = (resetMatch || completeMatch)[1];
   const selectOnly = /^(?:בחר(?: את)?|select|choose)(?: |$)/.test(name);
   name = name.replace(/^(?:ה?תרגיל|בחר את|בחר|select|choose) /, '');
   if (name.length < 2 || /^\d+$/.test(name)) return null;
   const candidates = activeSession.entries.map((entry, index) => ({ index, names: voiceExerciseNames(entry) }));
   let matches = candidates.filter((item) => item.names.includes(name));
   if (!matches.length) matches = candidates.filter((item) => item.names.some((candidate) => candidate.includes(name)));
-  return matches.length ? { start, stop, selectOnly, indexes: matches.map((item) => item.index) } : null;
+  return matches.length ? { start, stop, reset: !!resetMatch, complete: !!completeMatch,
+    selectOnly, indexes: matches.map((item) => item.index) } : null;
 }
 
 function refreshVoiceSelection() {
@@ -2674,8 +2707,16 @@ function handleVoiceTranscript(transcript) {
     setFocusedListening(true);
     return;
   }
-  if (/^(?:המשך מוזיקה|חזור למוזיקה|סיים האזנה ממוקדת|resume music|end focused listening)$/.test(t)) {
+  if (/^(?:סיים האזנה ממוקדת|end focused listening)$/.test(t)) {
     setFocusedListening(false);
+    return;
+  }
+  if (/^(?:המשך מוזיקה|חזור למוזיקה|נגן מוזיקה|resume music|play music)$/.test(t)) {
+    controlWorkoutMusicByVoice(true);
+    return;
+  }
+  if (/^(?:עצור מוזיקה|השהה מוזיקה|stop music|pause music)$/.test(t)) {
+    controlWorkoutMusicByVoice(false);
     return;
   }
   if (voiceCountingState?.entry) {
@@ -2718,16 +2759,17 @@ function handleVoiceTranscript(transcript) {
       }
       const index = match.indexes[0];
       const entry = activeSession.entries[index];
-      if (entry.type !== 'cardio' && isEntryDone(entry)) {
+      if (entry.type !== 'cardio' && isEntryDone(entry) && !match.reset && !match.complete) {
         showToast(`🎙️ כל הסטים של ${entry.exerciseName} כבר הושלמו`);
         return;
       }
       selectVoiceExercise(index);
       const exercise = entry.exerciseSnapshot || exercises.find((item) => item.id === entry.exerciseId);
       const autoCount = !match.selectOnly && entry.type !== 'cardio' && exercise?.inputType !== 'hold';
-      if (!match.start && !match.stop && !autoCount) return;
+      if (!match.start && !match.stop && !match.reset && !match.complete && !autoCount) return;
       requestedEntryIndex = index;
-      command = match.stop ? 'stopExercise' : 'startExercise';
+      command = match.reset ? 'resetExercise' : match.complete ? 'markDone'
+        : match.stop ? 'stopExercise' : 'startExercise';
     }
   }
 
@@ -2748,8 +2790,15 @@ function handleVoiceTranscript(transcript) {
 
   // While actively counting reps out loud, any recognized number updates the
   // live count instead of being treated as a command.
-  if (voiceCountingState && (!command || command === 'setDone')) {
+  if (voiceCountingState && (!command || command === 'setDone' || command === 'markDone')) {
     const n = spokenCount;
+    if (n === null && onlyNumbers) {
+      if (voiceCountingState.lastUnconfirmedTranscript !== numberText) {
+        showToast('המספר לא תואם לרצף הספירה. לא שיניתי את החזרות; אמור שוב את המספר הבא.');
+        voiceCountingState.lastUnconfirmedTranscript = numberText;
+      }
+      return;
+    }
     if (n !== null) {
       voiceCountingState.count = n;
       const entry = activeSession.entries[voiceCountingState.entryIndex];
@@ -2847,7 +2896,28 @@ function handleVoiceTranscript(transcript) {
     lastAutoCountCompletion = null;
     voiceCountingState = { entry, set, entryIndex: idx, setIndex: setIdx, count: 0, targetReps };
     updateVoiceCountingBadge();
-  } else if (command === 'setDone') {
+  } else if (command === 'resetExercise') {
+    const idx = requestedEntryIndex >= 0 ? requestedEntryIndex : voiceTargetEntryIndex();
+    const entry = activeSession.entries[idx];
+    const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
+    let button = entry?.type === 'cardio' && card && qs('.btnCardioReset', card);
+    const exercise = entry?.exerciseSnapshot || exercises.find((item) => item.id === entry?.exerciseId);
+    if (exercise?.inputType === 'hold' && card) {
+      const completed = entry.sets.filter((set) => set.completed);
+      const last = lastCompletedVoiceSet();
+      const set = last?.entry === entry ? last.set : completed.length === 1 ? completed[0] : null;
+      if (!set) { showToast('בחר בכפתור ״מדוד שוב״ של סט ההחזקה שברצונך לאפס.'); return; }
+      const row = qsa('.set-row', card)[entry.sets.indexOf(set)];
+      button = row && qs('.hold-reset', row);
+    } else if (!entry || entry.type !== 'cardio') {
+      showToast('איפוס זמין בחימום, בשחרור ובסט החזקה שהושלם.');
+      return;
+    }
+    if (!button) { showToast('לא ניתן למצוא את כפתור איפוס הטיימר.'); return; }
+    selectVoiceExercise(idx, false);
+    button.click();
+    showToast('🎙️ הטיימר אופס');
+  } else if (command === 'setDone' || command === 'markDone') {
     if (voiceCountingState) {
       const { entryIndex, setIndex } = voiceCountingState;
       const card = qs(`.exercise-card[data-entry-index="${entryIndex}"]`, el('exerciseList'));
@@ -2865,18 +2935,20 @@ function handleVoiceTranscript(transcript) {
       showToast('🎙️ סט סומן כבוצע');
       return;
     }
-    if (lastAutoCountCompletion?.session === activeSession
+    if (command === 'setDone' && lastAutoCountCompletion?.session === activeSession
       && activeSession.entries.includes(lastAutoCountCompletion.entry)
       && lastAutoCountCompletion.entry.sets.includes(lastAutoCountCompletion.set)
       && lastAutoCountCompletion.set.completed) {
       showToast('🎙️ הסט כבר הסתיים ביעד. לסט הבא אמור שוב את שם התרגיל או התחל סט');
       return;
     }
-    const idx = voiceTargetEntryIndex(true);
+    const explicitSet = command === 'setDone' && /^(ה?סט |סיימתי( את)? ה?סט$|חזרה )/.test(t);
+    const idx = requestedEntryIndex >= 0 ? requestedEntryIndex : voiceTargetEntryIndex(explicitSet);
     if (idx < 0) { showToast('🎙️ כל התרגילים כבר בוצעו'); return; }
     const card = qs(`.exercise-card[data-entry-index="${idx}"]`, el('exerciseList'));
     if (!card) { showToast('🎙️ לא ניתן למצוא את התרגיל הנוכחי'); return; }
     const entry = activeSession.entries[idx];
+    if (isEntryDone(entry)) { showToast('התרגיל כבר סומן כבוצע'); return; }
     const set = entry.type === 'cardio' ? null : entry.sets.find((s) => !s.completed);
     const btn = entry.type === 'cardio' ? qs('.btnCardioDone', card) : qs('.set-check:not(.checked)', card);
     if (!btn) { showToast('🎙️ לא ניתן לסמן את הסט הנוכחי'); return; }
@@ -2886,7 +2958,7 @@ function handleVoiceTranscript(transcript) {
     lastVoiceAction = { entry, set };
     showToast(entry.type === 'cardio' ? `🎙️ ${entry.exerciseName} סומן כבוצע` : '🎙️ סט הושלם — זמן מנוחה');
   } else if (command === 'skipRest') {
-    if (el('restOverlay').classList.contains('hidden')) return;
+    if (!restTimer.isRunning()) { showToast('אין זמן מנוחה פעיל לדילוג.'); return; }
     el('btnSkipRest').click();
     showToast('🎙️ דילוג על זמן מנוחה');
   } else if (command === 'nextExercise') {
@@ -2949,6 +3021,10 @@ async function setFocusedListening(focused) {
     showToast('עדכון הניגון מתבצע. נסה שוב לאחר סיומו.');
     return;
   }
+  if (voiceActivationPending && focused) {
+    showToast('המיקרופון עדיין מופעל. המתן לאישור ההאזנה.');
+    return;
+  }
   if (!native.isNative() || currentTab !== 'workout' || activeSession.paused || document.visibilityState !== 'visible') {
     showToast('האזנה ממוקדת זמינה באייפון כשהאימון פתוח ואינו מושהה.');
     return;
@@ -2986,6 +3062,20 @@ async function setWorkoutMusicPlayback(playing) {
   }
 }
 
+async function controlWorkoutMusicByVoice(playing) {
+  if (voicePlaybackHandoff || voiceActivationPending) {
+    showToast('עדכון הניגון מתבצע. נסה שוב לאחר סיומו.');
+    return;
+  }
+  try {
+    await setWorkoutMusicPlayback(playing);
+    showToast(playing ? 'המוזיקה מנגנת' : 'המוזיקה מושהית');
+  } catch (error) {
+    console.error('Workout voice music control failed', error);
+    showToast('לא ניתן לשנות את הניגון — ' + String(error.message || error));
+  }
+}
+
 async function recoverWorkoutAudio() {
   const button = el('btnRecoverWorkoutAudio');
   button.disabled = true;
@@ -3014,9 +3104,10 @@ async function recoverWorkoutAudio() {
 function handleVoiceListeningChanged(data) {
   if (!voiceListeningRequested || currentTab !== 'workout' || activeSession.paused) return;
   voiceListeningActive = data.listening === true;
-  voiceFocusedRequested = data.focused === true;
+  const starting = data.reason === 'starting' || voiceActivationPending && data.reason === 'recovering';
+  if (!starting) voiceFocusedRequested = data.focused === true;
   voiceInputName = data.inputName || voiceInputName;
-  voiceActivationPending = false;
+  voiceActivationPending = starting;
   if (!voiceListeningActive) pendingVoiceFinish = null;
   voiceListeningError = data.reason === 'interrupted' ? 'ההאזנה מושהית אחרי הפרעה. אפשר לנסות חידוש בכפתור האודיו.'
     : data.reason === 'announcement' ? 'ההאזנה מושהית בזמן הכרזה'
@@ -3048,13 +3139,16 @@ async function updateVoiceListeningState(force = false, preparingMusic = false) 
     const phrases = [...new Set([...voiceReports.voiceReportHints(i18n.getLanguage()), ...activeSession.entries.flatMap(voiceExerciseNames)])];
     const result = await native.voiceStartListening(phrases, i18n.locale(), settings.voiceMicrophoneMode || 'automatic', voiceFocusedRequested);
     if (revision !== voiceListeningRevision) return;
-    voiceActivationPending = false;
-    voiceListeningActive = result.listening;
-    voiceFocusedRequested = result.focused === true;
-    if (!result.listening) pendingVoiceFinish = null;
-    voiceListeningRequested = result.requested !== false && (result.listening || result.requested === true);
+    const confirmedDuringStart = result.reason === 'starting' && voiceListeningActive;
+    voiceActivationPending = !confirmedDuringStart && !result.listening && result.reason === 'starting';
+    if (!confirmedDuringStart) {
+      voiceListeningActive = result.listening;
+      voiceFocusedRequested = result.focused === true;
+    }
+    if (!voiceListeningActive) pendingVoiceFinish = null;
+    voiceListeningRequested = result.requested !== false && (voiceListeningActive || result.requested === true);
     if (!voiceListeningRequested) voiceFocusedRequested = false;
-    voiceListeningError = result.listening ? '' : result.reason === 'announcement' ? 'ההאזנה מושהית בזמן הכרזה' : result.reason;
+    voiceListeningError = voiceListeningActive ? '' : result.reason === 'announcement' ? 'ההאזנה מושהית בזמן הכרזה' : result.reason;
     voiceInputName = result.inputName || '';
     if (!result.listening && !voiceListeningRequested) showToast('לא ניתן להפעיל פקודות קוליות — ' + result.reason);
   } else {

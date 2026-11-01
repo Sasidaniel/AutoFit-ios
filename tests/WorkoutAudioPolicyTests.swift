@@ -34,6 +34,19 @@ struct WorkoutAudioPolicyTests {
         precondition(WorkoutAudioPolicy.needsCaptureRecovery(engineRunning: true, secondsWithoutInput: 4))
         precondition(WorkoutAudioPolicy.needsCaptureRecovery(engineRunning: true, secondsWithoutInput: 10))
         precondition(WorkoutAudioPolicy.needsCaptureRecovery(engineRunning: false, secondsWithoutInput: 0))
+        for engine in [false, true] {
+            for matches in [false, true] {
+                for interrupted in [false, true] {
+                    precondition(WorkoutAudioPolicy.needsRecordingActivation(engineRunning: engine,
+                        configurationMatches: matches, interrupted: interrupted) == (!engine || !matches || interrupted))
+                }
+            }
+        }
+        precondition(!WorkoutAudioPolicy.captureReady(engineRunning: true, captureStartedAt: 10, lastInputAt: 0))
+        precondition(!WorkoutAudioPolicy.captureReady(engineRunning: true, captureStartedAt: 10, lastInputAt: 9))
+        precondition(!WorkoutAudioPolicy.captureReady(engineRunning: false, captureStartedAt: 10, lastInputAt: 11))
+        precondition(!WorkoutAudioPolicy.captureReady(engineRunning: true, captureStartedAt: 0, lastInputAt: 0))
+        precondition(WorkoutAudioPolicy.captureReady(engineRunning: true, captureStartedAt: 10, lastInputAt: 11))
         testForegroundHandover()
         testAnnouncementRecovery()
         testInterruptionOwnership()
@@ -43,7 +56,7 @@ struct WorkoutAudioPolicyTests {
     private final class Utterance {}
 
     private static func testInterruptionOwnership() {
-        precondition(WorkoutAudioPolicy.focusedListeningSeconds == 120)
+        precondition(WorkoutAudioPolicy.focusedListeningSeconds == 15)
         var interruption = WorkoutAudioInterruption()
         precondition(interruption.mayResume && !interruption.interrupted)
         interruption.begin()

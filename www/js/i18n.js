@@ -172,6 +172,10 @@ export function start(value, profileGender = 'male') {
 }
 
 const commands = [
+  ['mark as done', 'סמן כבוצע'], ['reset timer', 'אפס טיימר'],
+  ['play music', 'נגן מוזיקה'], ['resume music', 'המשך מוזיקה'],
+  ['pause music', 'השהה מוזיקה'], ['stop music', 'עצור מוזיקה'],
+  ['reset', 'אפס'],
   ['cancel workout', 'בטל אימון'], ['finish workout', 'סיים אימון'], ['end workout', 'סיים אימון'],
   ['start workout', 'התחל אימון'], ['start set', 'התחל סט'], ['set completed', 'סט הושלם'],
   ['start the workout', 'התחל אימון'], ['finish the workout', 'סיים אימון'], ['cancel the workout', 'בטל אימון'],
@@ -180,7 +184,7 @@ const commands = [
   ['set complete', 'סט הושלם'], ['set done', 'סט הושלם'], ['skip rest', 'דלג על מנוחה'],
   ['rest finished', 'זמן מנוחה הסתיים'], ['next exercise', 'תרגיל הבא'], ['i am done', 'סיימתי'],
   ['warm up', 'חימום'], ['warmup', 'חימום'], ['cool down', 'שחרור'], ['cooldown', 'שחרור'],
-  ['start', 'התחל'], ['stop', 'עצור'], ['pause', 'השהה'], ['done', 'סיימתי'], ['undo', 'בטל'],
+  ['start', 'התחל'], ['stop', 'עצור'], ['pause', 'השהה'], ['done', 'סיימתי'], ['undo', 'בטל'], ['skip', 'דלג'],
 ];
 const numbers = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
@@ -188,6 +192,8 @@ const numbers = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 
 export function canonicalVoice(value) {
   let result = String(value).toLowerCase().replace(/[.,!?]/g, ' ')
     .replace(/\bwarm-up\b/g, 'warmup').replace(/\bcool-down\b/g, 'cooldown');
+  result = result.replace(/^mark(?: the)? (.+?) as (?:done|completed)$/, 'סמן $1 כבוצע')
+    .replace(/^complete(?: the)? (?!set$)(.+)$/, 'השלם $1');
   for (const [english, hebrew] of commands) {
     result = result.replace(new RegExp(`\\b${english}\\b`, 'g'), hebrew);
   }
@@ -196,8 +202,9 @@ export function canonicalVoice(value) {
     ['השהי', 'השהה'], ['המשיכי', 'המשך'], ['דלגי', 'דלג'], ['מאשרת', 'מאשר'],
     ['תוסיפי', 'תוסיף'], ['הוסיפי', 'הוסף'], ['הפעילי', 'הפעל'], ['בחרי', 'בחר'],
     ['הקשיבי', 'הקשב'], ['תקשיבי', 'תקשיב'], ['חזרי', 'חזור'],
+    ['סמני', 'סמן'], ['אפסי', 'אפס'], ['השלימי', 'השלם'], ['נגני', 'נגן'],
   ]);
-  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי|הקשיבי|תקשיבי|חזרי)(?=\s|$)/gu,
+  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי|הקשיבי|תקשיבי|חזרי|סמני|אפסי|השלימי|נגני)(?=\s|$)/gu,
     (_, before, word) => before + feminineCommands.get(word));
   result = result.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?\b/g,
     (_, tens, units) => String((['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'].indexOf(tens) + 2) * 10 + (units ? numbers.indexOf(units) : 0)));

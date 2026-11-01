@@ -518,6 +518,65 @@ function focusedVoiceFixture() {
   return { context, calls, messages };
 }
 
+test('focused activation waits for actual input and ignores duplicate starts and transient mode events', async () => {
+  const { context, calls } = focusedVoiceFixture();
+  let finish;
+  context.native.voiceStartListening = () => {
+    calls.push(['start']);
+    return new Promise((resolve) => { finish = resolve; });
+  };
+  const activation = context.setFocusedListening(true);
+  context.handleVoiceListeningChanged({ listening: false, requested: true, focused: false, reason: 'recovering' });
+  await context.setFocusedListening(true);
+  assert.equal(calls.length, 1);
+  assert.equal(vm.runInContext('voiceFocusedRequested', context), true);
+  assert.equal(vm.runInContext('voiceActivationPending', context), true);
+  finish({ listening: false, requested: true, focused: true, reason: 'starting' });
+  await activation;
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.equal(vm.runInContext('voiceActivationPending', context), true);
+  context.handleVoiceListeningChanged({ listening: true, requested: true, focused: true });
+  assert.equal(vm.runInContext('voiceListeningActive', context), true);
+  assert.equal(vm.runInContext('voiceActivationPending', context), false);
+});
+
+test('native focused listening is fifteen seconds and capture confirmation requires actual frames', () => {
+  const policy = read('ios/App/App/WorkoutAudioPolicy.swift');
+  const swift = read('ios/App/App/VoiceCommandPlugin.swift');
+  assert.match(policy, /focusedListeningSeconds: Double = 15\b/);
+  assert.match(swift, /"listening": self\.captureReady/);
+  assert.match(swift, /sink\.resetInput\(\)/);
+  assert.match(swift, /if firstInput[\s\S]*self\.notifyListeningState\(\)/);
+  assert.match(swift, /WorkoutAudioPolicy\.needsRecordingActivation/);
+  assert.match(swift, /captureStartedAt = ProcessInfo\.processInfo\.systemUptime\s+try audioEngine\.start\(\)/);
+});
+
+test('focused listening can be ended while waiting for microphone confirmation', async () => {
+  const { context, calls } = focusedVoiceFixture();
+  context.native.voiceStartListening = async (_phrases, _language, _mode, focused) => {
+    calls.push(['start', focused]);
+    return focused ? { listening: false, requested: true, focused: true, reason: 'starting' }
+      : { listening: true, requested: true, focused: false };
+  };
+  await context.setFocusedListening(true);
+  await context.setFocusedListening(false);
+  assert.deepEqual(calls, [['start', true], ['start', false]]);
+  assert.equal(vm.runInContext('voiceFocusedRequested', context), false);
+  assert.equal(vm.runInContext('voiceActivationPending', context), false);
+});
+
+test('a late starting response cannot overwrite a real microphone confirmation', async () => {
+  const { context } = focusedVoiceFixture();
+  let finish;
+  context.native.voiceStartListening = () => new Promise((resolve) => { finish = resolve; });
+  const pending = context.setFocusedListening(true);
+  context.handleVoiceListeningChanged({ listening: true, requested: true, focused: true });
+  finish({ listening: false, requested: true, focused: true, reason: 'starting' });
+  await pending;
+  assert.equal(vm.runInContext('voiceListeningActive', context), true);
+  assert.equal(vm.runInContext('voiceActivationPending', context), false);
+});
+
 test('explicit Music play prepares mixed capture before playback without restarting it after confirmation', async () => {
   for (const fail of [false, true]) {
     const { context, calls } = focusedVoiceFixture();
@@ -3158,6 +3217,9 @@ function voiceContext(entries = []) {
         holdTimers.set(`${entry.exerciseId}:${index}`, { startedAt: set.holdStartedAt });
         calls.push('startHold');
       } },
+      holdReset: { click: () => {
+        set.completed = false; set.reps = ''; calls.push('resetHold');
+      } },
       button: { click: () => {
         set.completed = !set.completed;
         holdTimers.delete(`${entry.exerciseId}:${index}`);
@@ -3170,6 +3232,9 @@ function voiceContext(entries = []) {
         entry.startedAt = null; calls.push('stopCardio'); return;
       }
       entry.startedAt = Date.now(); entry.completed = false; calls.push('startCardio');
+    } },
+    resetButton: { click: () => {
+      entry.startedAt = null; entry.elapsedSec = 0; entry.completed = false; calls.push('resetCardio');
     } },
   }));
   const session = { running: false, entries };
@@ -3185,7 +3250,9 @@ function voiceContext(entries = []) {
       if (match) return cards[Number(match[1])];
       if (selector === '.btnCardioDone') return parent.button;
       if (selector === '.btnCardioStart') return parent.startButton;
+      if (selector === '.btnCardioReset') return parent.resetButton;
       if (selector === '.btn-hold-toggle') return parent.holdButton;
+      if (selector === '.hold-reset') return parent.holdReset;
       if (selector === '.reps') return parent.reps;
       if (selector.includes('.set-check')) {
         if (parent.rows) return parent.rows.find((row) => !row.set.completed)?.button;
@@ -3212,6 +3279,7 @@ function voiceContext(entries = []) {
   });
   vm.runInContext(section('function isEntryDone(', 'function startRestTimer('), context);
   vm.runInContext("voiceListeningActive = true; currentTab = 'workout';", context);
+  el('btnSkipRest').click = () => { restTimer.stop(); el('restOverlay').classList.add('hidden'); calls.push('skipRest'); };
   return { context, calls, messages, session, el, cards };
 }
 
@@ -3266,6 +3334,7 @@ test('counting a second set needs no exercise name, while paused workouts and ho
   const { context, session } = voiceContext([entry]);
   session.running = true;
   context.handleVoiceTranscript('1');
+  context.handleVoiceTranscript('2');
   context.handleVoiceTranscript('3');
   context.restTimer.stop();
   context.handleVoiceTranscript('1');
@@ -3656,6 +3725,115 @@ test('formatted number groups and punctuation preserve each count through twelve
   assert.equal(context.parseSpokenRepCount('1 2', 5), 5, 'An old formatted prefix must not become an absolute twelve');
 });
 
+test('live Hebrew counting separates nine and ten without changing explicit nineteen reports', () => {
+  const words = ['אחת', 'שתיים', 'שלוש', 'ארבע', 'חמש', 'שש', 'שבע', 'שמונה', 'תשע', 'עשרה',
+    'אחת עשרה', 'שתיים עשרה', 'שלוש עשרה', 'ארבע עשרה', 'חמש עשרה', 'שש עשרה',
+    'שבע עשרה', 'שמונה עשרה', 'תשע עשרה', 'עשרים'];
+  const entry = { exerciseId: 'bench', sets: [{ reps: '20', weightKg: 40, completed: false }] };
+  const { context } = voiceContext([entry]);
+  context.handleVoiceTranscript('התחל סט');
+  for (let index = 0; index < words.length; index++) {
+    context.handleVoiceTranscript(words.slice(0, index + 1).join(' '));
+    assert.equal(entry.sets[0].reps, index + 1);
+    assert.equal(entry.sets[0].completed, index === 19);
+  }
+  assert.equal(context.parseSpokenRepCount('תשע עשרה', 9), 10);
+  assert.equal(context.parseSpokenRepCount('תשעה עשר', 9), 10);
+  assert.equal(context.parseSpokenRepCount('תשע עשרה', 18), 19);
+  assert.equal(context.parseSpokenNumber('תשע עשרה'), 19);
+  assert.equal(voiceReports.parseWorkoutVoice('עשיתי תשע עשרה חזרות עם ארבעים קילו').reps, 19);
+});
+
+test('an unverified numeric leap cannot complete a set or overwrite live reps', () => {
+  const entry = { exerciseId: 'bench', sets: [{ reps: '12', weightKg: 40, completed: false }] };
+  const { context, messages } = voiceContext([entry]);
+  context.handleVoiceTranscript('התחל סט');
+  for (let count = 1; count <= 9; count++) context.handleVoiceTranscript(String(count));
+  context.handleVoiceTranscript('19');
+  context.handleVoiceTranscript('19');
+  assert.equal(entry.sets[0].reps, 9);
+  assert.equal(entry.sets[0].completed, false);
+  assert.equal(messages.filter((message) => message.includes('לא תואם לרצף')).length, 1);
+  context.handleVoiceTranscript('10');
+  assert.equal(entry.sets[0].reps, 10);
+  assert.equal(entry.sets[0].weightKg, 40);
+});
+
+test('timer reset and completion use the selected or explicitly named cardio control', () => {
+  const entries = contextualEntries();
+  const { context, session, calls } = voiceContext(entries);
+  context.handleVoiceTranscript('חימום');
+  context.handleVoiceTranscript('התחל');
+  context.handleVoiceTranscript('איפוס');
+  assert.equal(entries[0].startedAt, null);
+  assert.ok(calls.includes('resetCardio'));
+  context.handleVoiceTranscript('סמן כבוצע');
+  context.handleVoiceTranscript('סמן חימום כבוצע');
+  assert.equal(entries[0].completed, true);
+  assert.equal(entries[1].sets[0].completed, false);
+  context.handleVoiceTranscript('Reset warmup');
+  assert.equal(entries[0].completed, false);
+  context.handleVoiceTranscript('Mark cooldown as done');
+  assert.equal(entries[4].completed, true);
+  assert.equal(session.currentExerciseId, 'cooldown');
+});
+
+test('done completes selected warmup instead of accidentally marking a strength set', () => {
+  const entries = contextualEntries();
+  const { context } = voiceContext(entries);
+  context.handleVoiceTranscript('חימום');
+  context.handleVoiceTranscript('סיימתי');
+  assert.equal(entries[0].completed, true);
+  assert.equal(entries[1].sets[0].completed, false);
+});
+
+test('bare skip and its English alias skip only an actual rest timer', () => {
+  for (const phrase of ['דלג', 'Skip', 'דלג על מנוחה', 'Skip rest']) {
+    const { context, calls, messages } = voiceContext();
+    context.restTimer.start(90);
+    context.handleVoiceTranscript(phrase);
+    assert.equal(context.restTimer.isRunning(), false, phrase);
+    assert.ok(calls.includes('skipRest'), phrase);
+    context.handleVoiceTranscript(phrase);
+    assert.ok(messages.some((message) => message.includes('אין זמן מנוחה')));
+  }
+});
+
+test('voice Music actions send explicit play or pause without interrupting mixed counting', async () => {
+  const { context } = voiceContext([{ exerciseId: 'bench', exerciseName: 'לחיצת חזה',
+    defaultReps: '12', sets: [{ reps: '', completed: false }] }]);
+  const requests = [];
+  context.native.musicSetPlayback = async (playing) => {
+    requests.push(playing);
+    return { state: playing ? 'playing' : 'paused' };
+  };
+  context.handleVoiceTranscript('התחל סט');
+  context.handleVoiceTranscript('1');
+  vm.runInContext('voiceListeningRequested = true', context);
+  for (const phrase of ['Pause music', 'Play music', 'עצור מוזיקה', 'המשך מוזיקה']) {
+    context.handleVoiceTranscript(phrase);
+    await new Promise(setImmediate);
+    assert.equal(vm.runInContext('voiceCountingState.count', context), 1);
+  }
+  assert.deepEqual(requests, [false, true, false, true]);
+});
+
+test('voice hold reset uses the manual completed-set control and refuses ambiguous set selection', () => {
+  const entry = { exerciseId: 'plank', exerciseName: 'פלאנק', inputType: 'hold',
+    sets: [{ reps: 30, completed: true }, { completed: false }] };
+  const { context, calls, messages } = voiceContext([entry]);
+  context.handleVoiceTranscript('אפס פלאנק');
+  assert.equal(entry.sets[0].completed, false);
+  assert.equal(entry.sets[0].reps, '');
+  assert.ok(calls.includes('resetHold'));
+  entry.sets[0] = { reps: 30, completed: true };
+  entry.sets[1] = { reps: 35, completed: true };
+  context.handleVoiceTranscript('אפס פלאנק');
+  assert.equal(entry.sets[0].reps, 30);
+  assert.equal(entry.sets[1].reps, 35);
+  assert.ok(messages.some((message) => message.includes('מדוד שוב')));
+});
+
 if (process.env.AUTOFIT_NATIVE_COUNT_STREAM) {
   test('native streaming contract preserves twelve real Swift-emitted counts through automatic set completion', () => {
     const frames = JSON.parse(fs.readFileSync(process.env.AUTOFIT_NATIVE_COUNT_STREAM, 'utf8'));
@@ -3671,6 +3849,22 @@ if (process.env.AUTOFIT_NATIVE_COUNT_STREAM) {
   });
 }
 
+if (process.env.AUTOFIT_NATIVE_HEBREW_COUNT_STREAM) {
+  test('native Hebrew streaming contract distinguishes nine-ten from nineteen through twenty', () => {
+    const frames = JSON.parse(fs.readFileSync(process.env.AUTOFIT_NATIVE_HEBREW_COUNT_STREAM, 'utf8'));
+    assert.deepEqual(frames.map((frame) => frame.count), Array.from({ length: 21 }, (_, index) => index));
+    const entry = { exerciseId: 'bench', exerciseName: 'לחיצת חזה',
+      sets: [{ reps: '20', weightKg: 40, completed: false }] };
+    const { context } = voiceContext([entry]);
+    for (const { transcript, count } of frames) {
+      context.handleVoiceTranscript(transcript);
+      if (count > 0) assert.equal(entry.sets[0].reps, count, transcript);
+      assert.equal(entry.sets[0].completed, count === 20, transcript);
+      assert.equal(entry.sets[0].weightKg, 40);
+    }
+  });
+}
+
 test('direct numeric counts above two and explicit performance reports retain their original meaning', () => {
   const { context } = voiceContext();
   assert.equal(context.parseSpokenRepCount('12', 11), 12);
@@ -3678,7 +3872,7 @@ test('direct numeric counts above two and explicit performance reports retain th
   assert.equal(context.parseSpokenRepCount('1 2 3 4', 3), 4);
   assert.equal(context.parseSpokenRepCount('123456789101112131415', 14), 15);
   assert.equal(context.parseSpokenRepCount('12', 1), 2);
-  assert.equal(context.parseSpokenRepCount('12', 5), 12);
+  assert.equal(context.parseSpokenRepCount('12', 5), null);
   assert.equal(context.parseSpokenRepCount('123', 5), 5);
   assert.equal(context.parseSpokenNumber('12'), 12);
 });
@@ -3712,7 +3906,7 @@ for (const [name, language] of [['לחיצת חזה', 'he'], ['חזה', 'he'], [
     context.handleVoiceTranscript(name);
     assert.equal(vm.runInContext('voiceCountingState.count', context), 4);
     assert.equal(vm.runInContext('voiceCountingState.targetReps', context), 12);
-    context.handleVoiceTranscript('12');
+    for (let count = 5; count <= 12; count++) context.handleVoiceTranscript(String(count));
     assert.equal(entries[1].sets[0].completed, true);
     assert.equal(entries[1].sets[1].completed, false);
     assert.equal(context.restTimer.isRunning(), true);
@@ -3723,7 +3917,7 @@ for (const [name, language] of [['לחיצת חזה', 'he'], ['חזה', 'he'], [
   });
 }
 
-test('count completion keeps the original target when an exact number is skipped and remains undoable', () => {
+test('unverified jumps preserve the target and verified count completion remains undoable', () => {
   const entries = contextualEntries();
   entries[1].defaultReps = '12';
   const { context } = voiceContext(entries);
@@ -3731,8 +3925,11 @@ test('count completion keeps the original target when an exact number is skipped
   context.handleVoiceTranscript('7');
   assert.equal(entries[1].sets[0].voiceTargetReps, 12);
   context.handleVoiceTranscript('13');
+  assert.equal(entries[1].sets[0].completed, false);
+  assert.equal(entries[1].sets[0].reps, 7);
+  for (let count = 8; count <= 12; count++) context.handleVoiceTranscript(String(count));
   assert.equal(entries[1].sets[0].completed, true);
-  assert.equal(entries[1].sets[0].reps, 13);
+  assert.equal(entries[1].sets[0].reps, 12);
   context.handleVoiceTranscript('בטל');
   assert.equal(entries[1].sets[0].completed, false);
   assert.equal(context.restTimer.isRunning(), false);

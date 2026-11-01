@@ -22,11 +22,19 @@ private final class RecognitionAudioSink {
         lock.unlock()
     }
 
-    func append(_ buffer: AVAudioPCMBuffer) {
+    func resetInput() {
         lock.lock()
+        inputAt = 0
+        lock.unlock()
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer) -> Bool {
+        lock.lock()
+        let firstInput = inputAt == 0 && buffer.frameLength > 0
         if buffer.frameLength > 0 { inputAt = ProcessInfo.processInfo.systemUptime }
         request?.append(buffer)
         lock.unlock()
+        return firstInput
     }
 }
 
@@ -94,6 +102,10 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
     private var tapInstalled = false
     private var consecutiveFailures = 0
     private var contextualPhrases: [String] = []
+    private var captureReady: Bool {
+        Self.isListening && WorkoutAudioPolicy.captureReady(engineRunning: audioEngine.isRunning,
+            captureStartedAt: captureStartedAt, lastInputAt: audioSink.lastInputAt)
+    }
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -247,9 +259,10 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
                 if Self.canCapture && !BackgroundAnnouncerPlugin.isAnnouncing { try self.begin() }
                 if focused { self.scheduleFocusEnd() }
                 call.resolve(["inputName": AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "",
-                              "listening": Self.isListening, "requested": Self.wantsMicrophone,
+                              "listening": self.captureReady, "requested": Self.wantsMicrophone,
                               "focused": WorkoutAudioSession.focusedListening,
-                              "reason": BackgroundAnnouncerPlugin.isAnnouncing ? "announcement" : ""])
+                              "reason": BackgroundAnnouncerPlugin.isAnnouncing ? "announcement"
+                                : self.captureReady ? "" : "starting"])
             } catch {
                 Self.wantsMicrophone = false
                 self.end()
@@ -333,7 +346,7 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func notifyListeningState(reason: String = "") {
         notifyListeners("voiceListeningChanged", data: [
-            "listening": Self.isListening, "requested": Self.wantsMicrophone,
+            "listening": captureReady, "requested": Self.wantsMicrophone,
             "focused": WorkoutAudioSession.focusedListening, "reason": reason,
             "inputName": lastInputName
         ])
@@ -348,7 +361,10 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let currentGeneration = generation
 
-        try WorkoutAudioSession.activate(recording: true, force: audioInterrupted)
+        if WorkoutAudioPolicy.needsRecordingActivation(engineRunning: audioEngine.isRunning,
+            configurationMatches: WorkoutAudioSession.matches(recording: true), interrupted: audioInterrupted) {
+            try WorkoutAudioSession.activate(recording: true, force: audioInterrupted)
+        }
         audioInterrupted = false
 
         let recognizer = self.recognizer ?? SFSpeechRecognizer(locale: Locale(identifier: recognitionLanguage))
@@ -362,7 +378,8 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
         let commands = recognitionLanguage == "en-US" ? [
             "Start workout", "Finish workout", "Cancel workout", "Start set",
             "Set complete", "Set done", "Done", "Skip rest", "Next exercise",
-            "Start", "Stop", "Pause", "Warmup", "Cooldown", "Plank", "Undo", "Listen", "Resume music"
+            "Start", "Stop", "Pause", "Warmup", "Cooldown", "Plank", "Undo", "Listen", "Resume music",
+            "Reset timer", "Reset warmup", "Mark as done", "Mark cooldown as done", "Skip", "Play music", "Pause music"
         ] : [
             "התחל אימון", "סיים אימון", "בטל אימון", "התחל סט",
             "סט הושלם", "סט הסתיים", "סיימתי", "דלג על מנוחה", "תרגיל הבא",
@@ -370,7 +387,9 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             "עצור", "השהה", "עצור חימום", "עצור שחרור",
             "הקשב לי", "הקשיבי לי", "מצב האזנה", "המשך מוזיקה", "המשיכי מוזיקה",
             "התחילי אימון", "סיימי אימון", "בטלי אימון", "התחילי סט",
-            "עצרי", "השהי", "המשיכי אימון", "דלגי על מנוחה", "מאשרת סיום"
+            "עצרי", "השהי", "המשיכי אימון", "דלגי על מנוחה", "מאשרת סיום",
+            "איפוס", "אפס חימום", "אפס שחרור", "סמן כבוצע", "סמן חימום כבוצע",
+            "סמן שחרור כבוצע", "דלג", "סמני כבוצע", "נגן מוזיקה", "עצור מוזיקה"
         ]
         req.contextualStrings = Array((commands + contextualPhrases).prefix(100))
         if recognizer.supportsOnDeviceRecognition {
@@ -390,32 +409,40 @@ public class VoiceCommandPlugin: CAPPlugin, CAPBridgedPlugin {
             captureGeneration = UUID()
             let capture = captureGeneration
             let sink = audioSink
+            sink.resetInput()
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                let firstInput: Bool
                 if buffer.format.channelCount == 1 {
-                    sink.append(buffer)
-                    return
-                }
-                guard let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength),
-                      let source = buffer.floatChannelData?[0], let target = mono.floatChannelData?[0] else {
-                    DispatchQueue.main.async {
-                        guard let self = self, self.captureGeneration == capture else { return }
-                        Self.wantsMicrophone = false
-                        self.end()
-                        self.notifyListeners("voiceError", data: ["reason": "Cannot process microphone audio"])
+                    firstInput = sink.append(buffer)
+                } else {
+                    guard let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameLength),
+                          let source = buffer.floatChannelData?[0], let target = mono.floatChannelData?[0] else {
+                        DispatchQueue.main.async {
+                            guard let self = self, self.captureGeneration == capture else { return }
+                            Self.wantsMicrophone = false
+                            self.end()
+                            self.notifyListeners("voiceError", data: ["reason": "Cannot process microphone audio"])
+                        }
+                        return
                     }
-                    return
+                    mono.frameLength = buffer.frameLength
+                    target.update(from: source, count: Int(buffer.frameLength))
+                    firstInput = sink.append(mono)
                 }
-                mono.frameLength = buffer.frameLength
-                target.update(from: source, count: Int(buffer.frameLength))
-                sink.append(mono)
+                if firstInput {
+                    DispatchQueue.main.async {
+                        guard let self = self, self.captureGeneration == capture, self.captureReady else { return }
+                        self.notifyListeningState()
+                    }
+                }
             }
             tapInstalled = true
             audioEngine.prepare()
-            try audioEngine.start()
             captureStartedAt = ProcessInfo.processInfo.systemUptime
+            try audioEngine.start()
         }
         VoiceCommandPlugin.isListening = true
-        notifyListeningState()
+        notifyListeningState(reason: captureReady ? "" : "starting")
         let inputName = AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? ""
         if inputName != lastInputName {
             lastInputName = inputName

@@ -3,18 +3,23 @@ import Foundation
 @main
 struct SpeechUtteranceBufferTests {
     static func main() {
-        if CommandLine.arguments.contains("--count-stream") {
+        let hebrewStream = CommandLine.arguments.contains("--hebrew-count-stream")
+        if CommandLine.arguments.contains("--count-stream") || hebrewStream {
             var buffer = SpeechUtteranceBuffer()
             var frames: [[String: Any]] = []
             if let text = buffer.update("לחיצת חזה", isFinal: true, at: 0) {
                 frames.append(["transcript": text, "count": 0])
             }
-            for count in 1...12 {
+            let hebrew = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה",
+                          "תשע", "עשרה", "אחת עשרה", "שתיים עשרה", "שלוש עשרה", "ארבע עשרה",
+                          "חמש עשרה", "שש עשרה", "שבע עשרה", "שמונה עשרה", "תשע עשרה", "עשרים"]
+            for count in 1...(hebrewStream ? hebrew.count : 12) {
                 let digits = (1...count).map(String.init).joined()
                 let numbers = count.isMultiple(of: 3)
                     ? digits.enumerated().map { $0.offset > 0 && $0.offset.isMultiple(of: 3) ? "," + String($0.element) : String($0.element) }.joined()
                     : (1...count).map(String.init).joined(separator: count.isMultiple(of: 2) ? "" : " ")
-                let formatted = count.isMultiple(of: 3) ? "\u{2068}" + numbers + "\u{2069}" : numbers
+                let formatted = hebrewStream ? hebrew.prefix(count).joined(separator: " ")
+                    : (count.isMultiple(of: 3) ? "\u{2068}" + numbers + "\u{2069}" : numbers)
                 guard let text = buffer.update("לחיצת חזה " + formatted, isFinal: false, at: Double(count)) else {
                     preconditionFailure("Native stream lost count \(count)")
                 }

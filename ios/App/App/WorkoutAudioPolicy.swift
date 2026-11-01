@@ -34,7 +34,15 @@ enum WorkoutAudioPolicy {
         !engineRunning || secondsWithoutInput >= 4
     }
 
-    static let focusedListeningSeconds: Double = 120
+    static func needsRecordingActivation(engineRunning: Bool, configurationMatches: Bool, interrupted: Bool) -> Bool {
+        !engineRunning || !configurationMatches || interrupted
+    }
+
+    static func captureReady(engineRunning: Bool, captureStartedAt: Double, lastInputAt: Double) -> Bool {
+        engineRunning && captureStartedAt > 0 && lastInputAt >= captureStartedAt
+    }
+
+    static let focusedListeningSeconds: Double = 15
 }
 
 struct WorkoutAudioInterruption {

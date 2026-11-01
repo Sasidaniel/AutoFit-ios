@@ -45,7 +45,8 @@ jobs:
         run: |
           set -e
           "$RUNNER_TEMP/speech-tests" --count-stream > "$RUNNER_TEMP/count-stream.json"
-          AUTOFIT_NATIVE_COUNT_STREAM="$RUNNER_TEMP/count-stream.json" node --test --test-name-pattern="native streaming contract" tests/native-regressions.test.cjs
+          "$RUNNER_TEMP/speech-tests" --hebrew-count-stream > "$RUNNER_TEMP/hebrew-count-stream.json"
+          AUTOFIT_NATIVE_COUNT_STREAM="$RUNNER_TEMP/count-stream.json" AUTOFIT_NATIVE_HEBREW_COUNT_STREAM="$RUNNER_TEMP/hebrew-count-stream.json" node --test --test-name-pattern="native.*streaming contract" tests/native-regressions.test.cjs
 
       - name: Test workout Live Activity state
         run: |

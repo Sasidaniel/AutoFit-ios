@@ -1,5 +1,39 @@
 # AutoFit release notes
 
+## Unreleased - core voice repairs after physical testing of 41
+
+The owner reported ten becoming nineteen, unreliable focused listening, missing
+warmup/cooldown reset/completion and rest-skip commands, and continuing Apple
+Music pauses. **41 remains the available binary. No new release is authorized.**
+
+- Hebrew live counting now resolves consecutive nine/ten from the expected
+  sequence without changing an explicit nineteen or a performance report.
+  Unverified forward jumps cannot overwrite counted reps or automatically finish
+  a set. The original goal and completed-set undo remain intact.
+- Focused listening lasts up to **15 seconds**, not two minutes. A running audio
+  engine alone no longer claims listening: a real microphone frame must arrive
+  in the current capture. Pending starts survive transitional native events,
+  ignore duplicate activation, and can still be cancelled.
+- Reset and mark-as-done commands use the actual selected/named cardio controls.
+  Explicit "set completed" continues targeting strength; generic completion
+  respects selected warmup/cooldown. Completion is idempotent. Hold remeasurement
+  uses its manual completed-set control and refuses ambiguous set selection.
+  Bare "skip"/"דלג" skips only an active rest timer.
+- Explicit Music play/pause voice commands use the same native controller as the
+  buttons. Ending focused mode alone does not force play. A healthy recognition
+  task rotation no longer unnecessarily reactivates/reconfigures the audio session.
+  Invalid-count warnings are visual, avoiding an extra spoken interruption.
+- Hebrew, feminine Hebrew and English command guidance reflect these behaviors;
+  the web cache advances to v99. No history migration, target/load change, queue
+  replacement, background microphone capture or blind automatic Music replay.
+- Native validation now feeds both formatted numeric and cumulative Hebrew
+  transcripts emitted by compiled Swift into the real JS workout controller.
+  The unsigned workflow uses the proven Intel macOS pool and preserves full
+  measurements/build logs. Updating release validation does not dispatch it.
+
+Validation is being completed before final backup. Automated tests and Simulator
+compilation cannot establish physical iPhone microphone/Apple Music acceptance.
+
 ## 1.0 (41) - verified internal TestFlight release (2026-10-29)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-10-29 18:30:37 UTC.**
