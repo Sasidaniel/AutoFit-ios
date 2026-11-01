@@ -14,6 +14,19 @@ availability are not yet confirmed. 41 remains the available binary until then.
 Do not upload a second binary to remedy an availability-only failure; verify the
 existing build through the separate status workflow.
 
+The first release attempt
+[41301504878](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41301504878)
+passed JS and native speech/policy gates but stopped before signing/upload:
+the widget test app wrote `LAYOUT_CHECKS_STARTED` and did not produce a terminal
+receipt within its 120-second wait. No `LAYOUT_FAILED` bound violation was reported.
+The harness had one long synchronous main-actor render batch and no per-case
+progress; a pre-check receipt copy could also preserve STARTED after a passing run.
+The validation-only repair runs once, yields between cases, writes incremental
+measurements and preserves terminal/partial evidence on exit. Its app wait is
+bounded at five minutes; height limits remain 160/138 and all 144 cases remain.
+665 local regressions pass. An isolated widget run must pass before retrying the
+same approved 42. Production app/widget behavior is unchanged; uploads remain zero.
+
 ## Unreleased - core voice repairs after physical testing of 41
 
 The owner reported ten becoming nineteen, unreliable focused listening, missing

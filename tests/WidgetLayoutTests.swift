@@ -2,9 +2,10 @@ import UIKit
 
 @main
 struct WidgetLayoutTestApp: App {
+    @MainActor private static var checksStarted = false
     var body: some Scene {
         WindowGroup {
-            Color.black.onAppear { DispatchQueue.main.async { Self.checkLayouts() } }
+            Color.black.onAppear { Task { await Self.checkLayouts() } }
         }
     }
 
@@ -16,7 +17,9 @@ struct WidgetLayoutTestApp: App {
         fflush(stdout)
     }
 
-    @MainActor private static func checkLayouts() {
+    @MainActor private static func checkLayouts() async {
+        guard !checksStarted else { return }
+        checksStarted = true
         report("LAYOUT_CHECKS_STARTED")
         let now = Date().timeIntervalSince1970 * 1000
         var checks = 0
@@ -24,6 +27,8 @@ struct WidgetLayoutTestApp: App {
         var measurements: [String] = []
         var maximumLockHeight = 0.0
         var maximumIslandHeight = 0.0
+        let measurementsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("layout-measurements.txt")
         for language in ["he", "he-female", "en"] {
             for phase in ["ready", "workout", "rest", "hold", "cardio", "paused"] {
                 for width in [320.0, 393.0] {
@@ -74,14 +79,15 @@ struct WidgetLayoutTestApp: App {
                                 try! image.pngData()!.write(to: url)
                             }
                             checks += 1
+                            try! measurements.joined(separator: "\n").write(to: measurementsURL, atomically: true, encoding: .utf8)
+                            report("LAYOUT_CHECKS_PROGRESS \(checks)/144")
+                            // Keep UIKit responsive between production renders on a cold Simulator.
+                            await Task.yield()
                         }
                     }
                 }
             }
         }
-        let measurementsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("layout-measurements.txt")
-        try! measurements.joined(separator: "\n").write(to: measurementsURL, atomically: true, encoding: .utf8)
         if !failures.isEmpty {
             report("LAYOUT_FAILED \(failures.count)/\(checks) cases; maximum Lock Screen height \(maximumLockHeight), island body height \(maximumIslandHeight)\n" + failures.joined(separator: "\n"))
             exit(1)

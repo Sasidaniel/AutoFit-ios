@@ -551,6 +551,23 @@ test('native focused listening is fifteen seconds and capture confirmation requi
   assert.match(swift, /captureStartedAt = ProcessInfo\.processInfo\.systemUptime\s+try audioEngine\.start\(\)/);
 });
 
+test('widget validation yields between cases and preserves the final or partial receipt on exit', () => {
+  const swift = read('tests/WidgetLayoutTests.swift');
+  const shell = read('.github/scripts/test-widget-layout.sh');
+  assert.match(swift, /checkLayouts\(\) async/);
+  assert.match(swift, /guard !checksStarted else \{ return \}[\s\S]*checksStarted = true/);
+  assert.match(swift, /checks \+= 1[\s\S]*LAYOUT_CHECKS_PROGRESS[\s\S]*await Task\.yield\(\)/);
+  assert.match(shell, /trap preserve_results EXIT/);
+  assert.match(shell, /attempt<150/);
+  assert.doesNotMatch(shell, /cp "\$RESULT"[\s\S]*if grep -q 'LAYOUT_CHECKS_PASSED'/);
+  for (const workflow of ['ios-audio-validation.yml', 'ios-build.yml']) {
+    const source = read(`.github/workflows/${workflow}`);
+    assert.match(source, /layout-measurements\.txt/);
+    assert.match(source, /layout-result\.txt/);
+    assert.match(source, /widget-layout\.log/);
+  }
+});
+
 test('focused listening can be ended while waiting for microphone confirmation', async () => {
   const { context, calls } = focusedVoiceFixture();
   context.native.voiceStartListening = async (_phrases, _language, _mode, focused) => {

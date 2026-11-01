@@ -173,4 +173,7 @@ jobs:
           path: |
             ${{ runner.temp }}/export
             ${{ runner.temp }}/widget-layout*.png
+            ${{ runner.temp }}/layout-measurements.txt
+            ${{ runner.temp }}/layout-result.txt
+            ${{ runner.temp }}/widget-layout.log
           retention-days: 5

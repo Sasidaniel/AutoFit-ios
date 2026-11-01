@@ -37,25 +37,26 @@ xcrun simctl bootstatus "$DEVICE" -b
 xcrun simctl install "$DEVICE" "$APP"
 CONTAINER="$(xcrun simctl get_app_container "$DEVICE" com.autofit.layoutchecks data)"
 RESULT="$CONTAINER/Documents/layout-result.txt"
+preserve_results() {
+  for FILE in "$RESULT" "$CONTAINER/Documents/layout-measurements.txt"; do
+    if [[ -f "$FILE" ]]; then cp "$FILE" "$RUNNER_TEMP/"; fi
+  done
+  shopt -s nullglob
+  for FILE in "$CONTAINER"/Documents/widget-layout*.png; do
+    cp "$FILE" "$RUNNER_TEMP/"
+  done
+}
+trap preserve_results EXIT
 rm -f "$RESULT" "$CONTAINER/Documents/layout-measurements.txt"
 xcrun simctl launch --terminate-running-process "$DEVICE" com.autofit.layoutchecks
-for ((attempt=0; attempt<60; attempt++)); do
+for ((attempt=0; attempt<150; attempt++)); do
   if [[ -f "$RESULT" ]]; then
-    cp "$RESULT" "$RUNNER_TEMP/layout-result.txt"
     if grep -q 'LAYOUT_CHECKS_PASSED' "$RESULT"; then
       cat "$RESULT"
-      cp "$CONTAINER/Documents/layout-measurements.txt" "$RUNNER_TEMP/"
-      cp "$CONTAINER"/Documents/widget-layout-*.png "$RUNNER_TEMP/"
       exit 0
     fi
     if grep -q 'LAYOUT_FAILED' "$RESULT"; then
       cat "$RESULT"
-      if [[ -f "$CONTAINER/Documents/layout-measurements.txt" ]]; then
-        cp "$CONTAINER/Documents/layout-measurements.txt" "$RUNNER_TEMP/"
-      fi
-      if [[ -f "$CONTAINER/Documents/widget-layout.png" ]]; then
-        cp "$CONTAINER/Documents/widget-layout.png" "$RUNNER_TEMP/widget-layout.png"
-      fi
       exit 1
     fi
   fi
@@ -63,5 +64,8 @@ for ((attempt=0; attempt<60; attempt++)); do
 done
 echo "Widget layout app did not produce a completion receipt"
 if [[ -f "$RESULT" ]]; then cat "$RESULT"; fi
-xcrun simctl spawn "$DEVICE" log show --style compact --last 3m --predicate 'process == "WidgetLayoutChecks"' | tail -n 60
+xcrun simctl spawn "$DEVICE" log show --style compact --last 6m \
+  --predicate 'process == "WidgetLayoutChecks" OR (process == "SpringBoard" AND eventMessage CONTAINS "com.autofit.layoutchecks")' \
+  > "$RUNNER_TEMP/widget-layout.log"
+tail -n 60 "$RUNNER_TEMP/widget-layout.log"
 exit 1

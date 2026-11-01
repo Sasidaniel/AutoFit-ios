@@ -34,6 +34,7 @@ jobs:
             ${{ runner.temp }}/widget-layout*.png
             ${{ runner.temp }}/layout-measurements.txt
             ${{ runner.temp }}/layout-result.txt
+            ${{ runner.temp }}/widget-layout.log
           retention-days: 3
   validate:
     if: (github.event_name == 'workflow_dispatch' && !inputs.widget_only) || contains(github.event.head_commit.message, '[validate-audio]')
@@ -94,4 +95,5 @@ jobs:
             ${{ runner.temp }}/layout-measurements.txt
             ${{ runner.temp }}/layout-result.txt
             ${{ runner.temp }}/audio-build.log
+            ${{ runner.temp }}/widget-layout.log
           retention-days: 3
