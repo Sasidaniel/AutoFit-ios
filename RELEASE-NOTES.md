@@ -1,5 +1,40 @@
 # AutoFit release notes
 
+## Unreleased - workout completion, return position and pause safety (2026-11-02)
+
+Owner requested all four fixes and explicitly said **not to release yet**.
+42 remains the available TestFlight binary; this is local development and branch
+backup only, with no release dispatch, build upload or main merge.
+
+- Fully completed exercise cards collapse automatically through the shared
+  progress path (manual checks, voice completion, hold/cardio timers and widget
+  updates). Controls and recorded values are retained. Explicitly reopening a
+  completed exercise is respected until a fresh undo/recompletion transition.
+- Retain the visible exercise and viewport offset on foreground return, including
+  height changes caused by background timer completion. Workout tab reentry and
+  Live Activity navigation no longer reset to the heading. State is scoped to the
+  current workout ID and current loaded page, not a promise of scroll restoration
+  after iOS terminates the app. Existing explicit back-navigation positions remain.
+- Pausing announces the pause when voice announcements are enabled. A prominent
+  workout-only lock exposes an explicit Resume action; the rest of the workout is
+  inert with capture-phase click/edit/key blocking. Set completion also rejects a
+  paused session at controller level. Reloading a paused draft restores its lock;
+  resuming restores existing banked clocks/counts without erasing logged work.
+  Other tabs stay accessible.
+- Warmup/cooldown/cardio completion speech no longer includes a percentage,
+  including native scheduled background announcements (which formerly captured a
+  stale percentage before the activity ended). Visual percentages and ordinary
+  intermediate strength-exercise progress announcements remain unchanged.
+- Added English and feminine Hebrew pause wording. Web cache advances to v100;
+  no app version was started and no native audio-session policy was changed.
+
+Validation: **670/670 JS regressions passed**, all web modules parsed, and patch
+checks passed. An isolated browser origin verified real completion collapse,
+explicit reopen, exact tab-return scroll, pause speech, inert/event locking,
+unchanged persisted data after blocked controls, locked reload and explicit resume.
+No native build is needed for these web-only changes; physical iPhone return/audio
+acceptance remains pending a separately approved future release.
+
 ## 1.0 (42) - verified internal TestFlight release (2026-11-01)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-01 11:54:58 UTC.**

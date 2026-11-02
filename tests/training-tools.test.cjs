@@ -620,7 +620,7 @@ test('removal and undo immediately recompute mixed cardio/strength counts and pe
   const original = session([entry(find('chest'), [set(40, 12, true)]),
     entry(find('floor'), [set(), set()]), { exerciseId: 'warmup', type: 'cardio', completed: true }]);
   const context = vm.createContext({ activeSession: original, el, i18n: { text: (text) => text },
-    refreshWorkoutMuscleHeadings() {}, refreshDifficultyFeedback() {} });
+    refreshWorkoutCardCompletion() {}, refreshWorkoutMuscleHeadings() {}, refreshDifficultyFeedback() {} });
   const source = read('www/js/app.js');
   vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'), source.indexOf('function refreshDifficultyFeedback()')), context);
   context.updateProgress();
@@ -1013,7 +1013,7 @@ function pauseController(savedSession) {
   const el = (id) => {
     if (!elements.has(id)) {
       const classes = new Set();
-      elements.set(id, { textContent: '', dataset: {}, style: {}, disabled: false,
+      elements.set(id, { textContent: '', dataset: {}, style: {}, disabled: false, focus() {},
         setAttribute(name, value) { if (name === 'data-exercise-name') this.dataset.exerciseName = value; },
         classList: { add: (value) => classes.add(value), remove: (value) => classes.delete(value),
           contains: (value) => classes.has(value), toggle: (value, force) => force ? classes.add(value) : classes.delete(value) } });
@@ -1053,7 +1053,7 @@ function pauseController(savedSession) {
     voiceListeningRequested: !!activeSession.running, voiceFocusedRequested: false, voicePlaybackHandoff: false,
     voiceListeningRevision: 0, voiceActivationPending: false, voiceListeningError: '', voiceInputName: '',
     voiceReports: { voiceReportHints: () => [] }, voiceExerciseNames: () => [],
-    requestWakeLock() {}, speak() {}, playBeep() {}, cancelSpeech() {}, refreshVoiceSelection() {}, updateVoiceBadgeForListeningState() {},
+    requestWakeLock() {}, speak: (message) => calls.push(['speak', message]), playBeep() {}, cancelSpeech() {}, refreshVoiceSelection() {}, updateVoiceBadgeForListeningState() {},
     isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.every((set) => set.completed),
     showToast: (value) => messages.push(value),
     syncNativeAnnouncementPlan: () => calls.push(context.activeSession.running ? 'runningPlan' : 'stoppedPlan'),
@@ -1080,6 +1080,7 @@ function pauseController(savedSession) {
     ['function finishWorkout()', 'function persistActiveSession()'],
     ['function buildWorkoutActivityPayload()', 'function syncWorkoutActivity()'],
     ['function setWorkoutSetCompletion(', 'function getWorkoutSetProgress()'],
+    ['function getWorkoutSetProgress()', 'function cardioCompletionMessage('],
     ['function rememberCompletedSet(', 'function lastCompletedVoiceSet()'],
     ['function nextEntryName(', '/* ---------------- Voice commands: Hebrew number parsing'],
     ['function startRestTimer(', '/* ================= HISTORY TAB'],
@@ -1097,6 +1098,7 @@ function autoCompletionController(savedSession) {
   const fixture = pauseController(savedSession), { context } = fixture, queue = [], records = [], summaries = [];
   context.queueMicrotask = (callback) => queue.push(callback);
   context.refreshDifficultyFeedback = () => {};
+  context.refreshWorkoutCardCompletion = () => {};
   context.trainingUI = null;
   context.db.saveWorkouts = (value) => records.push(plain(value));
   context.showCelebration = (value) => summaries.push(plain(value));
@@ -1177,6 +1179,37 @@ test('manually completing a paused workout auto-saves its banked duration', () =
   context.updateProgress();
   flush();
   assert.equal(records[0][0].durationSec, 120);
+});
+
+test('pausing announces once, locks workout interactions and refuses set changes until explicit resume', () => {
+  const { context, calls, el } = pauseController();
+  context.settings.voiceAnnouncements = true;
+  context.pauseWorkout();
+  assert.equal(el('workoutInteractionArea').inert, true);
+  assert.equal(el('workoutPauseLock').classList.contains('hidden'), false);
+  assert.equal(calls.filter((call) => Array.isArray(call) && call[0] === 'speak').length, 1);
+  assert.match(calls.find((call) => Array.isArray(call) && call[0] === 'speak')[1], /האימון בהפסקה/);
+  const entry = context.activeSession.entries[0], before = plain(entry);
+  context.setWorkoutSetCompletion(entry, entry.sets[1], context.exercises[0], 1, true);
+  assert.deepEqual(plain(entry), before);
+  context.pauseWorkout();
+  assert.equal(calls.filter((call) => Array.isArray(call) && call[0] === 'speak').length, 1);
+  context.resumeWorkout();
+  assert.equal(el('workoutInteractionArea').inert, false);
+  assert.equal(el('workoutPauseLock').classList.contains('hidden'), true);
+  context.setWorkoutSetCompletion(entry, entry.sets[1], context.exercises[0], 1, true);
+  assert.equal(entry.sets[1].completed, true);
+});
+
+test('reloading a paused session restores its lock and silence without resuming timers or repeating the announcement', () => {
+  const first = pauseController();
+  first.context.pauseWorkout();
+  const restored = pauseController(plain(first.context.activeSession));
+  restored.context.updateWorkoutPauseControls();
+  assert.equal(restored.el('workoutInteractionArea').inert, true);
+  assert.equal(restored.el('workoutPauseLock').classList.contains('hidden'), false);
+  assert.equal(restored.intervals.size, 0);
+  assert.equal(restored.calls.some((call) => Array.isArray(call) && call[0] === 'speak'), false);
 });
 
 test('automatic history-save failure retains completed data, releases microphone/background audio and retries without lost duration', () => {

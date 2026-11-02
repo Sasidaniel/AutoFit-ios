@@ -1,5 +1,6 @@
 // Explicit wording variants; keys remain the canonical general/masculine copy.
 export const HE_FEMALE = {
+  "האימון בהפסקה. לחץ על המשך אימון כדי להמשיך.": "האימון בהפסקה. לחצי על המשך אימון כדי להמשיך.",
   "אפס חימום": "אפסי חימום",
   "אפס שחרור": "אפסי שחרור",
   "סמן כבוצע": "סמני כבוצע",

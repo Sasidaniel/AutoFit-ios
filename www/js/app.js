@@ -77,6 +77,8 @@ let pendingWorkoutAutoFinish = null;
 let finishingWorkout = false;
 let workoutCardSessionId = null;
 const expandedWorkoutExercises = new Set();
+const completedWorkoutExercises = new Set();
+let workoutViewport = null;
 const pageBackStack = [];
 
 const stopwatch = new Stopwatch((elapsed) => {
@@ -221,7 +223,9 @@ function releaseWakeLock() {
 window.addEventListener('autofit-audio-error', (event) => showToast('השמעת שמע נכשלה: ' + event.detail));
 window.addEventListener('autofit-storage-error', () => showToast('השמירה במכשיר נכשלה. הנתונים הקודמים לא נמחקו; אל תסיר את האפליקציה.'));
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') rememberWorkoutViewport();
   if (document.visibilityState === 'visible') {
+    const viewport = workoutViewport;
     if (activeSession && activeSession.running) {
       stopwatch.forceTick();
     }
@@ -229,6 +233,7 @@ document.addEventListener('visibilitychange', () => {
     tickCardioTimers();
     requestWakeLock();
     syncWorkoutActivity();
+    restoreWorkoutViewport(viewport);
   }
   syncNativeAnnouncementPlan();
   updateVoiceListeningState();
@@ -616,13 +621,35 @@ function wireWorkoutQuickStatus() {
   new ResizeObserver(updateBounds).observe(qs('.topbar'));
   updateBounds();
 }
-function switchTab(tab, { back = false, scrollY = 0 } = {}) {
+function rememberWorkoutViewport() {
+  if (currentTab !== 'workout') return;
+  const top = qs('.topbar')?.getBoundingClientRect().bottom || 0;
+  const card = qsa('#exerciseList .exercise-card[data-entry-index]').find((node) =>
+    node.getBoundingClientRect().bottom > top);
+  workoutViewport = { sessionID: activeSession.id, scrollY: window.scrollY,
+    exerciseId: card ? activeSession.entries[Number(card.dataset.entryIndex)]?.exerciseId : null,
+    offset: card?.getBoundingClientRect().top };
+}
+
+function restoreWorkoutViewport(viewport = workoutViewport) {
+  if (currentTab !== 'workout' || !viewport || viewport.sessionID !== activeSession.id) return;
+  const card = viewport.exerciseId && qsa('#exerciseList .exercise-card[data-entry-index]').find((node) =>
+    activeSession.entries[Number(node.dataset.entryIndex)]?.exerciseId === viewport.exerciseId);
+  const y = card && Number.isFinite(viewport.offset)
+    ? window.scrollY + card.getBoundingClientRect().top - viewport.offset : viewport.scrollY;
+  window.scrollTo(0, Math.max(0, y));
+  workoutViewport = { ...viewport, scrollY: window.scrollY };
+}
+
+function switchTab(tab, { back = false, scrollY } = {}) {
   const panel = el(`tab-${tab}`);
   if (!panel || !panel.classList.contains('tab-panel')) {
     console.warn('Unknown application tab', tab);
     return;
   }
   const secondary = ['about', 'guide', 'plans', 'goals', 'profile', 'contact', 'settings', 'privacy', 'data'].includes(tab);
+  const sameTab = tab === currentTab;
+  rememberWorkoutViewport();
   if (!back && tab !== currentTab) {
     if (secondary) pageBackStack.push({ tab: currentTab, scrollY: window.scrollY });
     else pageBackStack.length = 0;
@@ -641,7 +668,9 @@ function switchTab(tab, { back = false, scrollY = 0 } = {}) {
   if (tab === 'goals' && typeof trainingUI !== 'undefined') trainingUI?.refresh();
   currentTab = tab;
   updateVoiceListeningState();
-  window.scrollTo(0, scrollY);
+  if (scrollY !== undefined) window.scrollTo(0, scrollY);
+  else if (tab === 'workout' && workoutViewport?.sessionID === activeSession.id) restoreWorkoutViewport();
+  else if (!sameTab) window.scrollTo(0, 0);
   const heading = panel.querySelector('h1, h2');
   if (heading) {
     heading.tabIndex = -1;
@@ -762,6 +791,14 @@ function getLastCompletedValuesByExercise() {
 }
 
 function wireWorkoutControls() {
+  el('btnResumePausedWorkout').addEventListener('click', () => { primeSpeech(); resumeWorkout(); });
+  for (const type of ['click', 'input', 'change', 'keydown']) {
+    el('workoutInteractionArea').addEventListener(type, (event) => {
+      if (!activeSession.paused) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+  }
   const focusEntry = (event) => {
     const card = event.target.closest('.exercise-card');
     if (!card || event.target.closest('.btnShowPhoto')) return;
@@ -863,7 +900,9 @@ function pauseWorkout() {
   if (native.isNative()) native.bgStopKeepAlive();
   renderWorkoutTab();
   if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
+  el('btnResumePausedWorkout').focus({ preventScroll: true });
   persistActiveSession();
+  if (settings.voiceAnnouncements) speak('האימון בהפסקה. לחץ על המשך אימון כדי להמשיך.');
   showToast('האימון בהפסקה. הנתונים נשמרו; לחץ על המשך אימון כדי להמשיך.');
 }
 
@@ -918,9 +957,12 @@ function resumeWorkout() {
   if (native.isNative()) native.bgStartKeepAlive().then((started) => {
     if (!started) showToast('לא ניתן לחדש הודעות ברקע. טיימר האימון ממשיך לפעול.');
   });
+  el('btnPauseWorkout').focus({ preventScroll: true });
 }
 
 function updateWorkoutPauseControls() {
+  el('workoutInteractionArea').inert = !!activeSession.paused;
+  el('workoutPauseLock').classList.toggle('hidden', !activeSession.paused);
   el('btnStartWorkout').disabled = !activeSession.entries.length;
   el('btnPauseWorkout').disabled = !activeSession.running;
   el('btnStartWorkout').textContent = activeSession.paused ? 'המשך אימון' : 'התחל אימון';
@@ -1540,10 +1582,14 @@ function refreshWorkoutMuscleHeadings() {
 }
 
 function renderWorkoutTab() {
+  if (workoutCardSessionId === activeSession.id) rememberWorkoutViewport();
+  const viewport = workoutViewport;
   if (workoutCardSessionId !== activeSession.id) {
     workoutCardSessionId = activeSession.id;
     expandedWorkoutExercises.clear();
+    completedWorkoutExercises.clear();
   }
+  syncCompletedWorkoutCards();
   el('workoutName').textContent = trainingTools.sessionWorkoutTitle(activeSession, i18n.text);
   updateWorkoutPauseControls();
   const list = el('exerciseList');
@@ -1748,6 +1794,31 @@ function renderWorkoutTab() {
   updateProgress();
   refreshVoiceSelection();
   syncWorkoutActivity();
+  restoreWorkoutViewport(viewport);
+}
+
+function syncCompletedWorkoutCards() {
+  let collapsed = false;
+  const ids = new Set(activeSession.entries.map((entry) => entry.exerciseId));
+  for (const id of completedWorkoutExercises) if (!ids.has(id)) completedWorkoutExercises.delete(id);
+  for (const entry of activeSession.entries) {
+    if (isEntryDone(entry)) {
+      if (!completedWorkoutExercises.has(entry.exerciseId)) {
+        collapsed = expandedWorkoutExercises.delete(entry.exerciseId) || collapsed;
+      }
+      completedWorkoutExercises.add(entry.exerciseId);
+    } else completedWorkoutExercises.delete(entry.exerciseId);
+  }
+  return collapsed;
+}
+
+function refreshWorkoutCardCompletion() {
+  rememberWorkoutViewport();
+  const viewport = workoutViewport;
+  const collapsed = syncCompletedWorkoutCards();
+  qsa('#exerciseList .exercise-card[data-entry-index]').forEach((card) =>
+    card.dispatchEvent(new Event('workout-card-refresh')));
+  if (collapsed) restoreWorkoutViewport(viewport);
 }
 
 function configureWorkoutCard(card, entry, index) {
@@ -1777,6 +1848,7 @@ function configureWorkoutCard(card, entry, index) {
     else expandedWorkoutExercises.add(entry.exerciseId);
     update();
   });
+  card.addEventListener('workout-card-refresh', update);
   head.appendChild(toggle);
   update();
 }
@@ -1826,6 +1898,10 @@ function openWorkoutRemovalDialog(exerciseId, restore = false) {
 }
 
 function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
+  if (activeSession.paused) {
+    showToast('האימון בהפסקה. הנתונים נשמרו; לחץ על המשך אימון כדי להמשיך.');
+    return;
+  }
   const previousSet = { ...set };
   const previousMarker = activeSession.lastCompletedSet;
   const previousRevision = activeSession.activityControlRevision;
@@ -1889,7 +1965,7 @@ function getWorkoutSetProgress() {
 function cardioCompletionMessage(entry) {
   const message = entry.exerciseId === 'warmup' ? 'החימום הסתיים'
     : entry.exerciseId === 'cooldown' ? 'השחרור הסתיים' : `התרגיל ${entry.exerciseName} הסתיים`;
-  return `${message}. ${getWorkoutSetProgress().percent} אחוז מהאימון הושלמו`;
+  return message;
 }
 
 function scheduleWorkoutAutoFinish() {
@@ -1915,6 +1991,7 @@ function scheduleWorkoutAutoFinish() {
 }
 
 function updateProgress() {
+  refreshWorkoutCardCompletion();
   refreshWorkoutMuscleHeadings();
   if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
   const strengthEntries = activeSession.entries.filter((e) => e.type !== 'cardio');

@@ -313,6 +313,15 @@ html[dir="ltr"] .card-hint { text-align: left; }
 
 .tab-panel { display: none; animation: fadeIn .15s ease; }
 .tab-panel.active { display: block; }
+.workout-pause-lock {
+  position: fixed; inset: var(--app-header-height, 64px) 0 calc(68px + env(safe-area-inset-bottom));
+  z-index: 25; display: grid; place-items: center; padding: 20px;
+  background: #000d; overflow-y: auto;
+}
+.workout-pause-card { max-width: 420px; width: 100%; text-align: center; border: 2px solid var(--gold); }
+.workout-pause-card h2 { color: var(--gold); }
+.workout-pause-card p { line-height: 1.7; }
+.workout-pause-card .btn { min-height: 48px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .section-title { font-size: 18px; font-weight: 600; margin: 4px 4px 12px; color: var(--text); }

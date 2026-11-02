@@ -1,6 +1,9 @@
 import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 
 export const EN = {
+  'האימון בהפסקה': 'Workout paused',
+  'הטיימרים וההאזנה עצורים. הנתונים נשמרו והתרגילים נעולים עד לחידוש האימון.': 'Timers and listening are stopped. Your data is saved and exercises are locked until you resume.',
+  'האימון בהפסקה. לחץ על המשך אימון כדי להמשיך.': 'Workout paused. Tap Resume workout to continue.',
   'תרגול לפי זמן': 'Timed practice',
   'הערות לתרגול (רשות)': 'Practice notes (optional)',
   'כלוב בטיחות': 'Rack with safety bars',

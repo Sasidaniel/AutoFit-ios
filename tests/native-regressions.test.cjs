@@ -732,6 +732,7 @@ test('workout card toggles hide rather than replace controls and retain explicit
     },
     setAttribute(key, value) { this.attributes[key] = value; },
     addEventListener(key, listener) { this.listeners[key] = listener; },
+    dispatchEvent(event) { this.listeners[event.type]?.(event); },
   });
   const createCard = () => {
     const card = node(), head = node(), title = node(), name = node(), input = node();
@@ -742,8 +743,11 @@ test('workout card toggles hide rather than replace controls and retain explicit
     return { card, head, input };
   };
   const context = nodeVM.createContext({ document: { createElement: node }, expandedWorkoutExercises: new Set(),
+    completedWorkoutExercises: new Set(), activeSession: { entries: [] }, workoutViewport: null,
+    rememberWorkoutViewport() {}, restoreWorkoutViewport() {}, Event,
+    qsa: () => [], isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets?.every((set) => set.completed),
     i18n: { text: (value) => value, exerciseName: (value) => value } });
-  nodeVM.runInContext(section('function configureWorkoutCard(', 'function removeLastWorkoutSet('), context);
+  nodeVM.runInContext(section('function syncCompletedWorkoutCards(', 'function removeLastWorkoutSet('), context);
   const entry = { exerciseId: 'custom:exercise', exerciseName: 'Personal', sets: [{ weightKg: 21.5, completed: false }] };
   const first = createCard();
   context.configureWorkoutCard(first.card, entry, 1);
@@ -757,6 +761,22 @@ test('workout card toggles hide rather than replace controls and retain explicit
   const rerendered = createCard();
   context.configureWorkoutCard(rerendered.card, entry, 1);
   assert.equal(rerendered.card.children[1].hidden, false);
+  context.activeSession.entries = [entry];
+  context.qsa = () => [rerendered.card];
+  entry.sets[0].completed = true;
+  context.refreshWorkoutCardCompletion();
+  assert.equal(rerendered.card.children[1].hidden, true, 'Completing the last set collapses the existing card');
+  assert.equal(first.input.value, '21.5');
+  const reopen = rerendered.head.children.at(-1);
+  reopen.listeners.click();
+  context.refreshWorkoutCardCompletion();
+  assert.equal(rerendered.card.children[1].hidden, false, 'A completed exercise may be explicitly reopened');
+  entry.sets[0].completed = false;
+  context.refreshWorkoutCardCompletion();
+  assert.equal(rerendered.card.children[1].hidden, false, 'Undo must not collapse unfinished work');
+  entry.sets[0].completed = true;
+  context.refreshWorkoutCardCompletion();
+  assert.equal(rerendered.card.children[1].hidden, true, 'Completing again creates a fresh collapse transition');
   for (const id of ['warmup', 'cooldown']) {
     const walk = createCard();
     context.configureWorkoutCard(walk.card, { exerciseId: id, exerciseName: id }, 0);
@@ -765,6 +785,13 @@ test('workout card toggles hide rather than replace controls and retain explicit
     walk.head.children.at(-1).listeners.click();
     assert.equal(walk.card.children[1].hidden, false);
     assert.equal(walk.card.children[1].children[0], walk.input);
+    const cardio = { exerciseId: id, exerciseName: id, type: 'cardio', completed: false };
+    context.activeSession.entries = [cardio];
+    context.qsa = () => [walk.card];
+    context.refreshWorkoutCardCompletion();
+    cardio.completed = true;
+    context.refreshWorkoutCardCompletion();
+    assert.equal(walk.card.children[1].hidden, true, 'Timer completion also collapses cardio');
   }
 });
 
@@ -5531,8 +5558,9 @@ function navigationFixture() {
   const window = { scrollY: 240, scrollTo: (_x, y) => { window.scrollY = y; } };
   const session = { running: true, entries: [{ sets: [{ reps: 12, weightKg: 20 }] }], rest: { endAt: 123456 } };
   const context = vm.createContext({ el: (id) => nodes.get(id), window, currentTab: 'workout', pageBackStack: [],
-    activeSession: session, document: { documentElement: node('html') },
-    qsa: (selector) => selector === '.tab-panel' ? panels : selector === '.tab-btn' ? buttons : links,
+    activeSession: session, workoutViewport: null, document: { documentElement: node('html') },
+    qsa: (selector) => selector === '.tab-panel' ? panels : selector === '.tab-btn' ? buttons
+      : selector.includes('exercise-card') ? [] : links,
     qs: (selector) => buttons.find((button) => selector.includes(`"${button.dataset.tab}"`)),
     renderDashboard() {}, renderHistoryTab() {}, renderHomeTab() {},
     updateVoiceListeningState: () => voice.push(context.currentTab), console,
@@ -5563,6 +5591,47 @@ test('menu pages return one step at a time to the same workout and scroll positi
   assert.equal(nodes.get('btnPageBack').classList.contains('hidden'), true);
   assert.equal(JSON.stringify(session), initial);
   assert.deepEqual(voice, ['about', 'guide', 'about', 'workout']);
+});
+
+test('opening the workout again or returning from another tab retains the current workout position', () => {
+  const { context, nodes, window } = navigationFixture();
+  nodes.get('button-workout').click();
+  assert.equal(window.scrollY, 240, 'Live Activity opening the already-active workout must not jump to its heading');
+  nodes.get('button-history').click();
+  window.scrollY = 60;
+  nodes.get('button-workout').click();
+  assert.equal(window.scrollY, 240);
+  nodes.get('button-history').click();
+  context.activeSession.id = 'a-new-session';
+  nodes.get('button-workout').click();
+  assert.equal(window.scrollY, 0, 'A saved viewport cannot leak into a different workout');
+});
+
+test('foreground return restores the visible exercise anchor even after a timer changes content above it', () => {
+  const listeners = {}, window = { scrollY: 800, scrollTo(_x, y) { this.scrollY = y; } };
+  let cardPageTop = 900;
+  const card = { dataset: { entryIndex: '1' },
+    getBoundingClientRect: () => ({ top: cardPageTop - window.scrollY, bottom: cardPageTop - window.scrollY + 180 }) };
+  const context = vm.createContext({ window, workoutViewport: null, currentTab: 'workout',
+    activeSession: { id: 'existing', running: true, entries: [{ exerciseId: 'earlier' }, { exerciseId: 'current' }] },
+    qsa: () => [card], qs: () => ({ getBoundingClientRect: () => ({ bottom: 60 }) }),
+    document: { visibilityState: 'visible', addEventListener: (type, listener) => { listeners[type] = listener; } },
+    stopwatch: { forceTick() {} }, restTimer: { isRunning: () => false },
+    tickCardioTimers: () => { cardPageTop = 650; },
+    requestWakeLock() {}, syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {}, updateVoiceListeningState() {} });
+  vm.runInContext(section('function rememberWorkoutViewport()', 'function switchTab('), context);
+  vm.runInContext(section("document.addEventListener('visibilitychange'", '// Some browsers'), context);
+  context.document.visibilityState = 'hidden';
+  listeners.visibilitychange();
+  window.scrollY = 0;
+  context.document.visibilityState = 'visible';
+  listeners.visibilitychange();
+  assert.equal(window.scrollY, 550);
+  assert.equal(card.getBoundingClientRect().top, 100, 'Same exercise, same on-screen offset');
+  context.currentTab = 'history';
+  window.scrollY = 25;
+  listeners.visibilitychange();
+  assert.equal(window.scrollY, 25, 'Foregrounding a different tab must not move it');
 });
 
 test('exercise library summary keeps its heading without redundant counts or explanatory paragraphs', () => {
@@ -6068,18 +6137,47 @@ test('background handoff includes banked warmup and cooldown completion without 
   const context = vm.createContext({
     Date: { now: () => 100000 }, restTimer: { isRunning: () => false },
     settings: { voiceAnnouncements: true }, holdTimers: new Map(), exercises: [],
-    cardioCompletionMessage: () => 'החימום הסתיים. 0 אחוז מהאימון הושלמו',
     activeSession: { entries: [
       { exerciseId: 'warmup', type: 'cardio', startedAt: 90000, elapsedSec: 30, durationSec: 300 },
       { exerciseId: 'cooldown', type: 'cardio', startedAt: null, durationSec: 300 },
     ] },
   });
+  vm.runInContext(section('function cardioCompletionMessage(', 'function scheduleWorkoutAutoFinish('), context);
   vm.runInContext(section('function buildBackgroundAnnouncementItems()', '/* ---------------- notifications'), context);
   const items = context.buildBackgroundAnnouncementItems();
   assert.equal(items.length, 1);
   assert.equal(items[0].fireAtMillis, 360000);
-  assert.equal(items[0].text, 'החימום הסתיים. 0 אחוז מהאימון הושלמו');
+  assert.equal(items[0].text, 'החימום הסתיים');
   assert.equal(items[0].announcementID, 'cardio:warmup:90000');
+  context.activeSession.entries[1].startedAt = 90000;
+  assert.equal(context.buildBackgroundAnnouncementItems()[1].text, 'השחרור הסתיים');
+});
+
+test('pause lock captures pointer and editing events before controls and resumes only from its explicit button', () => {
+  const nodes = new Map(), calls = [];
+  const el = (id) => {
+    if (!nodes.has(id)) nodes.set(id, { listeners: new Map(), addEventListener(type, callback, capture) {
+      this.listeners.set(type, { callback, capture });
+    } });
+    return nodes.get(id);
+  };
+  const context = vm.createContext({ el, native: { isNative: () => false },
+    activeSession: { paused: true }, resumeWorkout: () => calls.push('resume'),
+    primeSpeech: () => calls.push('prime'), pauseWorkout() {}, cancelWorkout() {} });
+  vm.runInContext(section('function wireWorkoutControls()', '// Starts the overall workout'), context);
+  context.wireWorkoutControls();
+  for (const type of ['click', 'input', 'change', 'keydown']) {
+    const handler = el('workoutInteractionArea').listeners.get(type);
+    assert.equal(handler.capture, true);
+    const events = [];
+    handler.callback({ preventDefault: () => events.push('prevent'), stopImmediatePropagation: () => events.push('stop') });
+    assert.deepEqual(events, ['prevent', 'stop'], type);
+    context.activeSession.paused = false;
+    handler.callback({ preventDefault: () => assert.fail('Unpaused controls must remain usable') });
+    context.activeSession.paused = true;
+  }
+  el('btnResumePausedWorkout').listeners.get('click').callback();
+  assert.deepEqual(calls, ['prime', 'resume']);
 });
 
 test('timer speech carries the same stable identity through foreground and background native dispatch', async () => {
@@ -6288,7 +6386,7 @@ test('native lifecycle stops microphone input and recovers background playback w
 function progressSpeechContext(entries) {
   const messages = [], nodes = new Map();
   const context = vm.createContext({
-    qsa: () => [],
+    qsa: () => [], refreshWorkoutCardCompletion() {},
     activeSession: { entries }, settings: { voiceAnnouncements: true, restSeconds: 90 },
     cancelWorkoutGreeting() {}, playBeep() {},
     restTimer: { start() {} }, speak: (message) => messages.push(message),
@@ -6473,12 +6571,15 @@ test('the completed workout does not start a final rest, while ordinary sets sti
   assert.equal(messages.length, 1);
 });
 
-test('cardio completion reports the shared all-activity percentage and empty workouts never divide by zero', () => {
+test('timed completion never announces a percentage while visual progress remains accurate', () => {
   const { context } = progressSpeechContext([
     { type: 'cardio', exerciseId: 'warmup', completed: true },
     { sets: [{ completed: true }, { completed: false }] },
   ]);
-  assert.match(context.cardioCompletionMessage({ exerciseId: 'warmup' }), /67 אחוז/);
+  assert.equal(context.getWorkoutSetProgress().percent, 67);
+  assert.equal(context.cardioCompletionMessage({ exerciseId: 'warmup' }), 'החימום הסתיים');
+  assert.equal(context.cardioCompletionMessage({ exerciseId: 'cooldown' }), 'השחרור הסתיים');
+  assert.equal(context.cardioCompletionMessage({ exerciseId: 'walk', exerciseName: 'Walk' }), 'התרגיל Walk הסתיים');
   context.activeSession.entries = [];
   assert.equal(context.getWorkoutSetProgress().percent, 0);
 });

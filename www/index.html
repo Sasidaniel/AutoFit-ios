@@ -200,6 +200,7 @@
 
   <!-- WORKOUT TAB -->
   <section id="tab-workout" class="tab-panel">
+    <div id="workoutInteractionArea">
     <div class="greeting-card card">
       <img id="workoutProfilePhoto" src="icons/icon-192.png" alt="תמונת פרופיל" class="greeting-avatar">
       <div class="workout-greeting-copy">
@@ -255,6 +256,14 @@
       <button type="button" class="btn btn-secondary btn-small hidden" data-music-controls data-music-toggle data-no-translate>Apple Music</button>
     </div>
     <div id="exerciseList" class="exercise-list"></div>
+    </div>
+    <div id="workoutPauseLock" class="workout-pause-lock hidden" role="region" aria-labelledby="workoutPauseTitle" aria-live="polite">
+      <div class="card workout-pause-card">
+        <h2 id="workoutPauseTitle">האימון בהפסקה</h2>
+        <p>הטיימרים וההאזנה עצורים. הנתונים נשמרו והתרגילים נעולים עד לחידוש האימון.</p>
+        <button id="btnResumePausedWorkout" type="button" class="btn btn-start">המשך אימון</button>
+      </div>
+    </div>
   </section>
 
   <!-- HISTORY TAB -->
