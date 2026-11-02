@@ -16,7 +16,18 @@ async function api(path, method = 'GET', body) {
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(30000),
   });
-  if (!response.ok) throw new Error(`Apple verification failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    let message = `Apple verification failed: HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      const details = Array.isArray(body?.errors) ? body.errors.map((error) =>
+        [error.code, error.title, error.detail].filter((part) => typeof part === 'string').join(': ')).join('; ').slice(0, 2000) : '';
+      if (details) message += `: ${details}`;
+    } catch (error) {
+      message += ` (could not decode Apple error response: ${error.message})`;
+    }
+    throw new Error(message);
+  }
   return response.status === 204 ? null : response.json();
 }
 

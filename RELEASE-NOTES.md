@@ -11,6 +11,15 @@ The existing signed pipeline must pass every regression, native and layout gate
 before upload, and Apple must confirm availability before release is called done.
 42 remains the verified available build until that confirmation.
 
+[Release run 41423820598](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41423820598)
+on `b0e4a5e48a172fbc7d51e2c148583b679dc133ac` passed all 671 JS regressions,
+four Swift suites, both native count streams, all widget layouts, signing,
+archive/export and upload. Apple then reported **VALID / READY_FOR_BETA_TESTING**,
+but enabling internal delivery returned HTTP 422. The binary was uploaded once;
+do not rebuild or reupload it. Verification-only tooling now preserves Apple's
+structured rejection details so this delivery problem can be diagnosed rather
+than blindly rerunning the release.
+
 - Fully completed exercise cards collapse automatically through the shared
   progress path (manual checks, voice completion, hold/cardio timers and widget
   updates). Controls and recorded values are retained. Explicitly reopening a

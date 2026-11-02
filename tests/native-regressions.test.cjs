@@ -1013,6 +1013,16 @@ test('release verifier surfaces Apple API authentication failure without leaking
   assert.ok(result.messages.includes('Apple verification failed: HTTP 401'));
   assert.doesNotMatch(result.messages.join('\n'), /PRIVATE KEY|Bearer|test-issuer/);
 });
+test('release verifier retains Apple delivery rejection details without retrying or claiming success', async () => {
+  const result = await runAppleReleaseCheck([{ status: 422, body: { errors: [
+    { code: 'ENTITY_ERROR', title: 'Invalid relationship', detail: 'The build cannot be added to this group.' },
+  ] } }]);
+  assert.equal(result.process.exitCode, 1);
+  assert.equal(result.requests.length, 1);
+  assert.equal(result.summaries.length, 0);
+  assert.match(result.messages.join('\n'), /HTTP 422: ENTITY_ERROR: Invalid relationship: The build cannot be added/);
+  assert.doesNotMatch(result.messages.join('\n'), /PRIVATE KEY|Bearer|test-issuer/);
+});
 test('internal delivery applies the established encryption exemption and selects existing internal groups only', async () => {
   const missing = appleBuildResponse('VALID', 'MISSING_EXPORT_COMPLIANCE');
   missing.body.data[0].attributes.usesNonExemptEncryption = null;
