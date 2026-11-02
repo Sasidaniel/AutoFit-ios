@@ -435,6 +435,11 @@
   <section id="tab-settings" class="tab-panel">
     <h2 class="section-title">הגדרות</h2>
     <div class="card">
+      <h3 class="card-title">גרסת האפליקציה</h3>
+      <p id="installedAppVersion" dir="auto" role="status" data-no-translate>בדיקת גרסה...</p>
+      <p class="field-hint">באייפון מוצגים הגרסה ומספר הבנייה המותקנים. לבדיקת עדכון, פתח את TestFlight ובדוק אם מופיע כפתור עדכון. AutoFit אינה בודקת כרגע אם זו הגרסה האחרונה.</p>
+    </div>
+    <div class="card">
       <h2 class="section-title">שפה</h2>
       <div class="language-options" role="group" aria-label="בחירת שפה">
         <button type="button" class="language-option" data-language="he" aria-pressed="true" data-no-translate>
@@ -460,7 +465,9 @@
 
       <label class="checkbox-row"><input type="checkbox" id="settingVoice"> הודעה קולית בסיום מנוחה (באוזניות)</label>
       <div class="field-hint">עובד רק כשהאפליקציה פתוחה ברקע הפעיל; ב-iOS ייתכן שההודעה לא תושמע אם המסך נעול לגמרי.</div>
-      <div class="field-hint">💡 המסך אמור להישאר דלוק אוטומטית כל עוד האתר פתוח (דורש iOS 16.4+ / דפדפן תומך). אם המסך עדיין נכבה, גע במסך פעם אחת כדי להפעיל זאת.</div>
+      <label class="checkbox-row"><input type="checkbox" id="settingKeepScreenAwake"> השאר את המסך דולק כשהאפליקציה פתוחה</label>
+      <div class="field-hint">מופעל כברירת מחדל. חל רק כאשר AutoFit בחזית, גם מחוץ לאימון; אינו מונע נעילה ידנית. כיבוי חוסך סוללה ואינו מפסיק טיימרים. בדפדפן נדרשת תמיכה בשמירת מסך דולק.</div>
+      <p id="screenAwakeStatus" class="field-hint" role="status" data-no-translate></p>
 
       <label class="checkbox-row"><input type="checkbox" id="settingVoiceInterval30"> הכרזה קולית כל 30 שניות במהלך המנוחה</label>
       <div class="field-hint">למשל בזמן מנוחה של דקה וחצי: "עברו 30 שניות", "עברו 60 שניות", ואז "נגמר זמן המנוחה" — כדי שלא תצטרך להסתכל בטלפון.</div>
@@ -485,18 +492,46 @@
 
     <div id="permissionsSettingsCard" class="card hidden">
       <div class="card-title">הרשאות מערכת</div>
+      <p class="field-hint">המצב נבדק בלי לבקש הרשאות. כל הרשאה היא בחירה; אפשר להמשיך בהזנה ידנית. לאחר שינוי בהגדרות האייפון, חזור לכאן לבדיקה נוספת.</p>
+      <div class="settings-actions">
+        <button id="btnRefreshDeviceSettings" type="button" class="btn btn-secondary">רענן מצב הרשאות</button>
+        <button id="btnOpenDeviceSettings" type="button" class="btn btn-secondary">פתח הגדרות באייפון</button>
+      </div>
+      <p id="devicePermissionsStatus" class="field-hint" role="status" data-no-translate></p>
+      <h3 class="field-label">Apple Music</h3>
+      <p id="permissionMusic" class="field-hint" data-no-translate></p>
+      <p class="field-hint">ההרשאה מאפשרת שליטה בניגון Apple Music בלבד. אינה נדרשת לאימון או לפקודות קוליות, ואישור שלה אינו מתחיל לנגן מוזיקה.</p>
+      <div class="settings-actions">
+        <button id="btnEnableMusicSettings" type="button" class="btn btn-secondary">אפשר הרשאת Apple Music</button>
+      </div>
+      <h3 class="field-label">Apple Health</h3>
+      <p id="permissionHealth" class="field-hint" data-no-translate></p>
+      <p class="field-hint">המצב מתייחס להרשאת כתיבת אימונים בלבד. iOS אינו מאפשר לבדוק אם אושרה קריאת נתוני בריאות. שינוי סוגי הנתונים נעשה באפליקציית בריאות.</p>
       <div class="settings-actions">
         <button id="btnEnableHealthSettings" class="btn btn-secondary">🩺 אפשר גישה לאפליקציית בריאות</button>
       </div>
+      <h3 class="field-label">Face ID / Touch ID</h3>
+      <p id="permissionBiometrics" class="field-hint" data-no-translate></p>
+      <p class="field-hint">מוצגת זמינות אימות במכשיר, לא אישור לזהות המשתמש. נעילת האפליקציה מופעלת בנפרד בהגדרה למעלה.</p>
       <div class="settings-actions">
         <button id="btnVerifyFaceIdSettings" class="btn btn-secondary">🔐 בדוק Face ID עכשיו</button>
       </div>
+      <h3 class="field-label">התראות</h3>
+      <p id="permissionNotifications" class="field-hint" data-no-translate></p>
       <div class="settings-actions">
         <button id="btnEnableNotificationsSettings" class="btn btn-secondary">🔔 אפשר התראות</button>
       </div>
+      <h3 class="field-label">מיקרופון וזיהוי דיבור</h3>
+      <p id="permissionMicrophone" class="field-hint" data-no-translate></p>
+      <p id="permissionSpeech" class="field-hint" data-no-translate></p>
+      <p class="field-hint">הרשאה מאושרת אינה אומרת שהאפליקציה מאזינה כרגע. מצב ההאזנה והמיקרופון הפעיל מוצגים בטאב האימון.</p>
       <div class="settings-actions">
         <button id="btnEnableVoiceSettings" class="btn btn-secondary">🎙️ אפשר מיקרופון ופקודות קוליות</button>
       </div>
+      <h3 class="field-label">Live Activity — מסך נעילה ואי דינמי</h3>
+      <p id="permissionLiveActivities" class="field-hint" data-no-translate></p>
+      <p class="field-hint">מוצגת האפשרות להציג פעילות חיה, לא אישור שווידג׳ט פעיל כרגע. אפשר לשנות בהגדרות האייפון של AutoFit.</p>
+      <p class="field-hint">בחירת תמונה נעשית דרך בורר המערכת; אין בקשה לגישה לכל ספריית התמונות. AutoFit אינה מבקשת הרשאת מיקום או מצלמה. גיבוי ופרטיות מנוהלים בעמודים הנפרדים.</p>
     </div>
 
   </section>

@@ -203,22 +203,52 @@ function notify(title, body) {
 }
 
 let wakeLockRef = null;
-async function requestWakeLock() {
-  // Native iOS WKWebView doesn't support the Wake Lock API — use the native bridge instead.
-  if (native.isNative()) { native.keepAwakeEnable(); return; }
-  try {
-    if ('wakeLock' in navigator) {
-      wakeLockRef = await navigator.wakeLock.request('screen');
-      wakeLockRef.addEventListener('release', () => { wakeLockRef = null; });
-    }
-  } catch (e) { /* wake lock not available / denied — timer still stays accurate */ }
+let wakeLockOperation = Promise.resolve();
+let nativeWakeLockEnabled = null;
+let wakeLockError = '';
+function updateScreenAwakeStatus(message) {
+  const status = el('screenAwakeStatus');
+  if (status) status.textContent = i18n.text(message);
 }
-function releaseWakeLock() {
-  if (native.isNative()) { native.keepAwakeDisable(); return; }
-  if (wakeLockRef) {
-    wakeLockRef.release().catch(() => {});
-    wakeLockRef = null;
-  }
+function requestWakeLock() {
+  // Serialize enable/disable so a slow permission response cannot override a later opt-out.
+  wakeLockOperation = wakeLockOperation.then(async () => {
+    const enabled = settings.keepScreenAwake !== false && document.visibilityState === 'visible' && !privacyErasing;
+    if (native.isNative()) {
+      if (nativeWakeLockEnabled !== enabled) {
+        const confirmed = await (enabled ? native.keepAwakeEnable() : native.keepAwakeDisable());
+        if (!confirmed) throw new Error('Screen wake state was not confirmed');
+        nativeWakeLockEnabled = enabled;
+      }
+    } else if (enabled && 'wakeLock' in navigator) {
+      if (!wakeLockRef || wakeLockRef.released) {
+        const lock = await navigator.wakeLock.request('screen');
+        wakeLockRef = lock;
+        lock.addEventListener('release', () => {
+          if (wakeLockRef !== lock) return;
+          wakeLockRef = null;
+          updateScreenAwakeStatus('המערכת שחררה את שמירת המסך דולק. אפשר לנסות שוב בנגיעה במסך.');
+        });
+      }
+    } else if (wakeLockRef) {
+      const lock = wakeLockRef;
+      await lock.release();
+      if (wakeLockRef === lock) wakeLockRef = null;
+    }
+    wakeLockError = '';
+    updateScreenAwakeStatus(!enabled ? 'שמירת המסך דולק אינה פעילה כרגע.'
+      : !native.isNative() && !('wakeLock' in navigator) ? 'הדפדפן אינו תומך בשמירת המסך דולק.'
+        : 'שמירת המסך דולק פעילה כל עוד AutoFit פתוחה בחזית.');
+    return enabled && (native.isNative() || !!wakeLockRef);
+  }).catch((error) => {
+    console.error('Screen wake control failed', error);
+    const message = 'לא ניתן לאשר את שמירת המסך דולק. הטיימרים ונתוני האימון ממשיכים כרגיל.';
+    if (!wakeLockError) showToast(message);
+    wakeLockError = message;
+    updateScreenAwakeStatus(message);
+    return false;
+  });
+  return wakeLockOperation;
 }
 window.addEventListener('autofit-audio-error', (event) => showToast('השמעת שמע נכשלה: ' + event.detail));
 window.addEventListener('autofit-storage-error', () => showToast('השמירה במכשיר נכשלה. הנתונים הקודמים לא נמחקו; אל תסיר את האפליקציה.'));
@@ -231,10 +261,11 @@ document.addEventListener('visibilitychange', () => {
     }
     if (restTimer.isRunning()) restTimer.forceTick();
     tickCardioTimers();
-    requestWakeLock();
     syncWorkoutActivity();
     restoreWorkoutViewport(viewport);
   }
+  requestWakeLock();
+  if (document.visibilityState === 'visible' && currentTab === 'settings') refreshDeviceSettings();
   syncNativeAnnouncementPlan();
   updateVoiceListeningState();
 });
@@ -497,9 +528,7 @@ function init() {
     setPlayback: setWorkoutMusicPlayback,
   });
 
-  // keep the phone screen on the whole time the site is open, not just during a workout.
-  // Also re-assert on a repeating interval (not just on init/click/visibilitychange) as
-  // defense-in-depth against any native-side reset the one-time call might miss.
+  // Respect the saved opt-out on every foreground/click/periodic retry.
   requestWakeLock();
   setInterval(requestWakeLock, 15000);
 
@@ -666,6 +695,7 @@ function switchTab(tab, { back = false, scrollY } = {}) {
   if (tab === 'workout') refreshWorkoutMuscleHeadings();
   if (tab === 'workout' && typeof musicControls !== 'undefined') musicControls?.refresh();
   if (tab === 'goals' && typeof trainingUI !== 'undefined') trainingUI?.refresh();
+  if (tab === 'settings') renderSettingsTab();
   currentTab = tab;
   updateVoiceListeningState();
   if (scrollY !== undefined) window.scrollTo(0, scrollY);
@@ -5209,7 +5239,62 @@ function wireLanguageControls() {
   }));
 }
 
+let deviceSettingsRevision = 0;
+async function refreshDeviceSettings() {
+  const revision = ++deviceSettingsRevision;
+  const version = el('installedAppVersion');
+  if (!native.isNative()) {
+    version.textContent = i18n.text('תצוגת דפדפן — אינה גרסת האפליקציה המותקנת באייפון.');
+    return;
+  }
+  const status = el('devicePermissionsStatus');
+  const button = el('btnRefreshDeviceSettings');
+  const labels = {
+    authorized: 'מאושר', denied: 'נדחה — אפשר לשנות בהגדרות האייפון',
+    restricted: 'מוגבל על ידי המערכת', notDetermined: 'טרם ניתנה בחירה',
+    unknown: 'המצב לא ידוע', quiet: 'מאושר למסירה שקטה או זמנית',
+    available: 'זמין במכשיר', unavailable: 'לא זמין במכשיר',
+    enabled: 'מופעל במערכת', disabled: 'כבוי במערכת',
+  };
+  const fields = { music: 'permissionMusic', health: 'permissionHealth',
+    biometrics: 'permissionBiometrics', notifications: 'permissionNotifications',
+    microphone: 'permissionMicrophone', speech: 'permissionSpeech', liveActivities: 'permissionLiveActivities' };
+  button.disabled = true;
+  status.textContent = i18n.text('בדיקת מצב הרשאות...');
+  try {
+    const result = await native.deviceSettingsStatus();
+    if (revision !== deviceSettingsRevision) return;
+    version.textContent = `${result.version} (${result.build})`;
+    for (const [key, id] of Object.entries(fields)) {
+      const name = key === 'microphone' ? i18n.text('מיקרופון') + ': '
+        : key === 'speech' ? i18n.text('זיהוי דיבור') + ': ' : '';
+      el(id).textContent = name + i18n.text(labels[result.permissions[key]]);
+    }
+    status.textContent = i18n.text('מצב ההרשאות עודכן. לא התבקשה הרשאה חדשה.');
+  } catch (error) {
+    if (revision !== deviceSettingsRevision) return;
+    console.error('Device settings status failed', error);
+    version.textContent = i18n.text('לא ניתן לקרוא את הגרסה המותקנת.');
+    for (const id of Object.values(fields)) el(id).textContent = i18n.text('לא ניתן לבדוק את ההרשאה כרגע.');
+    status.textContent = i18n.text('בדיקת ההרשאות נכשלה. ייתכן שנדרשת בנייה חדשה של האפליקציה; אפשר לנסות שוב.');
+  } finally {
+    if (revision === deviceSettingsRevision) button.disabled = false;
+  }
+}
+
 function wireSettings() {
+  el('settingKeepScreenAwake').addEventListener('change', (event) => {
+    try {
+      const next = { ...settings, keepScreenAwake: event.target.checked };
+      db.saveSettings(next);
+      settings = next;
+      requestWakeLock();
+    } catch (error) {
+      console.error('Screen wake preference could not be saved', error);
+      event.target.checked = settings.keepScreenAwake !== false;
+      showToast('העדפת שמירת המסך דולק לא נשמרה. נסה שוב.');
+    }
+  });
   el('settingRestSeconds').addEventListener('change', (e) => {
     settings.restSeconds = Math.max(10, Number(e.target.value) || 90);
     db.saveSettings(settings);
@@ -5239,6 +5324,31 @@ function wireSettings() {
     el('faceIdSettingRow').classList.remove('hidden');
     el('permissionsSettingsCard').classList.remove('hidden');
     el('voiceCommandsSettingRow').classList.remove('hidden');
+    el('btnRefreshDeviceSettings').addEventListener('click', refreshDeviceSettings);
+    el('btnOpenDeviceSettings').addEventListener('click', async () => {
+      try { await native.openDeviceSettings(); }
+      catch (error) {
+        console.error('Opening system settings failed', error);
+        showToast('לא ניתן לפתוח את הגדרות האייפון. פתח אותן ידנית ובחר AutoFit.');
+      }
+    });
+    el('btnEnableMusicSettings').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await native.musicRequestAuthorization();
+        showToast(result.authorization === 'authorized' ? 'הרשאת Apple Music אושרה.'
+          : 'הרשאת Apple Music לא אושרה. אפשר לשנות אותה בהגדרות האייפון ולהמשיך באימון בלעדיה.');
+        musicControls?.refresh();
+      } catch (error) {
+        console.error('Apple Music authorization failed', error);
+        showToast('בקשת הרשאת Apple Music נכשלה. אפשר לנסות שוב או לפתוח את הגדרות האייפון.');
+      } finally {
+        button.disabled = false;
+        refreshDeviceSettings();
+      }
+    });
     el('settingFaceId').addEventListener('change', async (e) => {
       const wantsOn = e.target.checked;
       if (wantsOn) {
@@ -5258,21 +5368,25 @@ function wireSettings() {
       }
       settings.faceIdEnabled = wantsOn;
       db.saveSettings(settings);
+      refreshDeviceSettings();
     });
     el('btnEnableHealthSettings').addEventListener('click', async () => {
       const res = await native.healthRequestAuthorization();
+      refreshDeviceSettings();
       showToast(res.granted
         ? 'החיבור ל-Apple Health אושר ✅'
         : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > פרטיות > בריאות`);
     });
     el('btnVerifyFaceIdSettings').addEventListener('click', async () => {
       const bio = await native.biometricIsAvailable();
+      refreshDeviceSettings();
       if (!bio.available) { showToast('Face ID/Touch ID לא זמין או לא מוגדר במכשיר זה' + (bio.reason ? ` (${bio.reason})` : '')); return; }
       const ok = await native.biometricVerify();
       showToast(ok ? 'האימות הצליח ✅' : 'האימות נכשל');
     });
     el('btnEnableNotificationsSettings').addEventListener('click', async () => {
       const res = await native.notificationsRequestPermission();
+      refreshDeviceSettings();
       showToast(res.granted
         ? 'התראות אושרו ✅'
         : `ההרשאה לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אם כבר נדחתה בעבר, אשר ידנית בהגדרות האייפון > התראות`);
@@ -5281,6 +5395,7 @@ function wireSettings() {
       const wantsOn = e.target.checked;
       if (wantsOn) {
         const res = await native.voiceRequestPermission();
+        refreshDeviceSettings();
         if (!res.granted) {
           showToast(`ההרשאה למיקרופון/זיהוי דיבור לא אושרה${res.reason ? ' (' + res.reason + ')' : ''} — אשר ידנית בהגדרות האייפון > פרטיות > מיקרופון/זיהוי דיבור`);
           e.target.checked = false;
@@ -5292,7 +5407,10 @@ function wireSettings() {
       db.saveSettings(settings);
       updateVoiceListeningState();
     });
-    el('btnEnableVoiceSettings').addEventListener('click', requestVoiceActivation);
+    el('btnEnableVoiceSettings').addEventListener('click', async () => {
+      await requestVoiceActivation();
+      refreshDeviceSettings();
+    });
     el('settingVoiceMicrophone').addEventListener('change', async (event) => {
       const mode = event.target.value;
       if (!['automatic', 'headset'].includes(mode)) return;
@@ -5406,6 +5524,8 @@ function renderSettingsTab() {
   el('settingProgramWeek').value = settings.programWeek || 3;
   el('settingVoice').checked = settings.voiceAnnouncements !== false;
   el('settingVoiceInterval30').checked = settings.voiceIntervalAnnouncements !== false;
+  el('settingKeepScreenAwake').checked = settings.keepScreenAwake !== false;
+  refreshDeviceSettings();
   if (native.isNative()) {
     el('settingFaceId').checked = settings.faceIdEnabled !== false;
     el('settingVoiceCommands').checked = settings.voiceCommandsEnabled === true;

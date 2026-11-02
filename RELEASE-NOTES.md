@@ -1,5 +1,38 @@
 # AutoFit release notes
 
+## Unreleased - installed version, permission visibility and screen-awake preference (2026-11-02)
+
+Owner requested settings improvements; **no new release approval**.
+TestFlight remains 1.0 (43). All changes are backed up on the existing work branch;
+no main merge, signed release or binary upload is requested.
+
+- Read the actual installed marketing version/build from `Bundle.main` through the
+  existing registered KeepAwakeBridge. Browser previews are explicitly not iPhone
+  versions. TestFlight update guidance is provided without pretending there is an
+  automatic latest-build check; no reliable public internal-beta source is configured.
+- Read-only permission snapshot: independent microphone/speech/Music authorization,
+  notification state (including quiet/temporary delivery), Health workout write
+  permission, biometric availability and Live Activity availability. Status refresh
+  never prompts, opens a microphone, changes an audio session or starts Music.
+  Health read permission cannot be inspected; authorized microphone/Live Activity
+  permissions are not presented as actual listening/widget state.
+- Explicit Apple Music authorization action, permission refresh and opening the
+  app's iPhone settings; existing Health/voice/notification/biometric actions remain.
+  Refresh after permission actions and after returning from device settings.
+  Missing/outdated plugins or failed reads display unavailable/error state rather
+  than stale permission success or a guessed app version.
+- Persist `keepScreenAwake`, default true for new and legacy settings. False is
+  honored on initial load, foreground return, taps and recurring retry. Serialized
+  native/web enable/release prevents a late enable from overriding an opt-out.
+  Browser locks are deduplicated; unavailable/failed controls show honest status.
+  Only foreground behavior is affected, not manual device locking or workout
+  elapsed-time/rest/count logic. Existing audio-session policy is unchanged.
+- Hebrew/English and feminine action wording; web cache v102.
+
+Native permission/version checks require a future installed build; the browser
+does not simulate native permissions. Unsigned native validation may compile this
+source, but must not sign, upload or release a binary.
+
 ## 1.0 (43) - verified internal TestFlight release (2026-11-02)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-02 10:10:14 UTC.**

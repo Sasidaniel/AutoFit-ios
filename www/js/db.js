@@ -55,6 +55,7 @@ export const DEFAULT_SETTINGS = {
   weeklyGoal: 3,
   programWeek: 3, // week 1 = 1 set/exercise, week 2 = 2 sets, week 3+ = full (defaultSets)
   voiceAnnouncements: true,
+  keepScreenAwake: true,
   warmupName: 'חימום — הליכה',
   warmupMinutes: 5,
   cooldownName: 'שחרור — הליכה',

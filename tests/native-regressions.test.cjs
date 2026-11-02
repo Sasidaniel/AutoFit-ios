@@ -1579,7 +1579,9 @@ test('Hebrew is the default and both language pickers use the same bilingual fla
   assert.match(read('www/js/db.js'), /language: 'he'/);
   const html = read('www/index.html');
   for (const id of ['onboardingStepLanguage', 'tab-settings']) {
-    const picker = html.slice(html.indexOf(`id="${id}"`)).split('</div>')[0];
+    const start = html.indexOf('class="language-options"', html.indexOf(`id="${id}"`));
+    assert.ok(start > 0);
+    const picker = html.slice(start).split('</div>')[0];
     assert.match(picker, /data-language="he" aria-pressed="true"/);
     assert.match(picker, /data-language="en" aria-pressed="false"/);
     assert.match(picker, /flag-il\.svg/);
@@ -1922,6 +1924,248 @@ test('registered health, biometric and microphone permission calls reach native 
   assert.equal((await context.voiceRequestPermission()).granted, true);
   assert.equal((await context.voiceStartListening()).listening, true);
   assert.deepEqual(calls, ['health', 60, 'face', 'mic', 'listen']);
+});
+
+function deviceStatusSnapshot() {
+  return { version: '1.0', build: '43', permissions: {
+    music: 'denied', health: 'authorized', biometrics: 'available', notifications: 'quiet',
+    microphone: 'authorized', speech: 'restricted', liveActivities: 'disabled',
+  } };
+}
+
+test('device settings bridge reads the installed bundle and fails honestly for missing or malformed native replies', async () => {
+  const calls = [], snapshot = deviceStatusSnapshot();
+  const context = bridgeContext({ KeepAwakeBridge: {
+    settingsStatus: async () => { calls.push('status'); return snapshot; },
+    openSettings: async () => { calls.push('open'); return { opened: true }; },
+    enable: async () => ({ enabled: true }), disable: async () => ({ enabled: false }),
+  } });
+  assert.equal(await context.deviceSettingsStatus(), snapshot);
+  await context.openDeviceSettings();
+  assert.deepEqual(calls, ['status', 'open']);
+  assert.equal(await context.keepAwakeEnable(), true);
+  assert.equal(await context.keepAwakeDisable(), true);
+  await assert.rejects(() => bridgeContext().deviceSettingsStatus(), /Native plugin missing/);
+  await assert.rejects(() => bridgeContext().openDeviceSettings(), /Native plugin missing/);
+  for (const invalid of [{}, { ...snapshot, version: '' }, { ...snapshot, build: '' },
+    { ...snapshot, permissions: { ...snapshot.permissions, speech: 'fake-listening' } }]) {
+    await assert.rejects(() => bridgeContext({ KeepAwakeBridge: { settingsStatus: async () => invalid } }).deviceSettingsStatus(),
+      /Invalid device settings status/);
+  }
+  await assert.rejects(() => bridgeContext({ KeepAwakeBridge: { openSettings: async () => ({ opened: false }) } }).openDeviceSettings(),
+    /did not open/);
+});
+
+test('native settings snapshot only reads authorization and bundle metadata without opening audio or prompting', () => {
+  const swift = read('ios/App/App/KeepAwakeBridgePlugin.swift');
+  const status = swift.slice(swift.indexOf('@objc func settingsStatus'), swift.indexOf('@objc func openSettings'));
+  for (const token of ['CFBundleShortVersionString', 'CFBundleVersion', 'recordPermission',
+    'SFSpeechRecognizer.authorizationStatus()', 'MPMediaLibrary.authorizationStatus()',
+    'getNotificationSettings', 'authorizationStatus(for: HKObjectType.workoutType())',
+    'canEvaluatePolicy', 'areActivitiesEnabled']) assert.ok(status.includes(token), token);
+  assert.doesNotMatch(status, /requestAuthorization|requestPermission|systemMusicPlayer|setActive|audioEngine|evaluatePolicy\(/);
+  assert.match(swift, /UIApplication\.openSettingsURLString/);
+  assert.doesNotMatch(swift, /App-prefs|prefs:/);
+});
+
+function settingsDeviceFixture(platform = true) {
+  const nodes = new Map(), calls = [], toasts = [], saved = [], doc = { visibilityState: 'visible' };
+  const el = (id) => {
+    if (!nodes.has(id)) nodes.set(id, { textContent: '', checked: false, disabled: false, value: '',
+      classList: { remove() {} }, events: {}, addEventListener(type, fn) { this.events[type] = fn; } });
+    return nodes.get(id);
+  };
+  const native = { isNative: () => platform,
+    deviceSettingsStatus: async () => { calls.push('status'); return deviceStatusSnapshot(); },
+    openDeviceSettings: async () => calls.push('open'),
+    musicRequestAuthorization: async () => { calls.push('musicAuthorization'); return { authorization: 'authorized' }; },
+    healthRequestAuthorization: async () => ({ granted: true }),
+    biometricIsAvailable: async () => ({ available: true }), biometricVerify: async () => true,
+    notificationsRequestPermission: async () => ({ granted: true }),
+    voiceRequestPermission: async () => ({ granted: true }),
+  };
+  const context = nodeVM.createContext({ el, native, document: doc, console: { error() {} },
+    i18n: { text: (value) => value }, settings: { restSeconds: 90, voiceAnnouncements: true },
+    db: { saveSettings: (next) => saved.push(JSON.parse(JSON.stringify(next))) },
+    showToast: (message) => toasts.push(message), requestWakeLock: () => calls.push('wake'),
+    musicControls: { refresh: () => calls.push('refreshMusic') },
+    requestVoiceActivation: async () => calls.push('activateVoice'),
+  });
+  nodeVM.runInContext(section('let deviceSettingsRevision =', 'function privacyAPI()'), context);
+  nodeVM.runInContext(section('function renderSettingsTab()', '/* ================= PERSONAL AREA TAB'), context);
+  context.wireSettings();
+  return { context, el, native, nodes, calls, toasts, saved, doc, flush: () => new Promise(setImmediate) };
+}
+
+test('settings shows actual version and independent permission states without requesting permission on render', async () => {
+  const { context, el, calls, flush } = settingsDeviceFixture();
+  context.renderSettingsTab();
+  await flush();
+  assert.deepEqual(calls, ['status']);
+  assert.equal(el('installedAppVersion').textContent, '1.0 (43)');
+  assert.match(el('permissionMusic').textContent, /נדחה/);
+  assert.match(el('permissionHealth').textContent, /מאושר/);
+  assert.match(el('permissionMicrophone').textContent, /מיקרופון: מאושר/);
+  assert.match(el('permissionSpeech').textContent, /זיהוי דיבור: מוגבל/);
+  assert.match(el('permissionNotifications').textContent, /שקטה/);
+  assert.match(el('permissionLiveActivities').textContent, /כבוי/);
+  assert.equal(el('settingKeepScreenAwake').checked, true);
+});
+
+test('settings refresh is race-safe and clears stale authorized labels when verification fails', async () => {
+  const { context, native, el } = settingsDeviceFixture();
+  let finishOld;
+  native.deviceSettingsStatus = () => new Promise((resolve) => { finishOld = resolve; });
+  const old = context.refreshDeviceSettings();
+  native.deviceSettingsStatus = async () => ({ ...deviceStatusSnapshot(), build: '44' });
+  await context.refreshDeviceSettings();
+  finishOld(deviceStatusSnapshot());
+  await old;
+  assert.equal(el('installedAppVersion').textContent, '1.0 (44)');
+  native.deviceSettingsStatus = async () => { throw new Error('plugin missing'); };
+  await context.refreshDeviceSettings();
+  assert.match(el('installedAppVersion').textContent, /לא ניתן/);
+  assert.match(el('permissionHealth').textContent, /לא ניתן/);
+  assert.match(el('devicePermissionsStatus').textContent, /נכשלה/);
+  assert.equal(el('btnRefreshDeviceSettings').disabled, false);
+});
+
+test('Apple Music settings requests authorization only on an explicit tap and never starts playback or listening', async () => {
+  const { el, calls, native, toasts, flush } = settingsDeviceFixture();
+  const button = el('btnEnableMusicSettings');
+  await button.events.click({ currentTarget: button });
+  await flush();
+  assert.deepEqual(calls, ['musicAuthorization', 'refreshMusic', 'status']);
+  assert.equal(button.disabled, false);
+  native.musicRequestAuthorization = async () => { throw new Error('failed'); };
+  await button.events.click({ currentTarget: button });
+  await flush();
+  assert.match(toasts.at(-1), /נכשלה/);
+  assert.equal(button.disabled, false);
+});
+
+test('screen-awake checkbox persists explicit opt-out and restores the prior checkbox on a save failure', () => {
+  const { context, el, calls, saved, toasts } = settingsDeviceFixture(false);
+  const input = el('settingKeepScreenAwake');
+  input.checked = false;
+  input.events.change({ target: input });
+  assert.equal(context.settings.keepScreenAwake, false);
+  assert.equal(saved[0].keepScreenAwake, false);
+  assert.deepEqual(calls, ['wake']);
+  context.db.saveSettings = () => { throw new Error('quota'); };
+  input.checked = true;
+  input.events.change({ target: input });
+  assert.equal(context.settings.keepScreenAwake, false);
+  assert.equal(input.checked, false);
+  assert.match(toasts.at(-1), /לא נשמרה/);
+});
+
+test('browser settings never invents an iPhone version, latest-version result, or native permissions', async () => {
+  const { context, el, calls, flush } = settingsDeviceFixture(false);
+  context.renderSettingsTab();
+  await flush();
+  assert.deepEqual(calls, []);
+  assert.match(el('installedAppVersion').textContent, /תצוגת דפדפן/);
+  assert.doesNotMatch(el('installedAppVersion').textContent, /43|הגרסה האחרונה/);
+});
+
+function screenAwakeFixture(platform = false) {
+  const calls = [], toasts = [], nodes = new Map(), doc = { visibilityState: 'visible' };
+  const el = (id) => {
+    if (!nodes.has(id)) nodes.set(id, { textContent: '' });
+    return nodes.get(id);
+  };
+  const lock = { released: false, addEventListener(type, fn) { this.onRelease = fn; },
+    async release() { calls.push('release'); this.released = true; this.onRelease?.(); } };
+  const navigator = { wakeLock: { request: async () => { calls.push('request'); lock.released = false; return lock; } } };
+  const native = { isNative: () => platform,
+    keepAwakeEnable: async () => { calls.push('enable'); return true; },
+    keepAwakeDisable: async () => { calls.push('disable'); return true; } };
+  const context = nodeVM.createContext({ native, navigator, document: doc, settings: {}, privacyErasing: false,
+    console: { error() {} }, el, i18n: { text: (value) => value }, showToast: (text) => toasts.push(text) });
+  nodeVM.runInContext(section('let wakeLockRef =', "window.addEventListener('autofit-audio-error'"), context);
+  return { context, calls, toasts, native, navigator, doc, el, lock };
+}
+
+test('native screen-awake control honors false on startup and does not re-enable on taps or periodic retries', async () => {
+  const { context, calls } = screenAwakeFixture(true);
+  context.settings.keepScreenAwake = false;
+  await context.requestWakeLock();
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['disable']);
+  context.settings.keepScreenAwake = true;
+  await context.requestWakeLock();
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['disable', 'enable']);
+  context.settings.keepScreenAwake = false;
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['disable', 'enable', 'disable']);
+});
+
+test('a delayed native screen enable cannot win over a later opt-out', async () => {
+  const { context, native, calls } = screenAwakeFixture(true);
+  let release;
+  native.keepAwakeEnable = () => { calls.push('enable'); return new Promise((resolve) => { release = resolve; }); };
+  const pending = context.requestWakeLock();
+  await Promise.resolve();
+  context.settings.keepScreenAwake = false;
+  const disabled = context.requestWakeLock();
+  release(true);
+  await pending;
+  await disabled;
+  assert.deepEqual(calls, ['enable', 'disable']);
+});
+
+test('browser wake lock is deduplicated, released on opt-out/background, and restored on visible return', async () => {
+  const { context, calls, doc } = screenAwakeFixture();
+  await context.requestWakeLock();
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['request']);
+  context.settings.keepScreenAwake = false;
+  await context.requestWakeLock();
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['request', 'release']);
+  context.settings.keepScreenAwake = true;
+  doc.visibilityState = 'hidden';
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['request', 'release']);
+  doc.visibilityState = 'visible';
+  await context.requestWakeLock();
+  assert.deepEqual(calls, ['request', 'release', 'request']);
+});
+
+test('wake-lock failures are visible and retryable without duplicate toasts or touching workout timers', async () => {
+  const { context, native, calls, toasts, el } = screenAwakeFixture(true);
+  native.keepAwakeEnable = async () => { throw new Error('missing bridge'); };
+  assert.equal(await context.requestWakeLock(), false);
+  assert.equal(await context.requestWakeLock(), false);
+  assert.equal(toasts.length, 1);
+  assert.match(el('screenAwakeStatus').textContent, /לא ניתן/);
+  native.keepAwakeEnable = async () => { calls.push('enable'); return true; };
+  await context.requestWakeLock();
+  assert.match(el('screenAwakeStatus').textContent, /פעילה/);
+  assert.deepEqual(calls, ['enable']);
+});
+
+test('unsupported browsers do not report a successful screen wake lock', async () => {
+  const { context, navigator, el } = screenAwakeFixture();
+  delete navigator.wakeLock;
+  assert.equal(await context.requestWakeLock(), false);
+  assert.match(el('screenAwakeStatus').textContent, /אינו תומך/);
+});
+
+test('legacy settings default to screen awake while an explicit stored false survives reload', () => {
+  const data = new Map();
+  const db = loadPhaseOneModule('www/js/db.js', ['getSettings', 'saveSettings'], {
+    localStorage: { getItem: (key) => data.get(key) || null, setItem: (key, value) => data.set(key, value) }, console,
+  });
+  assert.equal(db.getSettings().keepScreenAwake, true);
+  data.set('ft_settings_v1', JSON.stringify({ restSeconds: 75, voiceAnnouncements: false }));
+  assert.equal(db.getSettings().keepScreenAwake, true);
+  db.saveSettings({ ...db.getSettings(), keepScreenAwake: false });
+  assert.equal(db.getSettings().keepScreenAwake, false);
+  assert.equal(db.getSettings().restSeconds, 75);
+  assert.equal(db.getSettings().voiceAnnouncements, false);
 });
 
 test('recognizer receives user exercise names and native timer beeps use the mixed audio bridge', async () => {
@@ -5572,7 +5816,7 @@ function navigationFixture() {
     qsa: (selector) => selector === '.tab-panel' ? panels : selector === '.tab-btn' ? buttons
       : selector.includes('exercise-card') ? [] : links,
     qs: (selector) => buttons.find((button) => selector.includes(`"${button.dataset.tab}"`)),
-    renderDashboard() {}, renderHistoryTab() {}, renderHomeTab() {},
+    renderDashboard() {}, renderHistoryTab() {}, renderHomeTab() {}, renderSettingsTab() {},
     updateVoiceListeningState: () => voice.push(context.currentTab), console,
   });
   vm.runInContext(section('function wireTabs()', '/* ---------------- live clock'), context);

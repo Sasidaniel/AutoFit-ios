@@ -132,16 +132,39 @@ export function onCloudError(callback) {
 }
 
 /* ---------------- Keep screen awake ---------------- */
+export async function deviceSettingsStatus() {
+  const bridge = plugin('KeepAwakeBridge');
+  if (!bridge?.settingsStatus) throw new Error(unavailableReason('KeepAwakeBridge.settingsStatus'));
+  const result = await bridge.settingsStatus();
+  const statuses = ['authorized', 'denied', 'restricted', 'notDetermined', 'unknown',
+    'quiet', 'available', 'unavailable', 'enabled', 'disabled'];
+  if (typeof result?.version !== 'string' || !result.version || typeof result.build !== 'string' || !result.build
+    || !['microphone', 'speech', 'music', 'notifications', 'health', 'biometrics', 'liveActivities']
+      .every((key) => statuses.includes(result.permissions?.[key]))) {
+    throw new Error('Invalid device settings status');
+  }
+  return result;
+}
+
+export async function openDeviceSettings() {
+  const bridge = plugin('KeepAwakeBridge');
+  if (!bridge?.openSettings) throw new Error(unavailableReason('KeepAwakeBridge.openSettings'));
+  const result = await bridge.openSettings();
+  if (result?.opened !== true) throw new Error('System settings did not open');
+}
+
 export async function keepAwakeEnable() {
   const KeepAwakeBridge = plugin('KeepAwakeBridge');
   if (!KeepAwakeBridge) return false;
-  try { await KeepAwakeBridge.enable(); return true; } catch (e) { return false; }
+  const result = await KeepAwakeBridge.enable();
+  return result?.enabled === true;
 }
 
 export async function keepAwakeDisable() {
   const KeepAwakeBridge = plugin('KeepAwakeBridge');
   if (!KeepAwakeBridge) return false;
-  try { await KeepAwakeBridge.disable(); return true; } catch (e) { return false; }
+  const result = await KeepAwakeBridge.disable();
+  return result?.enabled === false;
 }
 
 /* ---------------- Background voice announcements (while app is minimized) ----------------
