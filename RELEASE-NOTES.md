@@ -1,10 +1,14 @@
 # AutoFit release notes
 
-## Unreleased - installed version, permission visibility and screen-awake preference (2026-11-02)
+## 1.0 (44) - approved internal release, awaiting verification (2026-11-02)
 
-Owner requested settings improvements; **no new release approval**.
-TestFlight remains 1.0 (43). All changes are backed up on the existing work branch;
-no main merge, signed release or binary upload is requested.
+Fresh explicit owner approval at 2026-11-02 14:58:21 UTC: **"תשחרר גרסה"**.
+This authorizes one next internal TestFlight release, build **44**, of verified
+settings source `c353aa2521df07ae60fefb585966edf0ac5c53c0`.
+The existing release workflow must pass all regression/native/layout gates before
+signing/upload, and Apple must confirm actual internal availability.
+No main merge, external beta or App Store publication is authorized.
+43 remains the latest verified available build until 44 is confirmed.
 
 - Read the actual installed marketing version/build from `Bundle.main` through the
   existing registered KeepAwakeBridge. Browser previews are explicitly not iPhone
@@ -34,9 +38,9 @@ no main merge, signed release or binary upload is requested.
 - Hebrew/English and feminine action wording; live status labels refresh on
   language changes; web cache v104.
 
-Native permission/version checks require a future installed build; the browser
-does not simulate native permissions. Unsigned native validation may compile this
-source, but must not sign, upload or release a binary.
+Native permission/version checks will be available in the approved installed build;
+the browser does not simulate native permissions. The earlier validation was
+unsigned; the new approval permits the internal build/upload below.
 Local validation: **688/688 JS regressions passed**, all web modules parsed.
 Isolated browser verified checked control, persisted opt-out/reload, no verbose
 copy or routine success message, honest browser version and Hebrew/English refresh.
@@ -46,8 +50,9 @@ source, four native Swift suites, both real Swift counting contracts, app/widget
 Simulator compilation without signing and all 144 widget layouts (157/160 maximum
 Lock Screen height, 129/138 island body). Later edits refine web copy/status
 rendering and language refresh only; the compiled Swift source is unchanged.
-No new signed build or upload was dispatched. Actual permission UI on a physical
-iPhone remains an acceptance check for a separately approved future build.
+No signed build or upload occurred during development/unsigned validation. Actual
+permission UI on a physical iPhone remains an owner acceptance check after 44 is
+confirmed available.
 
 ## 1.0 (43) - verified internal TestFlight release (2026-11-02)
 
