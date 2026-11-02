@@ -2074,6 +2074,14 @@ test('browser settings never invents an iPhone version, latest-version result, o
   assert.doesNotMatch(el('installedAppVersion').textContent, /43|הגרסה האחרונה/);
 });
 
+test('installed app version UI contains only its heading and value, without update explanatory copy', () => {
+  const html = read('www/index.html');
+  const card = html.slice(html.indexOf('<h3 class="card-title">גרסת האפליקציה</h3>')).split('</div>')[0];
+  assert.match(card, /id="installedAppVersion"/);
+  assert.equal((card.match(/<p\b/g) || []).length, 1);
+  assert.doesNotMatch(card, /field-hint|TestFlight|הגרסה האחרונה|לבניית/);
+});
+
 function screenAwakeFixture(platform = false) {
   const calls = [], toasts = [], nodes = new Map(), doc = { visibilityState: 'visible' };
   const el = (id) => {

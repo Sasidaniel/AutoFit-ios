@@ -8,8 +8,9 @@ no main merge, signed release or binary upload is requested.
 
 - Read the actual installed marketing version/build from `Bundle.main` through the
   existing registered KeepAwakeBridge. Browser previews are explicitly not iPhone
-  versions. TestFlight update guidance is provided without pretending there is an
-  automatic latest-build check; no reliable public internal-beta source is configured.
+  versions. Per the owner's refinement, only the heading and installed version
+  value are displayed, with no TestFlight explanatory paragraph. No automatic
+  latest-build check is claimed; no reliable public internal-beta source is configured.
 - Read-only permission snapshot: independent microphone/speech/Music authorization,
   notification state (including quiet/temporary delivery), Health workout write
   permission, biometric availability and Live Activity availability. Status refresh
@@ -31,18 +32,22 @@ no main merge, signed release or binary upload is requested.
   explanatory paragraph or routine success status. Failed/unsupported wake
   controls still surface a message. Existing explicit opt-outs are preserved.
 - Hebrew/English and feminine action wording; live status labels refresh on
-  language changes; web cache v103.
+  language changes; web cache v104.
 
 Native permission/version checks require a future installed build; the browser
 does not simulate native permissions. Unsigned native validation may compile this
 source, but must not sign, upload or release a binary.
-Local validation: **687/687 JS regressions passed**, all web modules parsed.
+Local validation: **688/688 JS regressions passed**, all web modules parsed.
 Isolated browser verified checked control, persisted opt-out/reload, no verbose
 copy or routine success message, honest browser version and Hebrew/English refresh.
 [Unsigned native validation 41463599178](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41463599178)
-is still running on `5b871497ad5071bf4004b04e56baca22b454c9f0`.
-Later edits refine web copy/status rendering and language refresh only; the Swift
-source under validation is unchanged. No new signed build or upload was dispatched.
+passed on `5b871497ad5071bf4004b04e56baca22b454c9f0`: 685 JS regressions at that
+source, four native Swift suites, both real Swift counting contracts, app/widget
+Simulator compilation without signing and all 144 widget layouts (157/160 maximum
+Lock Screen height, 129/138 island body). Later edits refine web copy/status
+rendering and language refresh only; the compiled Swift source is unchanged.
+No new signed build or upload was dispatched. Actual permission UI on a physical
+iPhone remains an acceptance check for a separately approved future build.
 
 ## 1.0 (43) - verified internal TestFlight release (2026-11-02)
 

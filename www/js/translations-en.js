@@ -3,7 +3,6 @@ import { LIBRARY_TRANSLATIONS } from './exercise-library.js';
 export const EN = {
   'גרסת האפליקציה': 'App version',
   'בדיקת גרסה...': 'Checking version...',
-  'באייפון מוצגים הגרסה ומספר הבנייה המותקנים. לבדיקת עדכון, פתח את TestFlight ובדוק אם מופיע כפתור עדכון. AutoFit אינה בודקת כרגע אם זו הגרסה האחרונה.': 'On iPhone, the installed version and build number are shown. To check for an update, open TestFlight and look for an Update button. AutoFit does not currently check whether this is the latest version.',
   'תצוגת דפדפן — אינה גרסת האפליקציה המותקנת באייפון.': 'Browser preview — not the app version installed on your iPhone.',
   'לא ניתן לקרוא את הגרסה המותקנת.': 'The installed version could not be read.',
   'השאר את המסך דולק כשהאפליקציה פתוחה': 'Keep the screen awake while the app is open',
