@@ -7,7 +7,6 @@ export const EN = {
   'תצוגת דפדפן — אינה גרסת האפליקציה המותקנת באייפון.': 'Browser preview — not the app version installed on your iPhone.',
   'לא ניתן לקרוא את הגרסה המותקנת.': 'The installed version could not be read.',
   'השאר את המסך דולק כשהאפליקציה פתוחה': 'Keep the screen awake while the app is open',
-  'מופעל כברירת מחדל. חל רק כאשר AutoFit בחזית, גם מחוץ לאימון; אינו מונע נעילה ידנית. כיבוי חוסך סוללה ואינו מפסיק טיימרים. בדפדפן נדרשת תמיכה בשמירת מסך דולק.': 'On by default. Applies only while AutoFit is in the foreground, including outside workouts; it does not prevent manual locking. Turning it off saves battery without stopping timers. Browser support for screen wake lock is required.',
   'שמירת המסך דולק אינה פעילה כרגע.': 'Screen wake lock is not currently active.',
   'הדפדפן אינו תומך בשמירת המסך דולק.': 'This browser does not support screen wake lock.',
   'שמירת המסך דולק פעילה כל עוד AutoFit פתוחה בחזית.': 'Screen wake lock is active while AutoFit is in the foreground.',

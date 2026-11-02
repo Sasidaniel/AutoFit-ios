@@ -27,11 +27,22 @@ no main merge, signed release or binary upload is requested.
   Browser locks are deduplicated; unavailable/failed controls show honest status.
   Only foreground behavior is affected, not manual device locking or workout
   elapsed-time/rest/count logic. Existing audio-session policy is unchanged.
-- Hebrew/English and feminine action wording; web cache v102.
+- User-directed refinement: visibly checked checkbox by default, no verbose
+  explanatory paragraph or routine success status. Failed/unsupported wake
+  controls still surface a message. Existing explicit opt-outs are preserved.
+- Hebrew/English and feminine action wording; live status labels refresh on
+  language changes; web cache v103.
 
 Native permission/version checks require a future installed build; the browser
 does not simulate native permissions. Unsigned native validation may compile this
 source, but must not sign, upload or release a binary.
+Local validation: **687/687 JS regressions passed**, all web modules parsed.
+Isolated browser verified checked control, persisted opt-out/reload, no verbose
+copy or routine success message, honest browser version and Hebrew/English refresh.
+[Unsigned native validation 41463599178](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41463599178)
+is still running on `5b871497ad5071bf4004b04e56baca22b454c9f0`.
+Later edits refine web copy/status rendering and language refresh only; the Swift
+source under validation is unchanged. No new signed build or upload was dispatched.
 
 ## 1.0 (43) - verified internal TestFlight release (2026-11-02)
 

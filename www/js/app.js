@@ -206,9 +206,12 @@ let wakeLockRef = null;
 let wakeLockOperation = Promise.resolve();
 let nativeWakeLockEnabled = null;
 let wakeLockError = '';
-function updateScreenAwakeStatus(message) {
+function updateScreenAwakeStatus(message, problem = false) {
   const status = el('screenAwakeStatus');
-  if (status) status.textContent = i18n.text(message);
+  if (status) {
+    status.textContent = i18n.text(message);
+    status.hidden = !problem;
+  }
 }
 function requestWakeLock() {
   // Serialize enable/disable so a slow permission response cannot override a later opt-out.
@@ -227,7 +230,7 @@ function requestWakeLock() {
         lock.addEventListener('release', () => {
           if (wakeLockRef !== lock) return;
           wakeLockRef = null;
-          updateScreenAwakeStatus('המערכת שחררה את שמירת המסך דולק. אפשר לנסות שוב בנגיעה במסך.');
+          updateScreenAwakeStatus('המערכת שחררה את שמירת המסך דולק. אפשר לנסות שוב בנגיעה במסך.', true);
         });
       }
     } else if (wakeLockRef) {
@@ -238,14 +241,15 @@ function requestWakeLock() {
     wakeLockError = '';
     updateScreenAwakeStatus(!enabled ? 'שמירת המסך דולק אינה פעילה כרגע.'
       : !native.isNative() && !('wakeLock' in navigator) ? 'הדפדפן אינו תומך בשמירת המסך דולק.'
-        : 'שמירת המסך דולק פעילה כל עוד AutoFit פתוחה בחזית.');
+        : 'שמירת המסך דולק פעילה כל עוד AutoFit פתוחה בחזית.',
+      enabled && !native.isNative() && !('wakeLock' in navigator));
     return enabled && (native.isNative() || !!wakeLockRef);
   }).catch((error) => {
     console.error('Screen wake control failed', error);
     const message = 'לא ניתן לאשר את שמירת המסך דולק. הטיימרים ונתוני האימון ממשיכים כרגיל.';
     if (!wakeLockError) showToast(message);
     wakeLockError = message;
-    updateScreenAwakeStatus(message);
+    updateScreenAwakeStatus(message, true);
     return false;
   });
   return wakeLockOperation;
@@ -5204,6 +5208,10 @@ function wireLanguageControls() {
       db.saveSettings(updated);
       settings = updated;
       i18n.setLanguage(settings.language);
+      if (currentTab === 'settings') {
+        refreshDeviceSettings();
+        requestWakeLock();
+      }
       privacyUI?.refresh();
       commerceUI?.render();
       if (typeof musicControls !== 'undefined') musicControls?.render();

@@ -2030,6 +2030,11 @@ test('settings refresh is race-safe and clears stale authorized labels when veri
   assert.equal(el('btnRefreshDeviceSettings').disabled, false);
 });
 
+test('language switches refresh non-translated device version, permission and screen-state labels in settings', () => {
+  const handler = section('function wireLanguageControls()', 'let deviceSettingsRevision =');
+  assert.match(handler, /currentTab === 'settings'[\s\S]*refreshDeviceSettings\(\)[\s\S]*requestWakeLock\(\)/);
+});
+
 test('Apple Music settings requests authorization only on an explicit tap and never starts playback or listening', async () => {
   const { el, calls, native, toasts, flush } = settingsDeviceFixture();
   const button = el('btnEnableMusicSettings');
@@ -2088,7 +2093,7 @@ function screenAwakeFixture(platform = false) {
 }
 
 test('native screen-awake control honors false on startup and does not re-enable on taps or periodic retries', async () => {
-  const { context, calls } = screenAwakeFixture(true);
+  const { context, calls, el } = screenAwakeFixture(true);
   context.settings.keepScreenAwake = false;
   await context.requestWakeLock();
   await context.requestWakeLock();
@@ -2097,6 +2102,7 @@ test('native screen-awake control honors false on startup and does not re-enable
   await context.requestWakeLock();
   await context.requestWakeLock();
   assert.deepEqual(calls, ['disable', 'enable']);
+  assert.equal(el('screenAwakeStatus').hidden, true);
   context.settings.keepScreenAwake = false;
   await context.requestWakeLock();
   assert.deepEqual(calls, ['disable', 'enable', 'disable']);
@@ -2141,9 +2147,11 @@ test('wake-lock failures are visible and retryable without duplicate toasts or t
   assert.equal(await context.requestWakeLock(), false);
   assert.equal(toasts.length, 1);
   assert.match(el('screenAwakeStatus').textContent, /לא ניתן/);
+  assert.equal(el('screenAwakeStatus').hidden, false);
   native.keepAwakeEnable = async () => { calls.push('enable'); return true; };
   await context.requestWakeLock();
   assert.match(el('screenAwakeStatus').textContent, /פעילה/);
+  assert.equal(el('screenAwakeStatus').hidden, true);
   assert.deepEqual(calls, ['enable']);
 });
 
@@ -2152,6 +2160,14 @@ test('unsupported browsers do not report a successful screen wake lock', async (
   delete navigator.wakeLock;
   assert.equal(await context.requestWakeLock(), false);
   assert.match(el('screenAwakeStatus').textContent, /אינו תומך/);
+  assert.equal(el('screenAwakeStatus').hidden, false);
+});
+
+test('screen-awake UI is checked by default without verbose success or explanatory copy', () => {
+  const html = read('www/index.html');
+  assert.match(html, /id="settingKeepScreenAwake" checked/);
+  assert.match(html, /id="screenAwakeStatus"[^>]* hidden/);
+  assert.doesNotMatch(html, /מופעל כברירת מחדל\. חל רק כאשר AutoFit בחזית/);
 });
 
 test('legacy settings default to screen awake while an explicit stored false survives reload', () => {
