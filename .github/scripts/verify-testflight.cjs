@@ -18,15 +18,20 @@ async function api(path, method = 'GET', body) {
   });
   if (!response.ok) {
     let message = `Apple verification failed: HTTP ${response.status}`;
+    let errors = [];
     try {
       const body = await response.json();
-      const details = Array.isArray(body?.errors) ? body.errors.map((error) =>
-        [error.code, error.title, error.detail].filter((part) => typeof part === 'string').join(': ')).join('; ').slice(0, 2000) : '';
+      errors = Array.isArray(body?.errors) ? body.errors : [];
+      const details = errors.map((error) =>
+        [error.code, error.title, error.detail].filter((part) => typeof part === 'string').join(': ')).join('; ').slice(0, 2000);
       if (details) message += `: ${details}`;
     } catch (error) {
       message += ` (could not decode Apple error response: ${error.message})`;
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.appleErrors = errors;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -43,6 +48,7 @@ async function api(path, method = 'GET', body) {
   if (apps.data?.length !== 1) throw new Error('Cannot uniquely identify the AutoFit app');
   const appID = apps.data[0].id;
   const assignedGroups = new Set();
+  const assignmentUnavailableGroups = new Set();
   for (let attempt = 0; attempt < 80; attempt++) {
     const result = await api(`/v1/builds?filter[app]=${encodeURIComponent(appID)}&filter[version]=${encodeURIComponent(buildNumber)}&include=buildBetaDetail&sort=-uploadedDate&limit=5`);
     const build = result.data?.find((item) => item.attributes.version === buildNumber);
@@ -72,12 +78,22 @@ async function api(path, method = 'GET', body) {
         const internalGroups = groups.data?.filter((group) => group.attributes.isInternalGroup === true);
         if (!internalGroups?.length) throw new Error('No existing internal tester group is configured; no testers were created');
         for (const group of internalGroups) {
-          if (assignedGroups.has(group.id)) continue;
-          await api(`/v1/betaGroups/${encodeURIComponent(group.id)}/relationships/builds`, 'POST', {
-            data: [{ type: 'builds', id: build.id }],
-          });
-          assignedGroups.add(group.id);
-          console.log(`Enabled build ${buildNumber} for an existing internal tester group`);
+          if (assignedGroups.has(group.id) || assignmentUnavailableGroups.has(group.id)) continue;
+          try {
+            await api(`/v1/betaGroups/${encodeURIComponent(group.id)}/relationships/builds`, 'POST', {
+              data: [{ type: 'builds', id: build.id }],
+            });
+            assignedGroups.add(group.id);
+            console.log(`Enabled build ${buildNumber} for an existing internal tester group`);
+          } catch (error) {
+            const assignmentUnavailable = error.status === 422 && error.appleErrors?.some((item) =>
+              item.code === 'ENTITY_UNPROCESSABLE'
+              && item.title === 'Builds cannot be assigned to this internal group.'
+              && item.detail === 'Cannot add internal group to a build.');
+            if (!assignmentUnavailable) throw error;
+            assignmentUnavailableGroups.add(group.id);
+            console.log(`${error.message}. Waiting for Apple to confirm actual internal availability; this group was not assigned by the API.`);
+          }
         }
       }
     }

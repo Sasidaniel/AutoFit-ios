@@ -1052,6 +1052,44 @@ test('internal delivery refuses an inconsistent non-exempt encryption declaratio
   assert.ok(result.messages.some((message) => message.includes('encryption declaration differs')));
 });
 
+const internalAssignmentUnavailable = { status: 422, body: { errors: [{
+  code: 'ENTITY_UNPROCESSABLE', title: 'Builds cannot be assigned to this internal group.',
+  detail: 'Cannot add internal group to a build.',
+}] } };
+const internalGroupResponse = { body: { data: [{ id: 'internal-group', attributes: { isInternalGroup: true } }] } };
+
+test('internal delivery waits for confirmed Apple availability when API assignment is prohibited and does not repeat the write', async () => {
+  const result = await runAppleReleaseCheck([appleAppResponse,
+    appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'), internalGroupResponse, internalAssignmentUnavailable,
+    appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'), internalGroupResponse, appleBuildResponse('VALID')]);
+  assert.equal(result.process.exitCode, undefined);
+  assert.equal(result.requests.filter(({ options }) => options.method === 'POST').length, 1);
+  assert.equal(result.summaries.length, 1);
+  assert.match(result.summaries[0], /VALID \/ IN_BETA_TESTING/);
+  assert.ok(result.messages.some((message) => message.includes('this group was not assigned by the API')));
+  assert.equal(result.messages.some((message) => message.includes('Enabled build')), false);
+});
+
+test('internal delivery never treats a prohibited group assignment as success when Apple does not confirm beta testing', async () => {
+  const responses = [appleAppResponse, appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'),
+    internalGroupResponse, internalAssignmentUnavailable];
+  for (let i = 1; i < 80; i++) responses.push(appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'), internalGroupResponse);
+  const result = await runAppleReleaseCheck(responses);
+  assert.equal(result.process.exitCode, 1);
+  assert.equal(result.summaries.length, 0);
+  assert.equal(result.requests.filter(({ options }) => options.method === 'POST').length, 1);
+  assert.ok(result.messages.some((message) => message.includes('internal availability is unconfirmed')));
+});
+
+test('internal delivery still fails on unrelated API errors instead of silently waiting', async () => {
+  const result = await runAppleReleaseCheck([appleAppResponse,
+    appleBuildResponse('VALID', 'READY_FOR_BETA_TESTING'), internalGroupResponse,
+    { status: 422, body: { errors: [{ code: 'ENTITY_UNPROCESSABLE', title: 'Invalid build', detail: 'A different error.' }] } }]);
+  assert.equal(result.process.exitCode, 1);
+  assert.equal(result.summaries.length, 0);
+  assert.ok(result.messages.some((message) => message.includes('Invalid build')));
+});
+
 test('expanded catalog is inactive, uniquely identified, bilingual and illustrated offline', () => {
   assert.equal(library.LIBRARY_EXERCISES.length, 103);
   assert.equal(new Set(library.LIBRARY_EXERCISES.map((exercise) => exercise.id)).size, 103);

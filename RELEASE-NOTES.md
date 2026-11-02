@@ -10,6 +10,16 @@ signing/upload, and Apple must confirm actual internal availability.
 No main merge, external beta or App Store publication is authorized.
 43 remains the latest verified available build until 44 is confirmed.
 
+[Release run 41467136721](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41467136721)
+on `888944ecfabd1c22e9261614635cf2a5ddd1c0c3` passed regression/native/layout gates,
+signing/archive/export and uploaded 44 once. Apple reported VALID / READY_FOR_BETA_TESTING
+but rejected group assignment: HTTP 422 `ENTITY_UNPROCESSABLE`, "Builds cannot be
+assigned to this internal group. Cannot add internal group to a build."
+Verification-only repair logs this exact prohibition, avoids repeating that write
+and waits within the existing bounded deadline for actual `IN_BETA_TESTING`.
+Other API errors still fail; a prohibited assignment alone is never success.
+Nine focused verifier tests passed. No app code change, rebuild or reupload.
+
 - Read the actual installed marketing version/build from `Bundle.main` through the
   existing registered KeepAwakeBridge. Browser previews are explicitly not iPhone
   versions. Per the owner's refinement, only the heading and installed version
