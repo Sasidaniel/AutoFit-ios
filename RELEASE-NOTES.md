@@ -1,24 +1,32 @@
 # AutoFit release notes
 
-## 1.0 (43) - approved internal release, awaiting verification (2026-11-02)
+## 1.0 (43) - verified internal TestFlight release (2026-11-02)
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-02 10:10:14 UTC.**
+Uploaded once at 10:05:47 UTC.
+Uploaded source: `b0e4a5e48a172fbc7d51e2c148583b679dc133ac`.
+Apple build ID: `cd6c11e8-66b7-4c5a-9c82-53c1c8a70520`.
 
 Fresh explicit owner approval at 2026-11-02 09:48:36 UTC: **"תוציא גרסה"**.
 This supersedes the earlier local-only restriction for these fixes and authorizes
 one next internal TestFlight release, build **43**, of verified production source
 `6c9317675b8daaeabb2e53370575151cba82ed0f`.
-No main merge, external beta or App Store publication is authorized.
-The existing signed pipeline must pass every regression, native and layout gate
-before upload, and Apple must confirm availability before release is called done.
-42 remains the verified available build until that confirmation.
+No main merge, external beta or App Store publication occurred.
+This approval is consumed; another version requires fresh explicit approval.
 
 [Release run 41423820598](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41423820598)
 on `b0e4a5e48a172fbc7d51e2c148583b679dc133ac` passed all 671 JS regressions,
 four Swift suites, both native count streams, all widget layouts, signing,
 archive/export and upload. Apple then reported **VALID / READY_FOR_BETA_TESTING**,
-but enabling internal delivery returned HTTP 422. The binary was uploaded once;
-do not rebuild or reupload it. Verification-only tooling now preserves Apple's
-structured rejection details so this delivery problem can be diagnosed rather
-than blindly rerunning the release.
+but enabling internal delivery returned HTTP 422. The binary was uploaded once.
+The verifier was updated to retain Apple's structured rejection details and six
+focused delivery tests passed before a verification-only check.
+[Verification-only run 41426577709](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41426577709)
+then found the existing binary already **VALID / IN_BETA_TESTING**. It did not
+rebuild, reupload or submit externally (`READY_FOR_BETA_SUBMISSION`).
+The original response did not preserve the 422 detail, so its exact cause is not
+asserted; internal availability is independently confirmed. One release dispatch,
+one verification-only dispatch, one binary upload.
 
 - Fully completed exercise cards collapse automatically through the shared
   progress path (manual checks, voice completion, hold/cardio timers and widget
@@ -45,16 +53,18 @@ than blindly rerunning the release.
   partial workouts) use it without percentages. Disabled voice announcements and
   cancelling an empty workout remain silent.
 - Added English and feminine Hebrew pause wording. Web cache advances to v101;
-  no app version was started and no native audio-session policy was changed.
+  no native audio-session policy was changed.
 
 Validation: **671/671 JS regressions passed**, including automatic/manual finish
 speech and silent empty/voice-disabled finish, all web modules parsed, and patch
 checks passed. An isolated browser origin verified real completion collapse,
 explicit reopen, exact tab-return scroll, pause speech, inert/event locking,
 unchanged persisted data after blocked controls, locked reload and explicit resume.
-No native code changed in these fixes. The approved release will still run all
-native gates and compile the app/widget; physical iPhone return/audio acceptance
-remains pending owner testing after availability is confirmed.
+No native code changed in these fixes. All native gates and app/widget compilation
+passed in the release. Downloaded evidence independently confirms all 144 widget
+measurements, maximum Lock Screen 157/160 and island body 129/138.
+The final branch, including the delivery diagnostic test, passed **672/672 JS
+regressions**. Physical iPhone return/audio acceptance remains pending owner testing.
 
 ## 1.0 (42) - verified internal TestFlight release (2026-11-01)
 
