@@ -25,10 +25,16 @@ backup only, with no release dispatch, build upload or main merge.
   including native scheduled background announcements (which formerly captured a
   stale percentage before the activity ended). Visual percentages and ordinary
   intermediate strength-exercise progress announcements remain unchanged.
-- Added English and feminine Hebrew pause wording. Web cache advances to v100;
+- Clarified the shared successful workout finish announcement: "האימון הסתיים.
+  כל הכבוד על האימון וההתקדמות!" ("Workout finished. Great work on your workout
+  and progress!"). Both automatic completion and confirmed manual finish (including
+  partial workouts) use it without percentages. Disabled voice announcements and
+  cancelling an empty workout remain silent.
+- Added English and feminine Hebrew pause wording. Web cache advances to v101;
   no app version was started and no native audio-session policy was changed.
 
-Validation: **670/670 JS regressions passed**, all web modules parsed, and patch
+Validation: **671/671 JS regressions passed**, including automatic/manual finish
+speech and silent empty/voice-disabled finish, all web modules parsed, and patch
 checks passed. An isolated browser origin verified real completion collapse,
 explicit reopen, exact tab-return scroll, pause speech, inert/event locking,
 unchanged persisted data after blocked controls, locked reload and explicit resume.

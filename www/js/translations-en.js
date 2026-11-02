@@ -1004,6 +1004,7 @@ export const EN = {
   'החימום הסתיים': 'Warmup complete', 'השחרור הסתיים': 'Cooldown complete',
   'התרגיל {0} הסתיים': '{0} complete', '{0}. {1} אחוז מהאימון הושלמו': '{0}. {1} percent of your workout complete',
   'כל הכבוד על האימון': 'Great work on your workout',
+  'האימון הסתיים. כל הכבוד על האימון וההתקדמות!': 'Workout finished. Great work on your workout and progress!',
   'לסיים ולשמור את האימון?': 'Finish and save this workout?',
   'לבטל את האימון הנוכחי ולאפס את כל הנתונים שמולאו? פעולה זו לא ניתנת לביטול.': 'Cancel this workout and clear its data? This cannot be undone.',
   'האימון בוטל ואופס 🔄': 'Workout cancelled and reset', 'האימון נשמר בהיסטוריה ✅': 'Workout saved to history',

@@ -1170,7 +1170,7 @@ function finishWorkout() {
     if (native.isNative()) { native.bgCancelAnnouncements(); native.bgStopKeepAlive(); }
     if (record) {
       showToast('האימון נשמר בהיסטוריה ✅');
-      if (settings.voiceAnnouncements) speak(completedMuscleCue + i18n.text('כל הכבוד על האימון'));
+      if (settings.voiceAnnouncements) speak(completedMuscleCue + i18n.text('האימון הסתיים. כל הכבוד על האימון וההתקדמות!'));
       showCelebration(record);
       if (native.isNative()) syncWorkoutToHealth([record], { requestAuthorization: false });
     } else {

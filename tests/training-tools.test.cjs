@@ -205,6 +205,8 @@ test('the actual completion controller combines the last muscle cue with workout
   context.finishWorkout();
   assert.match(spoken.at(-1), /תרגילי הקבוצה הושלמו: גב/);
   assert.match(spoken.at(-1), /כל הכבוד על האימון/);
+  assert.ok(spoken.at(-1).endsWith('האימון הסתיים. כל הכבוד על האימון וההתקדמות!'));
+  assert.doesNotMatch(spoken.at(-1), /אחוז|percent|%/);
   assert.equal(spoken.filter((text) => text.includes('תרגילי הקבוצה')).length, 1);
   assert.equal(context.restTimer.isRunning(), false);
 });
@@ -1109,7 +1111,8 @@ function autoCompletionController(savedSession) {
 }
 
 test('100 percent waits for cardio and saves the fully completed workout once without confirmation or final rest', () => {
-  const { context, queue, records, summaries, flush, el } = autoCompletionController();
+  const { context, calls, queue, records, summaries, flush, el } = autoCompletionController();
+  context.settings.voiceAnnouncements = true;
   const before = plain(context.activeSession);
   for (const entry of context.activeSession.entries) {
     if (entry.type !== 'cardio') for (const set of entry.sets) set.completed = true;
@@ -1140,6 +1143,35 @@ test('100 percent waits for cardio and saves the fully completed workout once wi
   assert.equal(records[0][0].entries[0].sets[1].notes, 'Last voice report before deferred finish');
   assert.equal(summaries.length, 1);
   assert.equal(context.activeSession.id, 'next');
+  const spoken = calls.filter((call) => Array.isArray(call) && call[0] === 'speak').map((call) => call[1]);
+  assert.equal(spoken.length, 1);
+  assert.ok(spoken[0].endsWith('האימון הסתיים. כל הכבוד על האימון וההתקדמות!'));
+  assert.doesNotMatch(spoken[0], /אחוז|percent|%/);
+});
+
+test('manual partial workout finish explicitly announces completion without progress, respecting the voice setting', () => {
+  for (const enabled of [true, false]) {
+    const { context, calls } = pauseController();
+    context.settings.voiceAnnouncements = enabled;
+    assert.ok(context.activeSession.entries.some((entry) => !context.isEntryDone(entry)));
+    context.finishWorkout();
+    assert.equal(context.workouts.length, 1);
+    const spoken = calls.filter((call) => Array.isArray(call) && call[0] === 'speak').map((call) => call[1]);
+    assert.equal(spoken.length, enabled ? 1 : 0);
+    if (enabled) {
+      assert.ok(spoken[0].endsWith('האימון הסתיים. כל הכבוד על האימון וההתקדמות!'));
+      assert.doesNotMatch(spoken[0], /אחוז|percent|%/);
+    }
+  }
+  const { context, calls } = pauseController();
+  context.settings.voiceAnnouncements = true;
+  for (const entry of context.activeSession.entries) {
+    if (entry.type === 'cardio') entry.completed = false;
+    else for (const set of entry.sets) set.completed = false;
+  }
+  context.finishWorkout();
+  assert.equal(context.workouts.length, 0);
+  assert.equal(calls.some((call) => Array.isArray(call) && call[0] === 'speak'), false);
 });
 
 test('rounded progress never reaches 100 while a set is unfinished, and empty/unstarted drafts cannot auto-save', () => {
