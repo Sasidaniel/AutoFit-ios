@@ -1,10 +1,15 @@
 # AutoFit release notes
 
-## Unreleased - workout completion, return position and pause safety (2026-11-02)
+## 1.0 (43) - approved internal release, awaiting verification (2026-11-02)
 
-Owner requested all four fixes and explicitly said **not to release yet**.
-42 remains the available TestFlight binary; this is local development and branch
-backup only, with no release dispatch, build upload or main merge.
+Fresh explicit owner approval at 2026-11-02 09:48:36 UTC: **"תוציא גרסה"**.
+This supersedes the earlier local-only restriction for these fixes and authorizes
+one next internal TestFlight release, build **43**, of verified production source
+`6c9317675b8daaeabb2e53370575151cba82ed0f`.
+No main merge, external beta or App Store publication is authorized.
+The existing signed pipeline must pass every regression, native and layout gate
+before upload, and Apple must confirm availability before release is called done.
+42 remains the verified available build until that confirmation.
 
 - Fully completed exercise cards collapse automatically through the shared
   progress path (manual checks, voice completion, hold/cardio timers and widget
@@ -38,8 +43,9 @@ speech and silent empty/voice-disabled finish, all web modules parsed, and patch
 checks passed. An isolated browser origin verified real completion collapse,
 explicit reopen, exact tab-return scroll, pause speech, inert/event locking,
 unchanged persisted data after blocked controls, locked reload and explicit resume.
-No native build is needed for these web-only changes; physical iPhone return/audio
-acceptance remains pending a separately approved future release.
+No native code changed in these fixes. The approved release will still run all
+native gates and compile the app/widget; physical iPhone return/audio acceptance
+remains pending owner testing after availability is confirmed.
 
 ## 1.0 (42) - verified internal TestFlight release (2026-11-01)
 
