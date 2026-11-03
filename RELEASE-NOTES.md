@@ -1,14 +1,18 @@
 # AutoFit release notes
 
-## 1.0 (44) - approved internal release, awaiting verification (2026-11-02)
+## 1.0 (44) - verified internal TestFlight release (2026-11-02)
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-02 15:20:02 UTC.**
+Uploaded once at 15:14:39 UTC.
+Uploaded source: `888944ecfabd1c22e9261614635cf2a5ddd1c0c3`.
+Apple build ID: `da2da549-2c5a-4f71-9b76-b7dee4e44d60`.
 
 Fresh explicit owner approval at 2026-11-02 14:58:21 UTC: **"תשחרר גרסה"**.
-This authorizes one next internal TestFlight release, build **44**, of verified
+This authorized one internal TestFlight release, build **44**, of verified
 settings source `c353aa2521df07ae60fefb585966edf0ac5c53c0`.
-The existing release workflow must pass all regression/native/layout gates before
-signing/upload, and Apple must confirm actual internal availability.
-No main merge, external beta or App Store publication is authorized.
-43 remains the latest verified available build until 44 is confirmed.
+All regression/native/layout gates passed before signing/upload.
+No main merge, external beta or App Store publication occurred.
+This approval is consumed; another version requires fresh explicit approval.
 
 [Release run 41467136721](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41467136721)
 on `888944ecfabd1c22e9261614635cf2a5ddd1c0c3` passed regression/native/layout gates,
@@ -19,6 +23,15 @@ Verification-only repair logs this exact prohibition, avoids repeating that writ
 and waits within the existing bounded deadline for actual `IN_BETA_TESTING`.
 Other API errors still fail; a prohibited assignment alone is never success.
 Nine focused verifier tests passed. No app code change, rebuild or reupload.
+[Verification-only run 41470521608](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41470521608)
+on `aa41c015651c0597bce6bd831e52d62550a56689` confirmed the existing binary already
+**VALID / IN_BETA_TESTING**. External state remained `READY_FOR_BETA_SUBMISSION`;
+no external submission occurred. One release dispatch, one verification-only
+dispatch, one binary upload.
+The uploaded source passed **688 JS regressions**, four Swift suites, both native
+count streams, and all 144 widget layouts. Downloaded measurements were independently
+verified: maximum Lock Screen **157/160**, island body **129/138**.
+The final branch including the verifier repair passed **691/691 JS regressions**.
 
 - Read the actual installed marketing version/build from `Bundle.main` through the
   existing registered KeepAwakeBridge. Browser previews are explicitly not iPhone
@@ -48,7 +61,7 @@ Nine focused verifier tests passed. No app code change, rebuild or reupload.
 - Hebrew/English and feminine action wording; live status labels refresh on
   language changes; web cache v104.
 
-Native permission/version checks will be available in the approved installed build;
+Native permission/version checks are available in the approved installed build;
 the browser does not simulate native permissions. The earlier validation was
 unsigned; the new approval permits the internal build/upload below.
 Local validation: **688/688 JS regressions passed**, all web modules parsed.
@@ -61,8 +74,7 @@ Simulator compilation without signing and all 144 widget layouts (157/160 maximu
 Lock Screen height, 129/138 island body). Later edits refine web copy/status
 rendering and language refresh only; the compiled Swift source is unchanged.
 No signed build or upload occurred during development/unsigned validation. Actual
-permission UI on a physical iPhone remains an owner acceptance check after 44 is
-confirmed available.
+permission UI on a physical iPhone remains an owner acceptance check.
 
 ## 1.0 (43) - verified internal TestFlight release (2026-11-02)
 
