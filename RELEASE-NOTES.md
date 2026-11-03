@@ -1,11 +1,22 @@
 # AutoFit release notes
 
-## Unreleased - workout flow and speech recovery (2026-11-03)
+## 1.0 (45) - verified internal TestFlight release (2026-11-03)
 
-Candidate 45 follows the owner's ten workout issues and subsequent review.
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-03 09:28:56 UTC.**
+Uploaded once at 09:25:37 UTC.
+Uploaded source: `b5449beacba593c2b855d02a95b6e96e8748dc26`.
+Apple build ID: `cb3e9895-53a6-4304-95b2-4e243d234309`.
+
+Build 45 follows the owner's ten workout issues and subsequent review.
 Explicit approval for one internal TestFlight release was received on
-2026-11-03 at 08:43:43 UTC, including Git and Markdown updates. Build 44 remains
-the latest delivered binary until native gates and Apple availability are verified.
+2026-11-03 at 08:43:43 UTC, including Git and Markdown updates:
+"תריץ את כל הטסטים הנצרכים ותשחרר לי גרסה לטסט פלייט. כמובן שתעדכן הכל בגיט ובקבצי הMD."
+[Unsigned native validation 41607551305](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41607551305)
+and [release 41609063607](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/41609063607)
+both passed on that exact source. One release dispatch and one binary upload.
+External state remains READY_FOR_BETA_SUBMISSION; no external beta, App Store
+submission or main merge occurred. Source and receipt are backed up on the work
+branch. This approval is consumed; another release requires fresh approval.
 
 - Keep a just-completed strength exercise open for difficulty feedback on the
   set that actually completed it. A rating closes it immediately; without a rating,
@@ -66,9 +77,15 @@ while scrolling and paused.
 The follow-up verified immediate collapse after rating and five-second collapse
 without a rating or skip button. Rerenders do not restart the timer; completion
 undo cancels it, and stale callbacks cannot save a different workout.
-Added Swift timeout/pronunciation cases and JS native-wiring regressions.
-**Swift/iOS compilation and physical audio playback have not been run for these
-changes on this Windows host** and remain required before release. Browser origin:
+All four Swift suites passed on macOS with Xcode 26.3, including the added
+timeout/pronunciation cases. Both real Swift-to-JavaScript transcript contracts,
+unsigned app/widget Simulator compilation and all **144 real SwiftUI layouts**
+passed. Maximum Lock Screen height **157/160**, island body **129/138**;
+downloaded native measurements are retained. The release workflow repeated
+the regression/native/layout gates before signing/archive/export/upload.
+**Physical iPhone microphone, background speech and music acceptance remain
+pending**; browser/CI checks do not prove the original device incident cannot recur.
+Browser origin:
 `http://workout-flow.localhost:8963/?previewSkip=1&tab=workout`.
 
 ## 1.0 (44) - verified internal TestFlight release (2026-11-02)
