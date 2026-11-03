@@ -23,7 +23,7 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
   ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
-    'nextAvailableWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+    'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'moveWorkoutExercise', 'setEquipmentBusy', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
 
 function musicControlsFixture({ platform = true, authorization = 'authorized', state = 'paused' } = {}) {
   const calls = [], toasts = [];
@@ -742,7 +742,20 @@ test('workout card toggles hide rather than replace controls and retain explicit
     head.querySelector = () => name;
     return { card, head, input };
   };
+  let now = 0, timerId = 0;
+  const timers = new Map();
+  const advance = (ms) => {
+    now += ms;
+    for (const [id, timer] of [...timers]) {
+      if (timer.at > now) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+  };
   const context = nodeVM.createContext({ document: { createElement: node }, expandedWorkoutExercises: new Set(),
+    setTimeout(callback, delay) { timers.set(++timerId, { at: now + delay, callback }); return timerId; },
+    clearTimeout(id) { timers.delete(id); },
+    trainingTools, exercises: [], persistActiveSession() {}, scheduleWorkoutAutoFinish() {}, refreshDifficultyFeedback() {},
     completedWorkoutExercises: new Set(), activeSession: { entries: [] }, workoutViewport: null,
     rememberWorkoutViewport() {}, restoreWorkoutViewport() {}, Event,
     qsa: () => [], isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets?.every((set) => set.completed),
@@ -751,7 +764,7 @@ test('workout card toggles hide rather than replace controls and retain explicit
   const entry = { exerciseId: 'custom:exercise', exerciseName: 'Personal', sets: [{ weightKg: 21.5, completed: false }] };
   const first = createCard();
   context.configureWorkoutCard(first.card, entry, 1);
-  const content = first.card.children[1], toggle = first.head.children.at(-1);
+  const content = first.card.children[1], toggle = first.head.children.find((child) => child.className === 'workout-card-toggle');
   assert.equal(content.hidden, true);
   assert.equal(toggle.attributes['aria-expanded'], 'false');
   toggle.listeners.click();
@@ -767,7 +780,7 @@ test('workout card toggles hide rather than replace controls and retain explicit
   context.refreshWorkoutCardCompletion();
   assert.equal(rerendered.card.children[1].hidden, true, 'Completing the last set collapses the existing card');
   assert.equal(first.input.value, '21.5');
-  const reopen = rerendered.head.children.at(-1);
+  const reopen = rerendered.head.children.find((child) => child.className === 'workout-card-toggle');
   reopen.listeners.click();
   context.refreshWorkoutCardCompletion();
   assert.equal(rerendered.card.children[1].hidden, false, 'A completed exercise may be explicitly reopened');
@@ -793,6 +806,69 @@ test('workout card toggles hide rather than replace controls and retain explicit
     context.refreshWorkoutCardCompletion();
     assert.equal(walk.card.children[1].hidden, true, 'Timer completion also collapses cardio');
   }
+  const next = { exerciseId: 'next', exerciseName: 'Next', sets: [{ completed: false }] };
+  entry.sets[0].completed = false;
+  const ratingCard = createCard(), nextCard = createCard();
+  context.completedWorkoutExercises.clear();
+  context.expandedWorkoutExercises.clear();
+  context.expandedWorkoutExercises.add(entry.exerciseId);
+  context.activeSession.entries = [entry, next];
+  context.activeSession.currentExerciseId = next.exerciseId;
+  context.configureWorkoutCard(ratingCard.card, entry, 0);
+  context.configureWorkoutCard(nextCard.card, next, 1);
+  context.qsa = () => [ratingCard.card, nextCard.card];
+  entry.sets[0].completed = true;
+  entry.completionFeedbackPending = true;
+  context.refreshWorkoutCardCompletion();
+  assert.equal(ratingCard.card.children[1].hidden, false, 'Last-set feedback keeps the completed card open');
+  assert.equal(nextCard.card.children[1].hidden, true, 'Wait for rating or five seconds before expanding the next card');
+  entry.sets[0].difficulty = 'right';
+  context.completeWorkoutFeedback(entry);
+  assert.equal(ratingCard.card.children[1].hidden, true);
+  assert.equal(nextCard.card.children[1].hidden, false);
+  assert.equal(entry.completionFeedbackPending, undefined);
+  assert.equal(timers.size, 0, 'Rating immediately cancels the pending collapse timer');
+
+  delete entry.sets[0].difficulty;
+  entry.sets[0].completed = false;
+  context.refreshWorkoutCardCompletion();
+  entry.sets[0].completed = true;
+  entry.completionFeedbackPending = true;
+  context.expandedWorkoutExercises.delete(next.exerciseId);
+  context.refreshWorkoutCardCompletion();
+  advance(4999);
+  assert.equal(ratingCard.card.children[1].hidden, false, 'Allow the full five seconds to rate');
+  context.refreshWorkoutCardCompletion();
+  assert.equal(timers.size, 1, 'Rendering again must not restart or duplicate the timer');
+  advance(1);
+  assert.equal(ratingCard.card.children[1].hidden, true, 'Collapse at exactly five seconds without rating');
+  assert.equal(nextCard.card.children[1].hidden, false, 'The timeout also opens the next exercise');
+  assert.equal(entry.sets[0].difficulty, undefined, 'Never invent a rating on timeout');
+  assert.equal(entry.completionFeedbackPending, undefined);
+
+  entry.completionFeedbackPending = true;
+  context.refreshWorkoutCardCompletion();
+  entry.sets[0].completed = false;
+  context.expandedWorkoutExercises.add(entry.exerciseId);
+  context.refreshWorkoutCardCompletion();
+  assert.equal(timers.size, 0, 'Undoing completion cancels the timer');
+  advance(5000);
+  assert.equal(ratingCard.card.children[1].hidden, false, 'Do not collapse an unfinished exercise');
+  entry.sets[0].completed = true;
+  context.refreshWorkoutCardCompletion();
+  context.activeSession = { id: 'different-workout', entries: [entry, next] };
+  advance(5000);
+  assert.equal(entry.completionFeedbackPending, true, 'A stale callback cannot save another workout');
+  context.refreshWorkoutCardCompletion();
+  assert.equal(timers.size, 1, 'Re-arm feedback only for the current workout');
+  entry.completionFeedbackPending = true;
+  context.expandedWorkoutExercises.delete(entry.exerciseId);
+  context.persistActiveSession = () => { throw new Error('disk full'); };
+  context.showToast = () => {};
+  context.console = { error() {} };
+  context.completeWorkoutFeedback(entry);
+  assert.equal(entry.completionFeedbackPending, true, 'A failed collapse save must retain pending feedback');
+  assert.equal(context.expandedWorkoutExercises.has(entry.exerciseId), true, 'Keep feedback accessible after a failed collapse save');
 });
 
 test('summary sharing reuses the saved workout rather than the reset next draft or stale health copy', () => {
@@ -851,7 +927,8 @@ test('difficulty updates retain unchanged feedback/button nodes instead of rebui
   });
   const context = nodeVM.createContext({ insights, activeSession: { entries: cards.map(() => ({ sets: [{ completed: true, difficulty: 'right' }] })) },
     qsa: (selector) => selector.startsWith('#exerciseList') ? cards : [],
-    qs: (selector, card) => card.feedback, persistActiveSession() {} });
+    i18n: { translateDOM() {} },
+    qs: (selector, card) => selector === '.set-feedback' ? card.feedback : null, persistActiveSession() {} });
   nodeVM.runInContext(section('function refreshDifficultyFeedback()', 'function intervalPhaseText('), context);
   context.refreshDifficultyFeedback();
   const original = cards.map((card) => card.feedback.node);
@@ -891,6 +968,8 @@ const vm = {
     return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       finishingWorkout: false, pendingWorkoutAutoFinish: null,
+      expandedWorkoutExercises: new Set(), refreshWorkoutCardCompletion() {}, completeWorkoutFeedback() {},
+      nextWorkoutEntry: () => null,
       workoutMuscleCompletionCue: () => '', refreshWorkoutMuscleHeadings: () => {},
       isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((set) => set.completed),
       rememberCompletedSet: () => {}, refreshDifficultyFeedback: () => {}, wireLanguageControls: () => {}, cancelSpeech: () => {}, ...values });
@@ -4484,6 +4563,7 @@ function greetingContext() {
   const pending = new Map(), spoken = [];
   const context = vm.createContext({
     activeSession: { id: 'one', running: false, entries: [] }, settings: { voiceAnnouncements: true, restSeconds: 90 },
+    exercises: [],
     workoutGreetingTimer: null,
     setTimeout: (callback, delay) => { pending.set(++nextID, { at: now + delay, callback }); return nextID; },
     clearTimeout: (id) => pending.delete(id),
@@ -4568,7 +4648,7 @@ test('late transcripts cannot control workouts outside the visible listening tab
   }
 });
 
-test('voice finish requires separate confirmation and cancel still does not require a dialog', () => {
+test('voice finish and cancellation require their own separate matching confirmations without a system dialog', () => {
   const { context, session, calls } = voiceContext();
   session.running = true;
   context.handleVoiceTranscript('סיים אימון');
@@ -4577,7 +4657,200 @@ test('voice finish requires separate confirmation and cancel still does not requ
   context.handleVoiceTranscript('מאשר סיום');
   session.running = true;
   context.handleVoiceTranscript('בטל אימון');
+  assert.deepEqual(calls, ['finish']);
+  context.handleVoiceTranscript('מאשר סיום');
+  assert.deepEqual(calls, ['finish'], 'A finish confirmation cannot authorize cancellation');
+  context.handleVoiceTranscript('בטל אימון');
+  context.handleVoiceTranscript('מאשר ביטול');
   assert.deepEqual(calls, ['finish', 'cancel']);
+});
+
+test('workout button phrases are anchored, bilingual, support feminine wording and preserve report parsing', () => {
+  const cases = [
+    [['המכשיר תפוס', 'Equipment busy'], { action: 'busy' }],
+    [['המכשיר התפנה', 'Machine available'], { action: 'available' }],
+    [['הזז תרגיל למעלה', 'הזיזי תרגיל למעלה', 'Move exercise up'], { action: 'moveUp' }],
+    [['הזז תרגיל למטה', 'Move exercise down'], { action: 'moveDown' }],
+    [['מזער תרגיל', 'מזערי תרגיל', 'Collapse exercise'], { action: 'collapse' }],
+    [['פתח תרגיל', 'פתחי תרגיל', 'Expand exercise'], { action: 'expand' }],
+    [['הוסף סט', 'הוסיפי סט', 'Add set'], { action: 'addSet' }],
+    [['הסר סט', 'Remove last set'], { action: 'removeSet' }],
+    [['הסר תרגיל', 'Remove exercise'], { action: 'removeExercise' }],
+    [['שחזר תרגיל שהוסר', 'Restore removed exercise'], { action: 'restoreExercise' }],
+    [['שחזר מאימון קודם', 'Restore previous workout'], { action: 'restoreLast' }],
+    [['הדרכה', 'Exercise guide'], { action: 'guide' }],
+    [['תמונה', 'Show photo'], { action: 'photo' }],
+    [['פתח הערות', 'Open notes'], { action: 'notes' }],
+    [['המלצות', 'Workout recommendations'], { action: 'advice' }],
+    [['תוכנית מלאה', 'Full workout'], { action: 'fullWorkout' }],
+    [['מאשר פעולה', 'מאשרת פעולה', 'Confirm action'], { action: 'confirmAction' }],
+    [['סגור חלון', 'Close dialog'], { action: 'closeDialog' }],
+    [['פקודות קוליות', 'Voice commands'], { action: 'help' }],
+    [['נסה להאזין שוב', 'Retry listening'], { action: 'recoverAudio' }],
+    [['יש לי שלושים דקות', 'I have thirty minutes'], { action: 'budget', minutes: 30 }],
+    [['I have 60 minutes'], { action: 'budget', minutes: 60 }],
+    [['יש לי 90 דקות'], { action: 'budget', minutes: 90 }],
+    [['מדוד שוב סט 2', 'Remeasure set two'], { action: 'resetHoldSet', setIndex: 1 }],
+    [['סמן סט 2 כבוצע', 'סמני סט שתיים כבוצע', 'Mark set two as done'], { action: 'completeSet', setIndex: 1 }],
+    [['בטל סימון סט 2', 'Unmark set two'], { action: 'uncompleteSet', setIndex: 1 }],
+  ];
+  for (const [phrases, expected] of cases) for (const phrase of phrases) {
+    assert.deepEqual(JSON.parse(JSON.stringify(voiceReports.parseWorkoutVoice(phrase))), { kind: 'control', ...expected }, phrase);
+  }
+  assert.equal(voiceReports.parseWorkoutVoice('maybe remove exercise later'), null);
+  assert.equal(voiceReports.parseWorkoutVoice('I have 20 minutes').kind, 'invalid');
+  assert.equal(voiceReports.parseWorkoutVoice('Mark set zero as done').kind, 'invalid');
+  assert.equal(voiceReports.parseWorkoutVoice('מאשרת סיום').kind, 'confirm-finish');
+  assert.equal(voiceReports.parseWorkoutVoice('מאשרת ביטול').kind, 'confirm-cancel');
+});
+
+test('recognized workout controls invoke the same card and global buttons, including explicit set indices', () => {
+  for (const [phrase, selector] of [
+    ['Add set', '.btnAddSet'], ['Remove set', '.btnRemoveSet'],
+    ['Restore previous workout', '.btnRestoreLast'], ['Exercise guide', '.btnExerciseGuide'],
+    ['Show photo', '.btnShowPhoto'], ['Remeasure set two', '.hold-reset'],
+    ['Mark set two as done', '.set-check'],
+  ]) {
+    const { context, session, cards } = voiceContext([{ exerciseId: 'bench', exerciseName: 'Bench',
+      sets: [{ completed: false }, { completed: false }] }]);
+    session.running = true; session.currentExerciseId = 'bench';
+    const original = context.qs, clicked = [];
+    context.qs = (query, parent) => query === selector
+      ? { classList: { contains: () => false }, click: () => clicked.push(parent) }
+      : original(query, parent);
+    context.handleVoiceTranscript(phrase);
+    assert.equal(clicked.length, 1, phrase);
+    assert.equal(clicked[0], ['.hold-reset', '.set-check'].includes(selector) ? cards[0].rows[1] : cards[0], phrase);
+  }
+  for (const [phrase, id] of [['I have 30 minutes', 'btnTimeBudget'], ['I have 60 minutes', 'btnTimeBudget60'],
+    ['I have 90 minutes', 'btnTimeBudget90'], ['Full workout', 'btnFullWorkout'], ['Workout recommendations', 'btnWorkoutAdvice']]) {
+    const { context, el } = voiceContext();
+    let clicked = 0;
+    el(id).click = () => clicked++;
+    context.document.querySelector = () => null;
+    context.handleVoiceTranscript(phrase);
+    assert.equal(clicked, 1, phrase);
+  }
+});
+
+test('voice action confirmation is single-use, session-bound, time-limited and requires its own live dialog', () => {
+  for (const changed of ['none', 'expired', 'closed', 'disconnected', 'different-session']) {
+    const { context, session } = voiceContext([{ exerciseId: 'bench', exerciseName: 'Bench', sets: [{ completed: false }] }]);
+    session.running = true;
+    session.currentExerciseId = session.entries[0].exerciseId;
+    const dialog = { open: true }, confirmed = [];
+    const confirmButton = { isConnected: true, closest: () => dialog,
+      classList: { contains: () => false }, click: () => confirmed.push(true) };
+    const original = context.qs;
+    context.qs = (query, parent) => query === '.btnRemoveWorkoutExercise'
+      ? { classList: { contains: () => false }, click() {} } : original(query, parent);
+    context.document.querySelector = () => confirmButton;
+    context.handleVoiceTranscript('Remove exercise');
+    assert.equal(confirmed.length, 0);
+    if (changed === 'expired') context.applyWorkoutVoiceControl.pending.expiresAt = 0;
+    if (changed === 'closed') dialog.open = false;
+    if (changed === 'disconnected') confirmButton.isConnected = false;
+    if (changed === 'different-session') context.activeSession = { ...session };
+    context.handleVoiceTranscript('Confirm action');
+    context.handleVoiceTranscript('Confirm action');
+    assert.equal(confirmed.length, changed === 'none' ? 1 : 0, changed);
+  }
+});
+
+test('unavailable or disabled voice actions never click controls, and next-set wording never completes a set', () => {
+  const { context, session, messages } = voiceContext([{ exerciseId: 'bench', exerciseName: 'Bench',
+    sets: [{ reps: 12, completed: false }] }]);
+  session.currentExerciseId = 'bench'; session.running = true;
+  const original = context.qs;
+  context.qs = (query, parent) => query === '.btnAddSet'
+    ? { disabled: true, click: () => assert.fail('Disabled button'), classList: { contains: () => false } }
+    : original(query, parent);
+  context.handleVoiceTranscript('Add set');
+  assert.match(messages.at(-1), /אינה זמינה/);
+  for (const phrase of ['הסט הבא', 'Next set']) assert.equal(context.classifyVoiceCommand(phrase), 'startSet');
+  context.handleVoiceTranscript('Next set');
+  assert.equal(session.entries[0].sets[0].completed, false);
+  assert.ok(nodeVM.runInContext('voiceCountingState', context));
+});
+
+test('voice busy/available uses the waiting exercise and movement follows the current session order without replacing models', () => {
+  const { context, session, cards } = voiceContext([
+    { exerciseId: 'bench', exerciseName: 'Bench', sets: [{ completed: false }] },
+    { exerciseId: 'row', exerciseName: 'Row', sets: [{ completed: false }] },
+    { exerciseId: 'press', exerciseName: 'Press', sets: [{ completed: false }] },
+  ]);
+  session.running = true; session.currentExerciseId = 'bench';
+  const original = context.qs;
+  context.qs = (query, parent) => query === '.training-equipment-actions button'
+    ? { classList: { contains: () => false }, click() {
+      const current = session.entries.find((entry) => entry.exerciseId === parent.entry.exerciseId);
+      Object.assign(session, trainingTools.setEquipmentBusy(session, current.exerciseId, !current.equipmentBusy, context.exercises));
+    } } : original(query, parent);
+  context.handleVoiceTranscript('Equipment busy');
+  assert.equal(session.currentExerciseId, 'row');
+  assert.equal(session.entries[0].equipmentBusy, true);
+  context.handleVoiceTranscript('Equipment available');
+  assert.equal(session.currentExerciseId, 'bench');
+  assert.equal(session.entries[0].equipmentBusy, undefined);
+  const before = session.entries[0].sets[0];
+  context.trainingAPI = () => ({ moveWorkoutExercise(id, direction) {
+    Object.assign(session, trainingTools.moveWorkoutExercise(session, id, direction, context.exercises));
+  } });
+  context.handleVoiceTranscript('Move exercise down');
+  assert.equal(session.entries.find((entry) => entry.exerciseId === 'bench').sets[0], before);
+  assert.deepEqual(Array.from(session.workoutOrder), ['row', 'bench', 'press']);
+  session.currentExerciseId = 'row';
+  context.handleVoiceTranscript('Next exercise');
+  assert.equal(session.currentExerciseId, 'bench', 'Next follows visible manual order, not the underlying array');
+  session.entries.find((entry) => entry.exerciseId === 'bench').equipmentBusy = true;
+  session.currentExerciseId = 'row';
+  context.handleVoiceTranscript('Next exercise');
+  assert.equal(session.currentExerciseId, 'press', 'Do not select deferred equipment early');
+  assert.equal(cards.length, 3);
+});
+
+test('voice collapse, expansion, note disclosure, help and recovery use their real control paths', () => {
+  const { context, session, el } = voiceContext([{ exerciseId: 'bench', exerciseName: 'Bench', sets: [{ completed: false }] }]);
+  session.running = true; session.currentExerciseId = 'bench';
+  const original = context.qs, notes = { open: false };
+  let recoveries = 0, closed = 0, page;
+  context.qs = (query, parent) => query === '.workout-card-toggle'
+    ? { classList: { contains: () => false }, click() {
+      if (context.expandedWorkoutExercises.has('bench')) context.expandedWorkoutExercises.delete('bench');
+      else context.expandedWorkoutExercises.add('bench');
+    } } : query === '.set-notes' ? notes : original(query, parent);
+  context.handleVoiceTranscript('Expand exercise');
+  assert.equal(context.expandedWorkoutExercises.has('bench'), true);
+  context.handleVoiceTranscript('Collapse exercise');
+  assert.equal(context.expandedWorkoutExercises.has('bench'), false);
+  context.handleVoiceTranscript('Open notes');
+  assert.equal(notes.open, true);
+  context.recoverWorkoutAudio = () => recoveries++;
+  context.handleVoiceTranscript('Retry listening');
+  assert.equal(recoveries, 1);
+  context.document.querySelector = () => ({ close: () => closed++ });
+  context.handleVoiceTranscript('Close dialog');
+  assert.equal(closed, 1);
+  context.switchTab = (next) => { page = next; };
+  el('settingsVoiceCommandsHelp').scrollIntoView = () => {};
+  context.handleVoiceTranscript('Voice commands');
+  assert.equal(page, 'settings');
+  assert.equal(el('settingsVoiceCommandsHelp').open, true);
+  for (const phrase of ['Pause workout', 'הפסיקי אימון', 'הפסק אימון']) assert.equal(context.classifyVoiceCommand(phrase), 'pauseWorkout');
+  for (const phrase of ['Resume workout', 'המשיכי אימון', 'המשך אימון']) assert.equal(context.classifyVoiceCommand(phrase), 'resumeWorkout');
+});
+
+test('settings voice help is cloned from one authored list rather than maintained as a divergent second list', () => {
+  let cloned = false, rendered;
+  const list = { cloneNode(deep) { cloned = deep; return { commands: true }; } };
+  const context = nodeVM.createContext({ qs: () => list, el: () => ({ replaceChildren: (node) => { rendered = node; } }) });
+  nodeVM.runInContext(section('function wireWorkoutVoiceHelp(', 'function wireWorkoutControls('), context);
+  context.wireWorkoutVoiceHelp();
+  assert.equal(cloned, true);
+  assert.equal(rendered.commands, true);
+  const settings = read('www/index.html').split('id="tab-settings"')[1].split('</section>')[0];
+  assert.match(settings, /id="settingsVoiceCommandsHelp"/);
+  assert.match(settings, /id="settingsWorkoutCommands"/);
 });
 
 test('workout-tab microphone activation repairs an older persisted off setting without starting a workout', async () => {
@@ -5777,7 +6050,7 @@ test('explicitly recovered legacy iCloud history enters memory without backgroun
       getActiveSession: () => JSON.parse(stored.get('ft_active_session_v1')),
       setSyncHook: (hook) => assert.equal(hook, null),
     },
-    waitForSplashMinimum: async () => {}, hideSplash() {}, URLSearchParams,
+    waitForSplashMinimum: async () => {}, hideSplash() {}, wireWorkoutVoiceHelp() {}, URLSearchParams,
     location: { search: '', reload: () => assert.fail('A cloud update must not reload an active workout') },
     init: () => { observed = { workouts: context.workouts, activeSession: context.activeSession }; },
   });
@@ -6494,6 +6767,16 @@ test('pause lock captures pointer and editing events before controls and resumes
   }
   el('btnResumePausedWorkout').listeners.get('click').callback();
   assert.deepEqual(calls, ['prime', 'resume']);
+  let selected = 0;
+  context.selectVoiceExercise = () => selected++;
+  const card = { dataset: { entryIndex: '0' } };
+  const focus = el('exerciseList').listeners.get('click').callback;
+  for (const control of ['.workout-card-toggle', '.workout-order-actions', '.training-equipment-actions', '.set-feedback']) {
+    focus({ target: { closest: (query) => query === '.exercise-card' ? card : query.includes(control) ? {} : null } });
+  }
+  assert.equal(selected, 0, 'Toggles, reorder, busy and rating controls must not be preempted by capture-phase expansion');
+  focus({ target: { closest: (query) => query === '.exercise-card' ? card : null } });
+  assert.equal(selected, 1, 'Ordinary set editing still selects its exercise');
 });
 
 test('timer speech carries the same stable identity through foreground and background native dispatch', async () => {
@@ -6799,7 +7082,7 @@ test('training companion branding explains personal plans and practical benefits
   assert.doesNotMatch(about, /אין צורך לדווח|מזהה אוטומטית את המשקלים/);
 });
 
-test('compact workout metrics appear when either original metric leaves view and track header size without scroll handlers', () => {
+test('workout metrics stay visible above the pause lock and track header size without scroll visibility races', () => {
   const nodes = new Map(), observers = [], variables = new Map();
   let resize, headerHeight = 65;
   const el = (id) => {
@@ -6823,23 +7106,55 @@ test('compact workout metrics appear when either original metric leaves view and
   });
   vm.runInContext(section('function wireWorkoutQuickStatus()', 'function switchTab('), context);
   context.wireWorkoutQuickStatus();
-  const observer = observers[0], bar = el('workoutQuickStatus');
-  assert.equal(observer.options.rootMargin, '-65px 0px 0px 0px');
-  assert.equal(observer.targets.length, 2);
-  observer.callback(observer.targets.map((target) => ({ target, intersectionRatio: 1 })));
-  assert.equal(bar.hidden, true);
-  observer.callback([{ target: el('overallProgressBadge'), intersectionRatio: 0 }]);
-  assert.equal(bar.hidden, false);
-  observer.callback([{ target: el('overallProgressBadge'), intersectionRatio: 1 }]);
-  assert.equal(bar.hidden, true);
+  assert.equal(observers.length, 0, 'No observer may hide the persistent toolbar');
+  assert.equal(variables.get('--app-header-height'), '65px');
   headerHeight = 90;
   resize();
-  assert.equal(observer.disconnected, true);
-  assert.equal(observers[1].options.rootMargin, '-90px 0px 0px 0px');
   assert.equal(variables.get('--app-header-height'), '90px');
   assert.doesNotMatch(section('function wireWorkoutQuickStatus()', 'function switchTab('), /addEventListener\(['"]scroll/);
   const html = read('www/index.html');
-  assert.match(html.match(/<section id="tab-workout"[\s\S]*?<\/section>/)[0], /id="workoutQuickStatus"/);
+  const workout = html.match(/<section id="tab-workout"[\s\S]*?<\/section>/)[0];
+  assert.match(workout, /id="workoutQuickStatus" class="workout-quick-status"/);
+  assert.ok(workout.indexOf('id="workoutQuickStatus"') < workout.indexOf('id="workoutInteractionArea"'));
+  const style = read('www/css/style.css').match(/\.workout-quick-status \{[^}]+\}/)[0];
+  assert.match(style, /position: sticky/);
+  assert.match(style, /z-index: 26/);
+});
+
+test('native announcements bound missing start/end callbacks, reset the synthesizer and preserve completion deduplication', () => {
+  const source = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  const reset = source.slice(source.indexOf('private func resetStalledSpeech('), source.indexOf('private func clearSpeechWatchdog('));
+  assert.match(reset, /speechQueue\.interrupt\(\)/);
+  assert.match(reset, /previous\.delegate = nil/);
+  assert.match(reset, /speechSynthesizer = AVSpeechSynthesizer\(\)/);
+  assert.match(reset, /releaseAnnouncementSession\(\)/);
+  assert.doesNotMatch(reset, /speechQueue =|try.*speak\(/);
+  assert.match(source, /mediaServicesWereResetNotification/);
+  assert.match(source, /pendingSpeech\.first\?\.utterance === utterance/);
+  assert.match(source, /watchSpeech\(utterance, started: false\)/);
+  assert.match(source, /watchSpeech\(utterance, started: true\)/);
+  assert.match(source, /WorkoutAnnouncementQueue\.spokenText\(text, language: language\)/);
+  assert.match(source, /RunLoop\.main\.add\(timer, forMode: \.common\)/);
+});
+
+test('warmup and scheduled cardio completion introduce the actual next or deferred exercise in either language', () => {
+  for (const language of ['he', 'en']) {
+    const warmup = { exerciseId: 'warmup', type: 'cardio', exerciseName: 'Warmup', durationSec: 300 };
+    const next = { exerciseId: 'press', exerciseName: 'Press', sets: [{ reps: 12, weightKg: 20 }] };
+    const context = vm.createContext({ activeSession: { entries: [warmup, next] }, exercises: [],
+      nextWorkoutEntry: () => next });
+    context.i18n.setLanguage(language);
+    vm.runInContext(section('function cardioCompletionMessage(', 'function scheduleWorkoutAutoFinish('), context);
+    const text = context.cardioCompletionMessage(warmup);
+    assert.match(text, /Press/);
+    if (language === 'en') assert.doesNotMatch(text, /[\u0590-\u05ff]/);
+    else assert.match(text, /התרגיל הבא.*12 חזרות.*20 קילו/);
+    const deferred = { exerciseId: 'waiting', exerciseName: 'Waiting', equipmentBusy: true,
+      equipmentBusyAfterId: 'warmup', sets: [{ completed: false, reps: 8, weightKg: 30 }] };
+    context.activeSession.entries.push(deferred);
+    assert.match(context.cardioCompletionMessage(warmup), /Waiting/);
+    assert.doesNotMatch(context.cardioCompletionMessage(warmup), /Press/);
+  }
 });
 
 test('workout muscle headings refresh both title and count when returning after a language change', () => {

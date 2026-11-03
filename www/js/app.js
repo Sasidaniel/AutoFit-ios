@@ -635,21 +635,9 @@ function wireTabs() {
   });
 }
 function wireWorkoutQuickStatus() {
-  const bar = el('workoutQuickStatus');
-  const targets = [el('workoutTimerDisplay'), el('overallProgressBadge')];
-  const visible = new Map(targets.map((target) => [target, false]));
-  let observer, lastHeight = -1;
   const updateBounds = () => {
     const height = Math.ceil(qs('.topbar').getBoundingClientRect().height);
-    if (height === lastHeight) return;
-    lastHeight = height;
     document.documentElement.style.setProperty('--app-header-height', `${height}px`);
-    observer?.disconnect();
-    observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) visible.set(entry.target, entry.intersectionRatio >= 0.99);
-      bar.classList.toggle('hidden', targets.every((target) => visible.get(target)));
-    }, { rootMargin: `-${height}px 0px 0px 0px`, threshold: [0, 0.99, 1] });
-    targets.forEach((target) => observer.observe(target));
   };
   new ResizeObserver(updateBounds).observe(qs('.topbar'));
   updateBounds();
@@ -824,6 +812,10 @@ function getLastCompletedValuesByExercise() {
   return map;
 }
 
+function wireWorkoutVoiceHelp() {
+  el('settingsWorkoutCommands').replaceChildren(qs('#voiceCommandsHelpCard .voice-commands-list').cloneNode(true));
+}
+
 function wireWorkoutControls() {
   el('btnResumePausedWorkout').addEventListener('click', () => { primeSpeech(); resumeWorkout(); });
   for (const type of ['click', 'input', 'change', 'keydown']) {
@@ -835,7 +827,7 @@ function wireWorkoutControls() {
   }
   const focusEntry = (event) => {
     const card = event.target.closest('.exercise-card');
-    if (!card || event.target.closest('.btnShowPhoto')) return;
+    if (!card || event.target.closest('.btnShowPhoto, .workout-card-toggle, .workout-order-actions, .training-equipment-actions, .set-feedback')) return;
     selectVoiceExercise(Number(card.dataset.entryIndex), false);
   };
   ['click', 'input', 'change'].forEach((type) => el('exerciseList').addEventListener(type, focusEntry, true));
@@ -860,8 +852,10 @@ function wireWorkoutControls() {
   el('btnCancelWorkout').addEventListener('click', cancelWorkout);
 
   el('btnSkipRest').addEventListener('click', () => {
+    const continuation = workoutRestContinuation();
     restTimer.stop();
     el('restOverlay').classList.add('hidden');
+    if (settings.voiceAnnouncements) speak(continuation);
   });
   el('btnRestAdd15').addEventListener('click', () => restTimer.addSeconds(15));
 }
@@ -885,7 +879,9 @@ function ensureWorkoutStarted() {
     workoutGreetingTimer = setTimeout(() => {
       workoutGreetingTimer = null;
       if (activeSession.id === sessionID && activeSession.running && settings.voiceAnnouncements) {
-        speak('אימון מהנה ובהצלחה');
+        const current = trainingTools.currentWorkoutEntry(activeSession, exercises);
+        const opening = trainingTools.workoutEntryAnnouncement(current, exercises, i18n.text, i18n.exerciseName);
+        speak(i18n.text('אימון מהנה ובהצלחה') + (opening ? `. ${opening}` : ''));
       }
     }, 1000);
   }
@@ -924,6 +920,7 @@ function pauseWorkout() {
   activeSession.accumulatedSec = stopwatch.stop();
   activeSession.running = false;
   activeSession.paused = true;
+  activeSession.voiceResumeAllowed = true;
   activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   activityReadyEnabled = false;
   voiceCountingState = null;
@@ -935,7 +932,12 @@ function pauseWorkout() {
   renderWorkoutTab();
   if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
   el('btnResumePausedWorkout').focus({ preventScroll: true });
-  persistActiveSession();
+  try { persistActiveSession(); }
+  catch (error) {
+    delete activeSession.voiceResumeAllowed;
+    updateVoiceListeningState();
+    throw error;
+  }
   if (settings.voiceAnnouncements) speak('האימון בהפסקה. לחץ על המשך אימון כדי להמשיך.');
   showToast('האימון בהפסקה. הנתונים נשמרו; לחץ על המשך אימון כדי להמשיך.');
 }
@@ -944,6 +946,7 @@ function resumeWorkout() {
   if (!activeSession.paused) return;
   const now = Date.now();
   activeSession.paused = false;
+  delete activeSession.voiceResumeAllowed;
   activeSession.running = true;
   activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   activeSession.clockStartedAt = now - (activeSession.accumulatedSec || 0) * 1000;
@@ -1140,6 +1143,7 @@ function finishWorkout() {
   finishingWorkout = true;
   try {
     activityReadyEnabled = false;
+    delete activeSession.voiceResumeAllowed;
     const durationSec = activeSession.running ? stopwatch.stop() : activeSession.accumulatedSec || 0;
     activeSession.running = false;
     activeSession.accumulatedSec = durationSec;
@@ -1265,6 +1269,7 @@ function trainingAPI() {
       busy: !!voiceCountingState || holdTimers.size > 0,
       restSeconds: remainingRest() }),
     saveSession(next) {
+      const previousFocus = activeSession.currentExerciseId;
       const entries = [...next.entries, ...(next.removedExercises || []).map((item) => item.entry),
         ...(next.timeBudget?.deferred || []), ...(next.substitutions || []).map((item) => item.original)];
       for (const entry of entries) {
@@ -1285,6 +1290,29 @@ function trainingAPI() {
       lastVoiceAction = null;
       lastVoiceReport = null;
       lastAutoCountCompletion = null;
+      if (next.currentExerciseId && previousFocus !== next.currentExerciseId) {
+        expandedWorkoutExercises.delete(previousFocus);
+        expandedWorkoutExercises.add(next.currentExerciseId);
+        const current = next.entries.find((entry) => entry.exerciseId === next.currentExerciseId);
+        if (settings.voiceAnnouncements && current && !next.paused) {
+          cancelWorkoutGreeting();
+          speak(`${i18n.text('התרגיל הבא')}: ${trainingTools.workoutEntryAnnouncement(current, exercises, i18n.text, i18n.exerciseName)}`);
+        }
+      }
+      renderWorkoutTab();
+      syncNativeAnnouncementPlan();
+      syncWorkoutActivity();
+    },
+    moveWorkoutExercise(exerciseId, direction) {
+      const previous = activeSession;
+      const next = trainingTools.moveWorkoutExercise(activeSession, exerciseId, direction, exercises);
+      if (next === activeSession) return;
+      db.saveActiveSession(next);
+      activeSession = next;
+      for (const action of [lastVoiceAction, lastVoiceReport, lastAutoCountCompletion]) {
+        if (action?.session === previous) action.session = next;
+      }
+      if (voiceCountingState) voiceCountingState.entryIndex = next.entries.indexOf(voiceCountingState.entry);
       renderWorkoutTab();
       syncNativeAnnouncementPlan();
       syncWorkoutActivity();
@@ -1803,6 +1831,8 @@ function renderWorkoutTab() {
     `;
     qs('.btnAddSet', actions).addEventListener('click', () => {
       entry.sets.push({ weightKg: entry.sets.at(-1)?.weightKg || '', reps: entry.sets.at(-1)?.reps || '', completed: false });
+      delete entry.completionFeedbackPending;
+      delete entry.completionFeedbackSetIndex;
       activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
       persistActiveSession();
       renderWorkoutTab();
@@ -1833,17 +1863,63 @@ function renderWorkoutTab() {
 
 function syncCompletedWorkoutCards() {
   let collapsed = false;
+  const timers = syncCompletedWorkoutCards.feedbackTimers || (syncCompletedWorkoutCards.feedbackTimers = new Map());
+  for (const [entry, feedback] of timers) {
+    if (feedback.sessionId !== activeSession.id || !activeSession.entries.includes(entry)
+      || !entry.completionFeedbackPending || !isEntryDone(entry)) {
+      clearTimeout(feedback.timer);
+      timers.delete(entry);
+    }
+  }
   const ids = new Set(activeSession.entries.map((entry) => entry.exerciseId));
   for (const id of completedWorkoutExercises) if (!ids.has(id)) completedWorkoutExercises.delete(id);
   for (const entry of activeSession.entries) {
     if (isEntryDone(entry)) {
+      if (entry.completionFeedbackPending && !timers.has(entry)) {
+        const feedback = { sessionId: activeSession.id, timer: null };
+        timers.set(entry, feedback);
+        feedback.timer = setTimeout(() => {
+          if (timers.get(entry) !== feedback) return;
+          feedback.timer = null;
+          if (activeSession.id === feedback.sessionId && activeSession.entries.includes(entry)
+            && entry.completionFeedbackPending && isEntryDone(entry)) completeWorkoutFeedback(entry);
+          else timers.delete(entry);
+        }, 5000);
+      }
       if (!completedWorkoutExercises.has(entry.exerciseId)) {
-        collapsed = expandedWorkoutExercises.delete(entry.exerciseId) || collapsed;
+        if (entry.completionFeedbackPending) expandedWorkoutExercises.add(entry.exerciseId);
+        else {
+          collapsed = expandedWorkoutExercises.delete(entry.exerciseId) || collapsed;
+          expandNextWorkoutCard(entry);
+        }
       }
       completedWorkoutExercises.add(entry.exerciseId);
     } else completedWorkoutExercises.delete(entry.exerciseId);
   }
   return collapsed;
+}
+
+function expandNextWorkoutCard(entry) {
+  const next = trainingTools.currentWorkoutEntry(activeSession, exercises);
+  if (next && next !== entry && !next.equipmentBusy) expandedWorkoutExercises.add(next.exerciseId);
+}
+
+function completeWorkoutFeedback(entry) {
+  const pending = entry.completionFeedbackPending;
+  delete entry.completionFeedbackPending;
+  try { persistActiveSession(); }
+  catch (error) {
+    entry.completionFeedbackPending = pending;
+    expandedWorkoutExercises.add(entry.exerciseId);
+    console.error('Workout feedback save failed', error);
+    showToast('לא ניתן לשמור את הדירוג. הנתונים נשארו במסך; נסה שוב.');
+    return;
+  }
+  expandedWorkoutExercises.delete(entry.exerciseId);
+  expandNextWorkoutCard(entry);
+  refreshWorkoutCardCompletion();
+  refreshDifficultyFeedback();
+  scheduleWorkoutAutoFinish();
 }
 
 function refreshWorkoutCardCompletion() {
@@ -1878,12 +1954,41 @@ function configureWorkoutCard(card, entry, index) {
     content.hidden = !expanded;
   };
   toggle.addEventListener('click', () => {
-    if (expandedWorkoutExercises.has(entry.exerciseId)) expandedWorkoutExercises.delete(entry.exerciseId);
+    if (expandedWorkoutExercises.has(entry.exerciseId)) {
+      expandedWorkoutExercises.delete(entry.exerciseId);
+      if (isEntryDone(entry)) {
+        if (entry.completionFeedbackPending) { completeWorkoutFeedback(entry); return; }
+        expandNextWorkoutCard(entry);
+        refreshWorkoutCardCompletion();
+      }
+    }
     else expandedWorkoutExercises.add(entry.exerciseId);
     update();
   });
   card.addEventListener('workout-card-refresh', update);
   head.appendChild(toggle);
+  if (!['warmup', 'cooldown'].includes(entry.exerciseId)) {
+    const moves = document.createElement('span');
+    moves.className = 'workout-order-actions';
+    for (const [direction, label, symbol] of [[-1, 'הזז תרגיל למעלה', '↑'], [1, 'הזז תרגיל למטה', '↓']]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-photo';
+      button.textContent = symbol;
+      button.setAttribute('aria-label', `${i18n.text(label)}: ${i18n.exerciseName(entry.exerciseName)}`);
+      button.title = i18n.text(label);
+      button.disabled = trainingTools.moveWorkoutExercise(activeSession, entry.exerciseId, direction, exercises) === activeSession;
+      button.addEventListener('click', () => {
+        try { trainingAPI().moveWorkoutExercise(entry.exerciseId, direction); }
+        catch (error) {
+          console.error('Workout reorder failed', error);
+          showToast('לא ניתן לשנות את הסדר. הנתונים נשמרו; נסה שוב.');
+        }
+      });
+      moves.appendChild(button);
+    }
+    head.querySelector('.exercise-head-right').appendChild(moves);
+  }
   update();
 }
 
@@ -1901,6 +2006,10 @@ function removeLastWorkoutSet(entry) {
   }
   if (lastVoiceAction?.set === set) lastVoiceAction = null;
   entry.sets.pop();
+  if (entry.completionFeedbackSetIndex >= entry.sets.length) {
+    delete entry.completionFeedbackPending;
+    delete entry.completionFeedbackSetIndex;
+  }
   activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   if (activeSession.lastCompletedSet?.exerciseId === entry.exerciseId
     && activeSession.lastCompletedSet.setIndex >= entry.sets.length) delete activeSession.lastCompletedSet;
@@ -1940,6 +2049,9 @@ function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
   const previousMarker = activeSession.lastCompletedSet;
   const previousRevision = activeSession.activityControlRevision;
   const previousFocus = activeSession.currentExerciseId;
+  const transitionFields = ['completionFeedbackPending', 'completionFeedbackSetIndex', 'equipmentBusy', 'equipmentBusyAfterId'];
+  const previousEntries = activeSession.entries.map((item) => [item,
+    Object.fromEntries(transitionFields.filter((key) => Object.hasOwn(item, key)).map((key) => [key, item[key]]))]);
   const timerKey = `${entry.exerciseId}:${index}`;
   const timer = exercise.inputType === 'hold' ? holdTimers.get(timerKey) : null;
   set.completed = completed;
@@ -1959,6 +2071,10 @@ function setWorkoutSetCompletion(entry, set, exercise, index, completed) {
   try {
     persistActiveSession();
   } catch (error) {
+    for (const [item, values] of previousEntries) {
+      for (const key of transitionFields) delete item[key];
+      Object.assign(item, values);
+    }
     for (const key of Object.keys(set)) delete set[key];
     Object.assign(set, previousSet);
     if (previousMarker === undefined) delete activeSession.lastCompletedSet;
@@ -1999,13 +2115,15 @@ function getWorkoutSetProgress() {
 function cardioCompletionMessage(entry) {
   const message = entry.exerciseId === 'warmup' ? 'החימום הסתיים'
     : entry.exerciseId === 'cooldown' ? 'השחרור הסתיים' : `התרגיל ${entry.exerciseName} הסתיים`;
-  return message;
+  const next = trainingTools.deferredWorkoutEntry(activeSession, entry)
+    || nextWorkoutEntry(entry);
+  return next ? `${i18n.text(message)}. ${i18n.text('התרגיל הבא')}: ${trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName)}` : message;
 }
 
 function scheduleWorkoutAutoFinish() {
   const session = activeSession;
   const complete = () => (session.running || session.paused) && session.entries.length > 0
-    && session.entries.every(isEntryDone);
+    && session.entries.every(isEntryDone) && !session.entries.some((entry) => entry.completionFeedbackPending);
   if (!complete() || pendingWorkoutAutoFinish === session || finishingWorkout) return;
   pendingWorkoutAutoFinish = session;
   // Let the completion handler finish persisting voice ratings/targets first.
@@ -2059,7 +2177,7 @@ function refreshDifficultyFeedback() {
       card.appendChild(feedback);
     }
     const completed = entry.sets.map((set, index) => ({ set, index })).filter(({ set }) => set.completed);
-    const key = JSON.stringify(completed.map(({ set, index }) => [index, set.difficulty || '']));
+    const key = JSON.stringify([!!entry.completionFeedbackPending, completed.map(({ set, index }) => [index, set.difficulty || ''])]);
     if (feedback.dataset.completionKey === key) return;
     feedback.dataset.completionKey = key;
     feedback.classList.toggle('hidden', !completed.length);
@@ -2070,12 +2188,22 @@ function refreshDifficultyFeedback() {
             aria-pressed="${set.difficulty === value}">${label}</button>`).join('')}</div>`).join('')}` : '';
     qsa('.difficulty-chip', feedback).forEach((button) => button.addEventListener('click', () => {
       const set = entry.sets[Number(button.dataset.set)];
+      const previous = set.difficulty;
       if (set.difficulty === button.dataset.difficulty) delete set.difficulty;
       else set.difficulty = button.dataset.difficulty;
-      persistActiveSession();
+      try { persistActiveSession(); }
+      catch (error) {
+        if (previous === undefined) delete set.difficulty;
+        else set.difficulty = previous;
+        console.error('Workout difficulty save failed', error);
+        showToast('לא ניתן לשמור את הדירוג. הנתונים נשארו במסך; נסה שוב.');
+        return;
+      }
       qsa('.difficulty-chip', button.parentElement).forEach((chip) =>
         chip.setAttribute('aria-pressed', String(chip.dataset.difficulty === set.difficulty)));
+      if (entry.completionFeedbackPending && Number(button.dataset.set) === entry.completionFeedbackSetIndex && set.difficulty) completeWorkoutFeedback(entry);
     }));
+    i18n.translateDOM(feedback);
   });
 }
 
@@ -2356,7 +2484,12 @@ function workoutRestContinuation(session = activeSession) {
   const entry = session.entries.find((item) => item.exerciseId === session.restCueExerciseId);
   const next = entry && !isEntryDone(entry) && !entry.equipmentBusy ? entry
     : trainingTools.nextAvailableWorkoutEntry(session, entry, exercises);
-  if (next) return trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName);
+  if (next) {
+    const paired = entry?.exerciseSnapshot?.superset?.id
+      && entry.exerciseSnapshot.superset.id === next.exerciseSnapshot?.superset?.id;
+    return trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName,
+      { continuation: next.type !== 'cardio' && (next === entry || paired), includeName: next !== entry });
+  }
   return session.entries.some((item) => !isEntryDone(item))
     ? i18n.text('נותרו תרגילים שממתינים לציוד או להשלמה. אפשר לבחור תרגיל זמין או לסמן שהמכשיר התפנה.')
     : i18n.text('האימון הושלם, כל הכבוד!');
@@ -2457,14 +2590,17 @@ function classifyVoiceCommand(text) {
   if (/^(בטל|ביטול)( את)? ה?אימון$/.test(t)) return 'cancelWorkout';
   if (/^(סיים|סיום|סיימתי)( את)? ה?אימון$/.test(t)) return 'finishWorkout';
   if (/^(התחל|תתחיל|מתחיל)( את)? ה?אימון$/.test(t)) return 'startWorkout';
+  if (/^(?:הפסק|עצור|השהה)(?: את)? ה?אימון$/.test(t)) return 'pauseWorkout';
+  if (/^המשך(?: את)? ה?אימון$/.test(t)) return 'resumeWorkout';
   if (/^(התחל|תתחיל|מתחיל|נספור|לספור)( את)? ה?סט$/.test(t)) return 'startSet';
+  if (/^ה?סט הבא$/.test(t)) return 'startSet';
   if (/^(התחל|תתחיל|מתחיל)( (את )?ה?תרגיל)?$/.test(t)) return 'startExercise';
   if (/^(עצור|תעצור|השהה)( (את )?ה?תרגיל)?$/.test(t)) return 'stopExercise';
   if (/^(דלג|דלג( על)? (זמן )?ה?מנוחה|זמן ה?מנוחה (הסתיים|נגמר)|ה?מנוחה (הסתיימה|נגמרה))$/.test(t)) return 'skipRest';
   if (/^(אפס|איפוס)( את)?( ה?(טיימר|תרגיל))?$/.test(t)) return 'resetExercise';
   if (/^(סמן|סימון) כ?בוצע$|^בוצע$|^ה?תרגיל (בוצע|הושלם|הסתיים)$/.test(t)) return 'markDone';
   if (/^ה?תרגיל הבא$/.test(t)) return 'nextExercise';
-  if (/^(ה?סט (הושלם|הסתיים|בוצע|הבא)|סיימתי( את)? ה?סט|סיימתי|הסתיים|סיום)$/.test(t)) return 'setDone';
+  if (/^(ה?סט (הושלם|הסתיים|בוצע)|סיימתי( את)? ה?סט|סיימתי|הסתיים|סיום)$/.test(t)) return 'setDone';
   if (/^חזרה (אחת|ראשונה|שנייה|\d+) הסתיימה$/.test(t)) return 'setDone';
   if (t === 'בטל') return 'undo';
   return null;
@@ -2499,16 +2635,25 @@ function rememberCompletedSet(entry, set) {
   activeSession.activityControlRevision = (activeSession.activityControlRevision || 0) + 1;
   const setIndex = entry.sets.indexOf(set);
   if (set.completed && setIndex >= 0) {
+    if (isEntryDone(entry)) {
+      entry.completionFeedbackPending = !set.difficulty;
+      entry.completionFeedbackSetIndex = setIndex;
+    }
     activeSession.lastCompletedSet = { exerciseId: entry.exerciseId, setIndex };
     advanceWorkoutFocus(entry);
   } else if (activeSession.lastCompletedSet?.exerciseId === entry.exerciseId
     && activeSession.lastCompletedSet.setIndex === setIndex) {
     delete activeSession.lastCompletedSet;
   }
+  if (!isEntryDone(entry)) {
+    delete entry.completionFeedbackPending;
+    delete entry.completionFeedbackSetIndex;
+  }
 }
 
 function advanceWorkoutFocus(entry) {
-  const paired = entry.exerciseSnapshot?.superset && trainingTools.supersetNextEntry(activeSession, entry);
+  const deferred = isEntryDone(entry) && trainingTools.deferredWorkoutEntry(activeSession, entry);
+  const paired = !deferred && entry.exerciseSnapshot?.superset && trainingTools.supersetNextEntry(activeSession, entry);
   if (paired && (!activeSession.currentExerciseId || activeSession.currentExerciseId === entry.exerciseId)) {
     activeSession.currentExerciseId = paired.exerciseId;
     refreshVoiceSelection();
@@ -2517,7 +2662,13 @@ function advanceWorkoutFocus(entry) {
   }
   if (!isEntryDone(entry) || activeSession.currentExerciseId && activeSession.currentExerciseId !== entry.exerciseId) return;
   const remaining = nextWorkoutEntry(entry);
-  if (remaining) activeSession.currentExerciseId = remaining.exerciseId;
+  if (remaining) {
+    if (remaining.equipmentBusyAfterId) {
+      delete remaining.equipmentBusy;
+      delete remaining.equipmentBusyAfterId;
+    }
+    activeSession.currentExerciseId = remaining.exerciseId;
+  }
   else delete activeSession.currentExerciseId;
   refreshVoiceSelection();
   updateVoiceBadgeForListeningState();
@@ -2598,7 +2749,138 @@ function undoVoiceReport() {
   voiceReply('הדיווח הקולי האחרון בוטל');
 }
 
+function applyWorkoutVoiceControl(intent) {
+  const session = activeSession;
+  const action = intent.action;
+  const click = (button) => {
+    if (!button || button.disabled || button.classList.contains('hidden')) {
+      voiceReply('הפעולה אינה זמינה כרגע. בחר תרגיל מתאים ונסה שוב.');
+      return false;
+    }
+    button.click();
+    return true;
+  };
+  const armConfirmation = (button) => {
+    if (!button) return;
+    const dialog = button.closest('dialog');
+    applyWorkoutVoiceControl.pending = { button, dialog, session, expiresAt: Date.now() + 15000 };
+    voiceReply('בדוק את הבחירה. לאישור אמור מאשר פעולה בתוך 15 שניות.');
+  };
+  if (action === 'confirmAction') {
+    const pending = applyWorkoutVoiceControl.pending;
+    delete applyWorkoutVoiceControl.pending;
+    if (!pending || pending.session !== session || pending.expiresAt <= Date.now()
+      || !pending.dialog?.open || !pending.button.isConnected) {
+      voiceReply('אין פעולה פתוחה לאישור.');
+      return;
+    }
+    click(pending.button);
+    return;
+  }
+  delete applyWorkoutVoiceControl.pending;
+  if (action === 'closeDialog') {
+    const dialog = document.querySelector('dialog[open]');
+    if (dialog) dialog.close();
+    else voiceReply('אין חלון פתוח לסגירה.');
+    return;
+  }
+  if (action === 'help') {
+    switchTab('settings');
+    el('settingsVoiceCommandsHelp').open = true;
+    el('settingsVoiceCommandsHelp').scrollIntoView({ block: 'center' });
+    return;
+  }
+  if (action === 'recoverAudio') { recoverWorkoutAudio(); return; }
+  const globalButton = action === 'budget' ? `btnTimeBudget${intent.minutes === 30 ? '' : intent.minutes}`
+    : { advice: 'btnWorkoutAdvice', fullWorkout: 'btnFullWorkout' }[action];
+  if (globalButton) {
+    if (click(el(globalButton))) armConfirmation(document.querySelector('dialog[open] #btnConfirmBudget, dialog[open] #btnRestoreTime'));
+    return;
+  }
+  if (action === 'restoreExercise') {
+    const removed = session.removedExercises || [];
+    if (removed.length !== 1) { voiceReply('לביטול הסרה, בחר את התרגיל ברשימת התרגילים שהוסרו.'); return; }
+    openWorkoutRemovalDialog(removed[0].entry.exerciseId, true);
+    armConfirmation(document.querySelector('dialog[open] .btnConfirmWorkoutRemoval'));
+    return;
+  }
+  const pendingFeedback = action === 'collapse' && session.entries.find((entry) => entry.completionFeedbackPending);
+  const selected = session.entries.find((entry) => entry.exerciseId === session.currentExerciseId);
+  const waiting = session.entries.filter((entry) => entry.equipmentBusy);
+  if (action === 'available' && !selected?.equipmentBusy && waiting.length !== 1) {
+    voiceReply('לבחירת ציוד שהתפנה, אמור בחר ואת שם התרגיל.');
+    return;
+  }
+  const entry = pendingFeedback || (action === 'available' ? selected?.equipmentBusy ? selected : waiting[0]
+    : selected || session.entries[voiceTargetEntryIndex()]);
+  if (!entry) { voiceReply('אין תרגיל נוכחי לפעולה הזו.'); return; }
+  const index = session.entries.indexOf(entry);
+  const card = qs(`.exercise-card[data-entry-index="${index}"]`, el('exerciseList'));
+  if (!card) { voiceReply('הפעולה אינה זמינה כרגע. בחר תרגיל מתאים ונסה שוב.'); return; }
+  if (action === 'collapse' || action === 'expand') {
+    const expanded = expandedWorkoutExercises.has(entry.exerciseId);
+    if (expanded !== (action === 'expand')) click(qs('.workout-card-toggle', card));
+    return;
+  }
+  if (action === 'moveUp' || action === 'moveDown') {
+    try {
+      const direction = action === 'moveUp' ? -1 : 1;
+      if (trainingTools.moveWorkoutExercise(session, entry.exerciseId, direction, exercises) === session) {
+        voiceReply('לא ניתן להזיז את התרגיל בכיוון הזה.');
+        return;
+      }
+      trainingAPI().moveWorkoutExercise(entry.exerciseId, direction);
+    }
+    catch (error) {
+      console.error('Voice workout reorder failed', error);
+      voiceReply('לא ניתן לשנות את הסדר. הנתונים נשמרו; נסה שוב.');
+    }
+    return;
+  }
+  if (action === 'notes') {
+    const notes = qs('.set-notes', card);
+    if (notes) { selectVoiceExercise(index, false); notes.open = true; }
+    else voiceReply('הפעולה אינה זמינה כרגע. בחר תרגיל מתאים ונסה שוב.');
+    return;
+  }
+  if (action === 'resetHoldSet') {
+    const row = qsa('.set-row', card)[intent.setIndex];
+    click(row && qs('.hold-reset', row));
+    return;
+  }
+  if (action === 'completeSet' || action === 'uncompleteSet') {
+    const set = entry.sets?.[intent.setIndex];
+    if (!set) { voiceReply('הפעולה אינה זמינה כרגע. בחר תרגיל מתאים ונסה שוב.'); return; }
+    if (set.completed === (action === 'completeSet')) {
+      voiceReply('הסט כבר במצב המבוקש.');
+      return;
+    }
+    const row = qsa('.set-row', card)[intent.setIndex];
+    click(row && qs('.set-check', row));
+    return;
+  }
+  if (action === 'busy' || action === 'available') {
+    if (!!entry.equipmentBusy === (action === 'busy')) {
+      voiceReply(action === 'busy' ? 'התרגיל כבר ממתין לציוד.' : 'התרגיל כבר זמין.');
+      return;
+    }
+    if (session.substitutions?.some((item) => item.replacementId === entry.exerciseId)) {
+      voiceReply('יש לשחזר קודם את התרגיל המקורי בכפתור השחזור.');
+      return;
+    }
+    click(qs('.training-equipment-actions button', card));
+    return;
+  }
+  const selector = { addSet: '.btnAddSet', removeSet: '.btnRemoveSet', restoreLast: '.btnRestoreLast',
+    removeExercise: '.btnRemoveWorkoutExercise', guide: '.btnExerciseGuide', photo: '.btnShowPhoto' }[action];
+  if (!selector) { voiceReply('הפעולה אינה זמינה כרגע. בחר תרגיל מתאים ונסה שוב.'); return; }
+  if (click(qs(selector, card)) && action === 'removeExercise') {
+    armConfirmation(document.querySelector('dialog[open] .btnConfirmWorkoutRemoval'));
+  }
+}
+
 function applyWorkoutVoice(intent) {
+  if (intent.kind === 'control') { applyWorkoutVoiceControl(intent); return; }
   if (intent.kind === 'invalid') {
     voiceReply('הדיווח לא ברור. אמור למשל: עשיתי 12 חזרות עם 40 קילו');
     return;
@@ -2622,11 +2904,19 @@ function applyWorkoutVoice(intent) {
     if (set.difficulty !== intent.difficulty) {
       const before = { ...set };
       set.difficulty = intent.difficulty;
-      persistActiveSession();
+      try { persistActiveSession(); }
+      catch (error) {
+        if (before.difficulty === undefined) delete set.difficulty;
+        else set.difficulty = before.difficulty;
+        console.error('Voice difficulty save failed', error);
+        voiceReply('לא ניתן לשמור את הדירוג. הנתונים נשארו במסך; נסה שוב.');
+        return;
+      }
       lastVoiceAction = { kind: 'difficulty', session: activeSession, entry, set, before, after: JSON.stringify(set) };
       renderWorkoutTab();
     }
     voiceReply(`דירוג ${i18n.text(insights.DIFFICULTY_LABELS[intent.difficulty])} נרשם ל${i18n.exerciseName(entry.exerciseName)}, סט ${entry.sets.indexOf(set) + 1}`);
+    if (entry.completionFeedbackPending && entry.sets.indexOf(set) === entry.completionFeedbackSetIndex) completeWorkoutFeedback(entry);
     return;
   }
   let entry = voiceCountingState?.entry;
@@ -2738,6 +3028,8 @@ function refreshVoiceSelection() {
 function selectVoiceExercise(index, highlight = true) {
   const entry = activeSession.entries[index];
   if (!entry) return;
+  expandedWorkoutExercises.add(entry.exerciseId);
+  refreshWorkoutCardCompletion();
   if (voiceCountingState?.entry !== entry) voiceCountingState = null;
   if (activeSession.currentExerciseId !== entry.exerciseId) {
     activeSession.currentExerciseId = entry.exerciseId;
@@ -2797,6 +3089,11 @@ function updateVoiceBadgeForListeningState() {
   el('btnEnableWorkoutVoice').classList.toggle('hidden', voiceListeningActive || !!activeSession?.paused);
   el('btnEnableWorkoutVoice').textContent = i18n.text(voiceListeningError ? 'נסה שוב להפעיל מיקרופון' : '🎙️ הפעל מיקרופון ופקודות קוליות');
   if (voiceActivationPending) { setVoiceBadge('🎙️ מפעיל האזנה — ממתין לאישור המיקרופון'); return; }
+  if (activeSession.paused) {
+    setVoiceBadge(voiceListeningActive ? '🎙️ האימון בהפסקה — מקשיב רק לפקודה המשך אימון'
+      : '🎙️ האימון בהפסקה — להמשך לחץ על המשך אימון');
+    return;
+  }
   if (voiceCountingState && voiceListeningActive) { updateVoiceCountingBadge(); return; }
   const current = activeSession.entries[voiceTargetEntryIndex()];
   const microphone = voiceInputName ? ` (${voiceInputName})` : '';
@@ -2809,24 +3106,33 @@ function updateVoiceBadgeForListeningState() {
 }
 
 function handleVoiceTranscript(transcript) {
-  if (!transcript || activeSession.paused || !voiceListeningActive || currentTab !== 'workout' || document.visibilityState !== 'visible') {
+  if (!transcript || !voiceListeningActive || currentTab !== 'workout' || document.visibilityState !== 'visible') {
     pendingVoiceFinish = null;
     return;
   }
   const t = normalizeVoiceText(transcript);
+  if (activeSession.paused) {
+    pendingVoiceFinish = null;
+    if (activeSession.voiceResumeAllowed === true && classifyVoiceCommand(t) === 'resumeWorkout') resumeWorkout();
+    return;
+  }
   if (/^(?:הקשב(?: לי)?|תקשיב(?: לי)?|מצב האזנה|האזנה ממוקדת|listen(?: to me)?|focus listening)$/.test(t)) {
+    pendingVoiceFinish = null;
     setFocusedListening(true);
     return;
   }
   if (/^(?:סיים האזנה ממוקדת|end focused listening)$/.test(t)) {
+    pendingVoiceFinish = null;
     setFocusedListening(false);
     return;
   }
   if (/^(?:המשך מוזיקה|חזור למוזיקה|נגן מוזיקה|resume music|play music)$/.test(t)) {
+    pendingVoiceFinish = null;
     controlWorkoutMusicByVoice(true);
     return;
   }
   if (/^(?:עצור מוזיקה|השהה מוזיקה|stop music|pause music)$/.test(t)) {
+    pendingVoiceFinish = null;
     controlWorkoutMusicByVoice(false);
     return;
   }
@@ -2842,9 +3148,13 @@ function handleVoiceTranscript(transcript) {
   const intent = voiceReports.parseWorkoutVoice(transcript);
   const pending = pendingVoiceFinish;
   pendingVoiceFinish = null;
-  if (intent?.kind === 'confirm-finish') {
-    if (pending?.session === activeSession && pending.expiresAt > Date.now() && activeSession.running) finishWorkout();
-    else voiceReply('אין בקשת סיום בתוקף. אמור קודם סיים אימון');
+  if (intent?.kind === 'confirm-finish' || intent?.kind === 'confirm-cancel') {
+    const cancellation = intent.kind === 'confirm-cancel';
+    if (pending?.session === activeSession && pending.expiresAt > Date.now() && activeSession.running
+      && (pending.kind === 'cancel') === cancellation) {
+      if (cancellation) doCancelWorkout();
+      else finishWorkout();
+    } else voiceReply('אין בקשה תואמת בתוקף. אמור קודם סיים אימון או בטל אימון.');
     return;
   }
   if (pending && command === 'undo') { voiceReply('בקשת סיום האימון בוטלה'); return; }
@@ -2870,7 +3180,7 @@ function handleVoiceTranscript(transcript) {
       }
       const index = match.indexes[0];
       const entry = activeSession.entries[index];
-      if (entry.type !== 'cardio' && isEntryDone(entry) && !match.reset && !match.complete) {
+      if (entry.type !== 'cardio' && isEntryDone(entry) && !match.reset && !match.complete && !match.selectOnly) {
         showToast(`🎙️ כל הסטים של ${entry.exerciseName} כבר הושלמו`);
         return;
       }
@@ -2940,13 +3250,18 @@ function handleVoiceTranscript(transcript) {
     primeSpeech();
     ensureWorkoutStarted();
     showToast('🎙️ האימון התחיל');
+  } else if (command === 'pauseWorkout') {
+    pauseWorkout();
+  } else if (command === 'resumeWorkout') {
+    resumeWorkout();
   } else if (command === 'finishWorkout') {
     if (!activeSession.running) return;
     pendingVoiceFinish = { session: activeSession, expiresAt: Date.now() + 15000 };
     voiceReply('כדי לסיים ולשמור, אמור מאשר סיום. לביטול הבקשה אמור בטל');
   } else if (command === 'cancelWorkout') {
     if (!activeSession.running) return;
-    doCancelWorkout(); // already shows its own "cancelled" toast
+    pendingVoiceFinish = { kind: 'cancel', session: activeSession, expiresAt: Date.now() + 15000 };
+    voiceReply('האימון יימחק ללא שמירה. לאישור אמור מאשר ביטול בתוך 15 שניות. לביטול הבקשה אמור בטל.');
   } else if (command === 'stopExercise') {
     const idx = requestedEntryIndex >= 0 ? requestedEntryIndex : voiceTargetEntryIndex();
     const entry = activeSession.entries[idx];
@@ -3006,6 +3321,8 @@ function handleVoiceTranscript(transcript) {
     if (targetReps) { set.voiceTargetReps = targetReps; persistActiveSession(); }
     lastAutoCountCompletion = null;
     voiceCountingState = { entry, set, entryIndex: idx, setIndex: setIdx, count: 0, targetReps };
+    if (settings.voiceAnnouncements) speak(trainingTools.workoutEntryAnnouncement(entry, exercises, i18n.text, i18n.exerciseName,
+      { continuation: setIdx > 0 }));
     updateVoiceCountingBadge();
   } else if (command === 'resetExercise') {
     const idx = requestedEntryIndex >= 0 ? requestedEntryIndex : voiceTargetEntryIndex();
@@ -3074,8 +3391,10 @@ function handleVoiceTranscript(transcript) {
     showToast('🎙️ דילוג על זמן מנוחה');
   } else if (command === 'nextExercise') {
     const current = activeSession.entries.findIndex((entry) => entry.exerciseId === activeSession.currentExerciseId);
-    const order = activeSession.entries.map((_, index) => (current + 1 + index) % activeSession.entries.length);
-    const idx = order.find((index) => index !== current && !isEntryDone(activeSession.entries[index]));
+    const rendered = trainingTools.workoutMuscleProgress(activeSession, exercises).order;
+    const position = rendered.indexOf(current);
+    const order = rendered.map((_, index) => rendered[(position + 1 + index) % rendered.length]);
+    const idx = order.find((index) => index !== current && !activeSession.entries[index].equipmentBusy && !isEntryDone(activeSession.entries[index]));
     if (idx === undefined) { showToast('🎙️ אין תרגיל נוסף שטרם בוצע'); return; }
     selectVoiceExercise(idx);
   } else if (command === 'undo') {
@@ -3102,7 +3421,7 @@ function handleVoiceTranscript(transcript) {
 /* ---------------- Voice commands: listening lifecycle ---------------- */
 // Listens for the whole time the Workout tab is open and the app is in the
 // foreground (not just once a workout is running — "start workout" itself is
-// a voice command), except during an explicit workout pause. Native lifecycle
+// a voice command). During pause only an explicit resume command is accepted. Native lifecycle
 // stops background capture without discarding the requested listening state.
 let voiceListeningActive = false;
 let voiceListeningRequested = false;
@@ -3213,7 +3532,7 @@ async function recoverWorkoutAudio() {
 }
 
 function handleVoiceListeningChanged(data) {
-  if (!voiceListeningRequested || currentTab !== 'workout' || activeSession.paused) return;
+  if (!voiceListeningRequested || currentTab !== 'workout' || activeSession.paused && activeSession.voiceResumeAllowed !== true) return;
   voiceListeningActive = data.listening === true;
   const starting = data.reason === 'starting' || voiceActivationPending && data.reason === 'recovering';
   if (!starting) voiceFocusedRequested = data.focused === true;
@@ -3230,7 +3549,7 @@ function handleVoiceListeningChanged(data) {
 async function updateVoiceListeningState(force = false, preparingMusic = false) {
   if (!native.isNative() || voicePlaybackHandoff && !preparingMusic) return;
   const requested = currentTab === 'workout'
-    && !activeSession.paused
+    && (!activeSession.paused || activeSession.voiceResumeAllowed === true)
     && settings.voiceCommandsEnabled === true;
   // Native lifecycle pauses capture, retaining the workout's existing audio route.
   if (requested && document.visibilityState !== 'visible') {
@@ -3284,7 +3603,8 @@ function startRestTimer(ex, exerciseDone, nextExerciseName) {
     el('restOverlay').classList.add('hidden');
     if (settings.voiceAnnouncements && !voiceReportInProgress) {
       const next = nextWorkoutEntry(entry);
-      speak(`${muscleCue}${i18n.text('סופר סט — עבור לחלק השני. אפשר לנוח לפי הצורך')}. ${trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName)}`, i18n.locale());
+      speak(`${muscleCue}${i18n.text('סופר סט — עבור לחלק השני. אפשר לנוח לפי הצורך')}. ${trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName,
+        { continuation: true, includeName: true })}`, i18n.locale());
     }
     return;
   }
@@ -3298,7 +3618,7 @@ function startRestTimer(ex, exerciseDone, nextExerciseName) {
   restDoneMessage = entry ? workoutRestContinuation()
     : exerciseDone ? nextExerciseName ? 'אפשר להתחיל' : 'האימון הושלם, כל הכבוד!' : 'אפשר להמשיך לסט הבא';
   const next = entry ? nextWorkoutEntry(entry) : null;
-  const upcoming = entry ? next ? trainingTools.workoutEntryAnnouncement(next, exercises, i18n.text, i18n.exerciseName) : ''
+  const upcoming = entry ? next ? i18n.exerciseName(next.exerciseName) : ''
     : nextExerciseName;
   restTimer.start(seconds);
   const announcementID = `rest:${restTimer.endAt}:start`;
@@ -5949,6 +6269,7 @@ async function unlockWithBiometrics() {
 // Native-only bootstrap: sensitive iCloud recovery/export requires an explicit action.
 // Returning local users retain their existing Face ID gate.
 async function bootstrap() {
+  wireWorkoutVoiceHelp();
   i18n.start(settings.language || 'he', profile.gender || 'male');
   wireLanguageControls();
   if (native.isNative()) {

@@ -251,9 +251,9 @@ export function createTrainingUI(api) {
     const busy = document.createElement('button');
     busy.type = 'button';
     busy.className = 'btn btn-secondary';
-    busy.textContent = t(entry.equipmentBusy ? 'המכשיר התפנה — החזרה לסדר האימון' : 'סימון כממתין לציוד');
+    busy.textContent = t(entry.equipmentBusy ? 'המכשיר התפנה — החזרה לסדר האימון' : 'המשך לתרגיל הבא וחזור לכאן אחריו');
     busy.onclick = () => changedSession(dialog, (session) =>
-      tools.setEquipmentBusy(session, exerciseId, !entry.equipmentBusy));
+      tools.setEquipmentBusy(session, exerciseId, !entry.equipmentBusy, api.getState().exercises));
     dialog.querySelector('.training-dialog-body').prepend(busy);
     if (choices.length) {
       document.getElementById('btnSwapGuide').onclick = () => api.guide(choices.find((choice) => choice.id === document.getElementById('swapChoice').value));
@@ -929,7 +929,16 @@ export function createTrainingUI(api) {
       swap.className = 'btn btn-secondary btn-small';
       swap.textContent = t(substitution ? 'שחזור התרגיל המקורי' : entry.equipmentBusy ? 'המכשיר התפנה?' : 'המכשיר תפוס');
       swap.onclick = () => {
-        if (!substitution) { equipmentBusy(entry.exerciseId); return; }
+        if (!substitution) {
+          safely(actions, () => {
+            if (api.getState().busy) throw new Error('Pause counting or the active hold before changing workout structure');
+            const latest = api.getState();
+            const current = latest.session.entries.find((item) => item.exerciseId === entry.exerciseId);
+            api.saveSession(tools.setEquipmentBusy(latest.session, entry.exerciseId, !current?.equipmentBusy, latest.exercises));
+            refresh();
+          });
+          return;
+        }
         const dialog = api.dialog(t('שחזור התרגיל המקורי'), `${note('הנתונים המקוריים יחזרו. אם כבר תיעדת משהו בחלופה, היא תישאר כתרגיל נפרד ללא איחוד משקלים.')}
           ${button('btnRestoreSwap', 'אישור שחזור', true)}`);
         document.getElementById('btnRestoreSwap').onclick = () => changedSession(dialog, (session) => tools.restoreSubstitution(session, entry.exerciseId));

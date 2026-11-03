@@ -1,3 +1,5 @@
+import Foundation
+
 enum WorkoutAudioPolicy {
     enum Input: Equatable {
         case wired
@@ -86,6 +88,20 @@ struct WorkoutAudioOwnership {
 }
 
 struct WorkoutAnnouncementQueue {
+    static func spokenText(_ text: String, language: String) -> String {
+        guard language == "he-IL" else { return text }
+        return text.replacingOccurrences(of: "(?<![\\p{L}\\p{M}])לסט(?![\\p{L}\\p{M}])",
+            with: "לַסֶט", options: .regularExpression)
+            .replacingOccurrences(of: "(?<![\\p{L}\\p{M}])הסט(?![\\p{L}\\p{M}])",
+                with: "הַסֶט", options: .regularExpression)
+            .replacingOccurrences(of: "(?<![\\p{L}\\p{M}])סט(?![\\p{L}\\p{M}])",
+                with: "סֶט", options: .regularExpression)
+    }
+
+    static func playbackTimeout(characterCount: Int, started: Bool) -> TimeInterval {
+        started ? max(15, min(180, Double(characterCount) * 0.18 + 8)) : 8
+    }
+
     private var pending: [ObjectIdentifier: String] = [:]
     private var completed: [String] = []
 

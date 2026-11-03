@@ -268,6 +268,17 @@ export function workoutMuscleProgress(session, catalog) {
     return priority(a) - priority(b);
   });
   const sections = [], order = [];
+  if (Array.isArray(session.workoutOrder)) {
+    const rank = new Map(session.workoutOrder.map((id, index) => [id, index]));
+    const ordered = [...records].sort((a, b) => (rank.get(a.entry.exerciseId) ?? records.length + a.index)
+      - (rank.get(b.entry.exerciseId) ?? records.length + b.index));
+    for (const record of ordered) {
+      order.push(record.index);
+      if (sections.at(-1)?.key === record.key) continue;
+      sections.push({ ...groups.find((group) => group.key === record.key), entryIndex: record.index });
+    }
+    return { groups, sections, order };
+  }
   for (const bucket of orderedBuckets) {
     const ordered = [], seen = new Set();
     for (const record of bucket) {
@@ -426,6 +437,7 @@ export function restoreWorkoutExercise(session, exerciseId) {
   const index = next ? result.entries.findIndex((entry) => entry.exerciseId === next)
     : previous ? result.entries.findIndex((entry) => entry.exerciseId === previous) + 1 : Math.min(originalIndex, result.entries.length);
   result.entries.splice(index, 0, removed.entry);
+  if (result.workoutOrder) result.workoutOrder = result.entries.map((entry) => entry.exerciseId);
   result.removedExercises = result.removedExercises.filter((item) => item !== removed);
   if (!result.removedExercises.length) delete result.removedExercises;
   result.activityControlRevision = (result.activityControlRevision || 0) + 1;
@@ -454,48 +466,108 @@ export function currentWorkoutEntry(session, catalog = []) {
     || nextAvailableWorkoutEntry(session, null, catalog) || undefined;
 }
 
+export function deferredWorkoutEntry(session, from) {
+  return session.entries.find((entry) => entry !== from && entry.equipmentBusyAfterId
+    && (entry.equipmentBusyAfterId === from.exerciseId
+      || !session.entries.some((item) => item.exerciseId === entry.equipmentBusyAfterId))
+    && (entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed))) || null;
+}
+
 export function nextAvailableWorkoutEntry(session, from = null, catalog = []) {
   const unfinished = (entry) => entry.type === 'cardio' ? !entry.completed : entry.sets.some((set) => !set.completed);
+  if (from && !unfinished(from)) {
+    const returned = deferredWorkoutEntry(session, from);
+    if (returned) return returned;
+  }
   const paired = from && supersetNextEntry(session, from);
   if (paired && paired !== from) return paired;
   const ordered = workoutMuscleProgress(session, catalog).order.map((index) => session.entries[index]);
+  if (from && (!unfinished(from) || from.equipmentBusy)) {
+    const focused = ordered.find((entry) => entry.exerciseId === session.currentExerciseId
+      && entry !== from && !entry.equipmentBusy && unfinished(entry));
+    if (focused) return focused;
+  }
   return ordered.find((entry) => entry !== from && !entry.equipmentBusy && unfinished(entry)
     && (entry.exerciseId !== 'cooldown' || !session.entries.some((other) =>
       other !== entry && unfinished(other)))) || null;
 }
 
-export function setEquipmentBusy(session, exerciseId, busy) {
+export function setEquipmentBusy(session, exerciseId, busy, catalog = []) {
   const result = copy(session);
   const entry = result.entries.find((entry) => entry.exerciseId === exerciseId);
   if (!entry || entry.type === 'cardio' || entry.sets.every((set) => set.completed)) {
     throw new Error('התרגיל השתנה. פתח שוב את הפעולה.');
   }
-  if (busy) entry.equipmentBusy = true;
-  else delete entry.equipmentBusy;
-  if (busy && result.currentExerciseId === exerciseId) {
-    const next = nextAvailableWorkoutEntry(result, entry);
+  if (busy) {
+    entry.equipmentBusy = true;
+    const ordered = workoutMuscleProgress(result, catalog).order.map((index) => result.entries[index]);
+    const index = ordered.indexOf(entry);
+    const next = [...ordered.slice(index + 1), ...ordered.slice(0, index)].find((item) =>
+      !item.equipmentBusy && item.exerciseId !== 'cooldown'
+      && (item.type === 'cardio' ? !item.completed : item.sets.some((set) => !set.completed)));
+    if (next) entry.equipmentBusyAfterId = next.exerciseId;
+    else delete entry.equipmentBusyAfterId;
     if (next) result.currentExerciseId = next.exerciseId;
     else delete result.currentExerciseId;
+  } else {
+    delete entry.equipmentBusy;
+    delete entry.equipmentBusyAfterId;
+    result.currentExerciseId = exerciseId;
   }
   result.activityControlRevision = (result.activityControlRevision || 0) + 1;
   return result;
 }
 
-export function workoutEntryAnnouncement(entry, catalog, translate = (text) => text, translateName = (text) => text) {
+export function moveWorkoutExercise(session, exerciseId, direction, catalog = []) {
+  if (![1, -1].includes(direction)) throw new RangeError('Invalid workout direction');
+  const ordered = workoutMuscleProgress(session, catalog).order.map((index) => session.entries[index]);
+  const blocks = [];
+  for (const entry of ordered) {
+    const pair = (entry.exerciseSnapshot || catalog.find((item) => item.id === entry.exerciseId))?.superset?.id;
+    const block = pair && blocks.find((block) => block.pair === pair);
+    if (block) block.entries.push(entry);
+    else blocks.push({ pair, entries: [entry] });
+  }
+  const index = blocks.findIndex((block) => block.entries.some((entry) => entry.exerciseId === exerciseId));
+  const target = index + direction;
+  const pinned = (block) => block.entries.some((entry) => ['warmup', 'cooldown'].includes(entry.exerciseId));
+  if (index < 0 || target < 0 || target >= blocks.length || pinned(blocks[index]) || pinned(blocks[target])) return session;
+  [blocks[index], blocks[target]] = [blocks[target], blocks[index]];
+  const entries = blocks.flatMap((block) => block.entries);
+  return { ...session, entries, workoutOrder: entries.map((entry) => entry.exerciseId),
+    programPinned: true, activityControlRevision: (session.activityControlRevision || 0) + 1 };
+}
+
+export function workoutSetLabel(index, total, translate = (text) => text) {
+  if (total === 1) return translate('סט ראשון ואחרון');
+  if (index === total - 1) return translate('סט אחרון');
+  const labels = ['סט ראשון', 'סט שני', 'סט שלישי', 'סט רביעי', 'סט חמישי', 'סט שישי',
+    'סט שביעי', 'סט שמיני', 'סט תשיעי', 'סט עשירי'];
+  return translate(labels[index] || 'סט {0}').replace('{0}', index + 1);
+}
+
+export function workoutEntryAnnouncement(entry, catalog, translate = (text) => text, translateName = (text) => text,
+  { continuation = false, includeName = !continuation } = {}) {
   if (!entry) return '';
   const exercise = entry.exerciseSnapshot || catalog.find((item) => item.id === entry.exerciseId) || {};
-  const parts = [translateName(entry.exerciseName || exercise.name || '')];
+  const parts = includeName ? [translateName(entry.exerciseName || exercise.name || '')] : [];
   if (entry.type === 'cardio') {
     if (Number.isFinite(entry.durationSec) && entry.durationSec > 0) parts.push(translate(`${Math.round(entry.durationSec / 6) / 10} דקות`));
     return parts.join('. ');
   }
   const remaining = entry.sets.filter((set) => !set.completed);
   const next = remaining[0];
-  parts.push(translate(`${entry.sets.length} סטים, ${remaining.length} נותרו`));
   if (next) {
-    parts.push(translate(`סט ${entry.sets.indexOf(next) + 1}`));
-    const reps = exercise.inputType === 'hold' ? exercise.holdSeconds
-      : next.voiceTargetReps ?? (next.reps !== '' && next.reps != null ? next.reps : entry.targetReps ?? exercise.targetReps ?? exercise.defaultReps);
+    const index = entry.sets.indexOf(next);
+    parts.push(workoutSetLabel(index, entry.sets.length, translate));
+    const target = (set) => exercise.inputType === 'hold' ? exercise.holdSeconds || 15
+      : set.voiceTargetReps ?? (set.reps !== '' && set.reps != null ? set.reps : entry.targetReps ?? exercise.targetReps ?? exercise.defaultReps);
+    const previous = entry.sets[index - 1];
+    const comparable = (value) => value === '' || value == null ? ''
+      : Number.isFinite(Number(value)) ? Number(value) : String(value).trim().replace(/\s*[–-]\s*/g, '-');
+    if (continuation && previous && comparable(target(previous)) === comparable(target(next))
+      && comparable(previous.weightKg) === comparable(next.weightKg)) return parts.join('. ');
+    const reps = target(next);
     if (reps !== '' && reps != null && /^\d+(?:\s*[–-]\s*\d+)?$/.test(String(reps))) {
       parts.push(translate(`${reps} ${exercise.inputType === 'hold' ? 'שניות החזקה' : 'חזרות'}`));
     }
@@ -704,6 +776,7 @@ export function restoreTimeBudget(session) {
   const order = result.timeBudget.order;
   result.entries = [...order.map((id) => all.find((entry) => entry.exerciseId === id)).filter(Boolean),
     ...all.filter((entry) => !order.includes(entry.exerciseId))];
+  if (result.workoutOrder) result.workoutOrder = result.entries.map((entry) => entry.exerciseId);
   delete result.timeBudget;
   return result;
 }
@@ -732,6 +805,7 @@ export function swapExercise(session, exerciseId, replacement, catalog) {
     sets: remaining.map(() => ({ weightKg: '', reps: '', completed: false })) };
   if (completed.length) original.sets = completed;
   result.entries.splice(index, 1, ...(completed.length ? [original] : []), newEntry);
+  if (result.workoutOrder) result.workoutOrder = result.entries.map((entry) => entry.exerciseId);
   if (result.lastCompletedSet?.exerciseId === exerciseId) delete result.lastCompletedSet;
   result.programPinned = true;
   if (result.currentExerciseId === exerciseId) result.currentExerciseId = replacement.id;
@@ -763,6 +837,7 @@ export function restoreSubstitution(session, replacementId) {
     result.entries = result.entries.filter((entry) => entry !== replacement);
   }
   result.substitutions = result.substitutions.filter((item) => item !== substitution);
+  if (result.workoutOrder) result.workoutOrder = result.entries.map((entry) => entry.exerciseId);
   if (result.lastCompletedSet?.exerciseId === restored.exerciseId) delete result.lastCompletedSet;
   return result;
 }

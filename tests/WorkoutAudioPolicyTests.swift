@@ -121,6 +121,16 @@ struct WorkoutAudioPolicyTests {
     }
 
     private static func testAnnouncementRecovery() {
+        precondition(WorkoutAnnouncementQueue.spokenText("אפשר להמשיך לסט הבא. סט שני", language: "he-IL")
+            == "אפשר להמשיך לַסֶט הבא. סֶט שני")
+        precondition(WorkoutAnnouncementQueue.spokenText("Next set", language: "en-US") == "Next set")
+        precondition(WorkoutAnnouncementQueue.spokenText("סטטוס טקסט", language: "he-IL") == "סטטוס טקסט")
+        precondition(WorkoutAnnouncementQueue.spokenText("הסט הבא", language: "he-IL") == "הַסֶט הבא")
+        precondition(WorkoutAnnouncementQueue.spokenText("לַסֶט הבא", language: "he-IL") == "לַסֶט הבא")
+        precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 1000, started: false) == 8)
+        precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 0, started: true) == 15)
+        precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 100, started: true) == 26)
+        precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 10000, started: true) == 180)
         var queue = WorkoutAnnouncementQueue()
         let interrupted = Utterance()
         let queued = Utterance()

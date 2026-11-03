@@ -31,7 +31,9 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         CAPPluginMethod(name: "cancelSpeech", returnType: CAPPluginReturnPromise)
     ]
 
-    private let speechSynthesizer = AVSpeechSynthesizer()
+    private var speechSynthesizer = AVSpeechSynthesizer()
+    private var speechWatchdog: Timer?
+    private var watchedUtterance: AVSpeechUtterance?
     private var pendingTimers: [Timer] = []
     private var speechQueue = WorkoutAnnouncementQueue()
     private var pendingSpeech: [(utterance: AVSpeechUtterance, identifier: String?)] = []
@@ -68,9 +70,12 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
             name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationBecameActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(mediaServicesReset),
+            name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
     }
 
     deinit {
+        speechWatchdog?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -104,6 +109,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
         beepNode.stop()
         audioEngine.stop()
         if Self.isAnnouncing && !speechQueue.isEmpty {
+            clearSpeechWatchdog()
             speechQueue.interrupt()
             pendingSpeech.removeAll()
             speechSynthesizer.stopSpeaking(at: .immediate)
@@ -114,6 +120,50 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
 
     @objc private func userRequestedRecovery() {
         audioInterrupted = false
+        resetStalledSpeech(reason: nil)
+    }
+
+    @objc private func mediaServicesReset() {
+        DispatchQueue.main.async {
+            self.resetStalledSpeech(reason: "Audio services restarted; announcement playback was reset")
+        }
+    }
+
+    private func resetStalledSpeech(reason: String?) {
+        clearSpeechWatchdog()
+        speechQueue.interrupt()
+        pendingSpeech.removeAll()
+        let previous = speechSynthesizer
+        previous.delegate = nil
+        previous.stopSpeaking(at: .immediate)
+        speechSynthesizer = AVSpeechSynthesizer()
+        speechSynthesizer.usesApplicationAudioSession = true
+        speechSynthesizer.delegate = self
+        if Self.isAnnouncing { releaseAnnouncementSession() }
+        if let reason = reason {
+            notifyListeners("announcementError", data: ["reason": reason])
+        }
+    }
+
+    private func clearSpeechWatchdog() {
+        speechWatchdog?.invalidate()
+        speechWatchdog = nil
+        watchedUtterance = nil
+    }
+
+    private func watchSpeech(_ utterance: AVSpeechUtterance, started: Bool) {
+        clearSpeechWatchdog()
+        watchedUtterance = utterance
+        let timeout = WorkoutAnnouncementQueue.playbackTimeout(
+            characterCount: utterance.speechString.count, started: started)
+        let timer = Timer(timeInterval: timeout, repeats: false) { [weak self, weak utterance] _ in
+            guard let self = self, let utterance = utterance,
+                  self.watchedUtterance === utterance,
+                  self.pendingSpeech.first?.utterance === utterance else { return }
+            self.resetStalledSpeech(reason: "Announcement timed out; speech was reset for the next announcement")
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        speechWatchdog = timer
     }
 
     @objc private func audioSessionInterrupted(_ notification: Notification) {
@@ -128,6 +178,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                 self.beepNode.stop()
                 self.audioEngine.stop()
                 if !self.speechQueue.isEmpty {
+                    self.clearSpeechWatchdog()
                     self.speechQueue.interrupt()
                     self.pendingSpeech.removeAll()
                     self.speechSynthesizer.stopSpeaking(at: .immediate)
@@ -275,6 +326,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                 return
             }
             let retained = self.pendingSpeech.filter { $0.identifier?.hasPrefix(prefix) != true }
+            self.clearSpeechWatchdog()
             self.speechQueue.interrupt()
             self.pendingSpeech.removeAll()
             self.speechSynthesizer.stopSpeaking(at: .immediate)
@@ -312,12 +364,21 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
                 throw error
             }
         }
-        let utterance = AVSpeechUtterance(string: text)
+        let utterance = AVSpeechUtterance(string: WorkoutAnnouncementQueue.spokenText(text, language: language))
         utterance.voice = voice
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         speechQueue.insert(utterance, identifier: announcementID)
         pendingSpeech.append((utterance, announcementID))
+        if pendingSpeech.count == 1 { watchSpeech(utterance, started: false) }
         speechSynthesizer.speak(utterance)
+    }
+
+    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async {
+            guard synthesizer === self.speechSynthesizer,
+                  self.pendingSpeech.first?.utterance === utterance else { return }
+            self.watchSpeech(utterance, started: true)
+        }
     }
 
     public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -331,6 +392,10 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     private func finishAnnouncement(_ utterance: AVSpeechUtterance, cancelled: Bool) {
         guard speechQueue.finish(utterance, cancelled: cancelled) else { return }
         pendingSpeech.removeAll { $0.utterance === utterance }
+        if watchedUtterance === utterance {
+            clearSpeechWatchdog()
+            if let next = pendingSpeech.first?.utterance { watchSpeech(next, started: false) }
+        }
         if cancelled {
             notifyListeners("announcementError", data: ["reason": "Announcement playback was cancelled"])
         }
@@ -339,6 +404,7 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     }
 
     private func releaseAnnouncementSession() {
+        clearSpeechWatchdog()
         playerNode.stop()
         beepNode.stop()
         audioEngine.stop()

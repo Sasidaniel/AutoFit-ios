@@ -200,6 +200,11 @@
 
   <!-- WORKOUT TAB -->
   <section id="tab-workout" class="tab-panel">
+    <div id="workoutQuickStatus" class="workout-quick-status">
+      <span><span>זמן אימון</span> <strong id="workoutQuickTimer" data-no-translate>00:00</strong></span>
+      <span id="workoutQuickPercent" class="progress-overall" data-no-translate>0%</span>
+      <button type="button" class="btn btn-secondary btn-small hidden" data-music-controls data-music-toggle data-no-translate>Apple Music</button>
+    </div>
     <div id="workoutInteractionArea">
     <div class="greeting-card card">
       <img id="workoutProfilePhoto" src="icons/icon-192.png" alt="תמונת פרופיל" class="greeting-avatar">
@@ -250,11 +255,6 @@
       </div>
     </div>
 
-    <div id="workoutQuickStatus" class="workout-quick-status hidden">
-      <span><span>זמן אימון</span> <strong id="workoutQuickTimer" data-no-translate>00:00</strong></span>
-      <span id="workoutQuickPercent" class="progress-overall" data-no-translate>0%</span>
-      <button type="button" class="btn btn-secondary btn-small hidden" data-music-controls data-music-toggle data-no-translate>Apple Music</button>
-    </div>
     <div id="exerciseList" class="exercise-list"></div>
     </div>
     <div id="workoutPauseLock" class="workout-pause-lock hidden" role="region" aria-labelledby="workoutPauseTitle" aria-live="polite">
@@ -486,6 +486,10 @@
         </select>
         <div class="field-hint">במצב אוטומטי משתמשים במיקרופון האייפון או באוזניות חוטיות, בלי להעביר אוזניות Bluetooth למצב הקלטה. שמור את האייפון בטווח הדיבור. בחירה במיקרופון האוזניות עשויה להוריד את איכות המוזיקה או להפריע לניגון, בהתאם למערכת. אם המוזיקה נפסקת, בחר אוטומטי. המיקרופון הפעיל מוצג במסך האימון.</div>
       </div>
+      <details id="settingsVoiceCommandsHelp" class="guide-section">
+        <summary>כל הפקודות הקוליות באימון</summary>
+        <div id="settingsWorkoutCommands"></div>
+      </details>
     </div>
 
     <div id="permissionsSettingsCard" class="card hidden">
@@ -681,6 +685,16 @@
         <li><strong>״המשך מוזיקה״ / “Resume music”</strong><span> — בקשת ניגון מפורשת ב־Apple Music, כמו הכפתור באימון. אפשר לומר ״עצור מוזיקה״ להשהיה. ״סיים האזנה ממוקדת״ מחזיר להאזנה רגילה בלי בקשת ניגון.</span></li>
         <li>אחרי שיחה או הפרעת שמע, החידוש האוטומטי מכבד את החלטת iOS. אם ההאזנה או המוזיקה לא חזרו, אפשר ללחוץ על ״נסה להאזין שוב״. אם הנגן נשאר מושהה, יש להמשיך בו ידנית.</li>
         <li><strong>"התחל אימון"</strong> — מתחיל את טיימר האימון, בדיוק כמו לחיצה על "התחל אימון"</li>
+        <li><strong>״הפסק אימון״ / “Pause workout”</strong><span> — משהה ונועל את האימון. ״המשך אימון״ / “Resume workout” ממשיך. בזמן ההפסקה, אם המיקרופון פעיל, מתקבלת רק פקודת המשך; שאר הפקודות אינן משנות נתונים.</span></li>
+        <li><strong>״המכשיר תפוס״ / “Equipment busy”</strong><span> — דוחה את התרגיל הנבחר, פותח ומכריז את הבא וחוזר למקור אחריו. ״המכשיר התפנה״ / “Equipment available” מחזיר תרגיל ממתין. אם יש כמה, יש לבחור קודם בשם מדויק.</span></li>
+        <li><strong>״הזז תרגיל למעלה״ / “Move exercise up”</strong><span> — משנה את מיקום התרגיל הנבחר. אפשר גם ״הזז תרגיל למטה״ / “Move exercise down”. השינוי באימון הנוכחי בלבד.</span></li>
+        <li><strong>״מזער תרגיל״ / “Collapse exercise”</strong><span> — ממזער את הכרטיס. ״פתח תרגיל״ / “Expand exercise” פותח אותו. לאחר השלמה, דירוג ממזער מיד; ללא דירוג הכרטיס מתמזער אחרי 5 שניות.</span></li>
+        <li><strong>״הוסף סט״ / “Add set”</strong><span> — מוסיף סט לתרגיל הנבחר. ״הסר סט״ / “Remove set” מסיר את האחרון; מחיקת סט עם נתונים דורשת אישור ידני. ״שחזר מאימון קודם״ / “Restore previous workout” זמין כשהכפתור מוצג.</span></li>
+        <li><strong>״סמן סט 2 כבוצע״ / “Mark set two as done”</strong><span> — מסמן סט מסוים בתרגיל שנבחר. ״בטל סימון סט 2״ / “Unmark set two” מבטל את הסימון. אפשר לבחור גם תרגיל שהסתיים באמצעות ״בחר״ ושמו המדויק. ״הסט הבא״ / “Next set” מתחיל את הסט הבא ואינו מסמן סט כהושלם.</span></li>
+        <li><strong>״הסר תרגיל״ / “Remove exercise”</strong><span> — פותח בדיקת הסרה, ללא מחיקה מיידית. ״שחזר תרגיל שהוסר״ / “Restore removed exercise” זמין כשיש תרגיל אחד שהוסר; כשיש כמה בוחרים ידנית. ״מאשר פעולה״ / “Confirm action” מאשר רק את החלון שנפתח בקול, בתוך 15 שניות. ״סגור חלון״ / “Close dialog” סוגר ללא אישור.</span></li>
+        <li><strong>״יש לי 30 דקות״ / “I have 30 minutes”</strong><span> — פותח הצעה לבדיקה; נתמכים גם 60 ו־90 דקות. ״תוכנית מלאה״ / “Full workout” פותח שחזור. בחירת התרגילים והיעדים נעשית ידנית, ואפשר לאשר את הבחירה במילים ״מאשר פעולה״.</span></li>
+        <li><strong>״הדרכה״ / “Exercise guide”</strong><span> — פותח את מדריך התרגיל הנבחר. ״תמונה״ / “Show photo”, ״פתח הערות״ / “Open notes”, ״המלצות״ / “Workout recommendations” ו״מדוד שוב סט 2״ / “Remeasure set two” מפעילים את הבקרה המתאימה כשזמינה.</span></li>
+        <li><strong>״פקודות קוליות״ / “Voice commands”</strong><span> — פותח רשימה זו בהגדרות. ״נסה להאזין שוב״ / “Retry listening” מפעיל שחזור שמע אם הפקודה נקלטת. כשהמיקרופון אינו מקשיב, נדרש הכפתור הידני. הרשאות מערכת, הזנת הערות, בחירת קבצים ואישורי מערכת דורשים מגע.</span></li>
         <li><strong>"לחיצת חזה"</strong> או קיצור חד־משמעי כמו <strong>"חזה"</strong> — בוחר ומדגיש את התרגיל ומתחיל להקשיב לספירה בסט הבא שטרם הושלם. אין צורך לומר בנפרד ״התחל סט״. אמירת השם שוב בזמן ספירה אינה מאפסת אותה</li>
         <li><strong>"חימום"</strong>, <strong>"שחרור"</strong> או <strong>"פלאנק"</strong> — בוחר בלבד; אומרים ״התחל״ כדי להפעיל את הטיימר. לבחירה בלבד בתרגיל חזרות אפשר לומר <strong>"בחר לחיצת חזה"</strong></li>
         <li><strong>"התחל"</strong> — מפעיל את התרגיל שנבחר: טיימר חימום/שחרור, מדידת החזקה בפלאנק, או ספירת חזרות. אפשר גם במשפט אחד: <strong>"התחל חימום"</strong> או <strong>"פלאנק התחל"</strong></li>
@@ -698,7 +712,7 @@
         <li><strong>"תרגיל הבא"</strong> — בוחר וגולל אל התרגיל הבא אחרי התרגיל הנוכחי, בלי לסמן את הקודם כבוצע</li>
         <li>בסיום תרגיל הסימון עובר לתרגיל הבא שטרם הושלם. אחרי שהמנוחה הסתיימה או דולגה, אפשר להתחיל לספור מ־1, או לומר ״התחל סט״ או את שם התרגיל. הגעה ליעד אינה רושמת סט נוסף ללא התחלת ספירה חדשה. אפשר לומר ״סיימתי״ לפני היעד, ו״בטל״ לתיקון השלמה שגויה</li>
         <li><strong>"סיים אימון"</strong> — מבקש סיום ושמירה. רק אמירת <strong>"מאשר סיום"</strong> בתוך 15 שניות משלימה את השמירה; <strong>"בטל"</strong> מבטל את בקשת הסיום. מעבר מסך, הפסקת האזנה או פקודה אחרת מבטלים את הבקשה</li>
-        <li><strong>"בטל אימון"</strong> / <strong>"ביטול אימון"</strong> — מבטל ומאפס את האימון הנוכחי ללא שמירה (פעולה לא הפיכה — בדיוק כמו הכפתור הידני)</li>
+        <li><strong>״בטל אימון״ / “Cancel workout”</strong><span> — מבקש ביטול ללא שמירה. רק ״מאשר ביטול״ / “Confirm cancel” בתוך 15 שניות מבצע את הביטול; ״בטל״ מבטל את הבקשה. זו פעולה שאינה הפיכה.</span></li>
         <li><strong>"בטל"</strong> — מבטל את הדיווח הקולי האחרון: משקל, חזרות וסימון הסט יחד, או דירוג/הארכת מנוחה. שינוי ידני מאוחר יותר באותם נתונים לא יידרס. אם ממתינים לאישור סיום, מבטל רק את בקשת הסיום</li>
       </ul>
     </details>

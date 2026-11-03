@@ -172,6 +172,9 @@ export function start(value, profileGender = 'male') {
 }
 
 const commands = [
+  ['pause workout', 'הפסק אימון'], ['stop workout', 'הפסק אימון'],
+  ['resume workout', 'המשך אימון'], ['continue workout', 'המשך אימון'],
+  ['next set', 'הסט הבא'],
   ['mark as done', 'סמן כבוצע'], ['reset timer', 'אפס טיימר'],
   ['play music', 'נגן מוזיקה'], ['resume music', 'המשך מוזיקה'],
   ['pause music', 'השהה מוזיקה'], ['stop music', 'עצור מוזיקה'],
@@ -198,13 +201,13 @@ export function canonicalVoice(value) {
     result = result.replace(new RegExp(`\\b${english}\\b`, 'g'), hebrew);
   }
   const feminineCommands = new Map([
-    ['התחילי', 'התחל'], ['סיימי', 'סיים'], ['בטלי', 'בטל'], ['עצרי', 'עצור'],
+    ['התחילי', 'התחל'], ['סיימי', 'סיים'], ['בטלי', 'בטל'], ['עצרי', 'עצור'], ['הפסיקי', 'הפסק'],
     ['השהי', 'השהה'], ['המשיכי', 'המשך'], ['דלגי', 'דלג'], ['מאשרת', 'מאשר'],
     ['תוסיפי', 'תוסיף'], ['הוסיפי', 'הוסף'], ['הפעילי', 'הפעל'], ['בחרי', 'בחר'],
     ['הקשיבי', 'הקשב'], ['תקשיבי', 'תקשיב'], ['חזרי', 'חזור'],
     ['סמני', 'סמן'], ['אפסי', 'אפס'], ['השלימי', 'השלם'], ['נגני', 'נגן'],
   ]);
-  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי|הקשיבי|תקשיבי|חזרי|סמני|אפסי|השלימי|נגני)(?=\s|$)/gu,
+  result = result.replace(/(^|\s)(התחילי|סיימי|בטלי|עצרי|הפסיקי|השהי|המשיכי|דלגי|מאשרת|תוסיפי|הוסיפי|הפעילי|בחרי|הקשיבי|תקשיבי|חזרי|סמני|אפסי|השלימי|נגני)(?=\s|$)/gu,
     (_, before, word) => before + feminineCommands.get(word));
   result = result.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?\b/g,
     (_, tens, units) => String((['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'].indexOf(tens) + 2) * 10 + (units ? numbers.indexOf(units) : 0)));

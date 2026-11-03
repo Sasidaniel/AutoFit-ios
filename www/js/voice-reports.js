@@ -78,7 +78,50 @@ export function parseWorkoutVoice(transcript) {
     .replace(/["'״׳]/g, '').replace(/(\p{L})-(?=\p{L})/gu, '$1 ')
     .replace(/(\d)(?=\p{L})/gu, '$1 ').replace(/(\p{L})(?=\d)/gu, '$1 ')
     .replace(/,\s+/g, ' ').trim().replace(/[.!]+$/g, '').replace(/\s+/g, ' ').trim();
-  if (/^(?:מאשר סיום(?: אימון)?|confirm (?:finish|end)(?: workout)?)$/.test(text)) return { kind: 'confirm-finish' };
+  if (/^(?:מאשר(?:ת)? סיום(?: אימון)?|confirm (?:finish|end)(?: workout)?)$/.test(text)) return { kind: 'confirm-finish' };
+  if (/^(?:מאשר(?:ת)? ביטול(?: אימון)?|confirm cancel(?: workout)?)$/.test(text)) return { kind: 'confirm-cancel' };
+  const controls = [
+    ['busy', /^(?:המכשיר תפוס|הציוד תפוס|equipment busy|machine busy)$/],
+    ['available', /^(?:המכשיר התפנה|הציוד התפנה|equipment available|machine available)$/],
+    ['moveUp', /^(?:(?:הזז|הזיזי|הזזי) (?:את )?ה?תרגיל למעלה|move (?:the )?exercise up)$/],
+    ['moveDown', /^(?:(?:הזז|הזיזי|הזזי) (?:את )?ה?תרגיל למטה|move (?:the )?exercise down)$/],
+    ['collapse', /^(?:מזער(?:י)? (?:את )?ה?תרגיל|collapse (?:the )?exercise)$/],
+    ['expand', /^(?:פתח(?:י)? (?:את )?ה?תרגיל|expand (?:the )?exercise)$/],
+    ['addSet', /^(?:(?:הוסף|הוסיפי|תוסיף|תוסיפי) סט|add (?:a )?set)$/],
+    ['removeSet', /^(?:(?:הסר|הסירי|מחק|מחקי) סט|remove (?:a |(?:the )?last )?set)$/],
+    ['restoreLast', /^(?:שחזר(?:י)? מאימון קודם|restore (?:from )?(?:the )?(?:last|previous) workout)$/],
+    ['removeExercise', /^(?:הסר(?:י)? (?:את )?ה?תרגיל|remove (?:the )?exercise)$/],
+    ['restoreExercise', /^(?:שחזר(?:י)? תרגיל שהוסר|restore removed exercise)$/],
+    ['guide', /^(?:הדרכה|פתח(?:י)? הדרכה|exercise guide|open (?:the )?guide)$/],
+    ['photo', /^(?:תמונה|הצג תמונה|הציגי תמונה|show (?:the )?(?:photo|picture))$/],
+    ['notes', /^(?:פתח(?:י)? הערות|open (?:set )?notes)$/],
+    ['advice', /^(?:יעדים אישיים והמלצות|המלצות|workout recommendations)$/],
+    ['fullWorkout', /^(?:תוכנית מלאה|אימון מלא|full workout)$/],
+    ['confirmAction', /^(?:אשר פעולה|אשרי פעולה|מאשר פעולה|מאשרת פעולה|confirm action)$/],
+    ['closeDialog', /^(?:סגור(?:י)? חלון|close (?:the )?dialog)$/],
+    ['help', /^(?:פקודות קוליות|voice commands)$/],
+    ['recoverAudio', /^(?:נסה להאזין שוב|נסי להאזין שוב|שחזור שמע|recover audio|retry listening)$/],
+  ];
+  for (const [action, pattern] of controls) if (pattern.test(text)) return { kind: 'control', action };
+  const budget = text.match(/^(?:יש לי (.+?) דקות|i (?:only )?have (.+?) minutes)$/);
+  if (budget) {
+    const minutes = reportNumber(budget[1] || budget[2]);
+    return [30, 60, 90].includes(minutes) ? { kind: 'control', action: 'budget', minutes } : { kind: 'invalid' };
+  }
+  const resetHold = text.match(/^(?:מדוד שוב סט (.+)|מדדי שוב סט (.+)|remeasure set (.+))$/);
+  if (resetHold) {
+    const number = reportNumber(resetHold[1] || resetHold[2] || resetHold[3]);
+    return Number.isSafeInteger(number) && number > 0
+      ? { kind: 'control', action: 'resetHoldSet', setIndex: number - 1 } : { kind: 'invalid' };
+  }
+  const setCommand = text.match(/^(סמן|סמני|בטל סימון|בטלי סימון) סט (.+?)(?: כבוצע)?$/)
+    || text.match(/^(mark|unmark) set (.+?)(?: as done)?$/);
+  if (setCommand) {
+    const number = reportNumber(setCommand[2]);
+    return Number.isSafeInteger(number) && number > 0
+      ? { kind: 'control', action: /^(?:בטל|unmark)/.test(setCommand[1]) ? 'uncompleteSet' : 'completeSet', setIndex: number - 1 }
+      : { kind: 'invalid' };
+  }
   const he = text.match(/^(?:עשיתי|ביצעתי|סיימתי) (?:סט של )?(.+?) חזר(?:ות|ה) (?:עם |במשקל(?: של)? |ב ?|על )(.+?) (קילו(?:גרם)?|קילוגרמים|קג|kg|פאונד|פאונדים|ליברות)(?: (וחצי))?(?: (?:ו?היה|ו?הסט היה) (.+))?$/);
   const en = text.match(/^i (?:just )?(?:did|completed|finished) (?:a set of )?(.+?) (?:reps?|repetitions?) (?:with|at|using) (.+?) (kg|kgs|kilos?|kilograms?|lbs?|pounds?)(?: and (?:it |the set )?(?:was|felt) (.+))?$/);
   if (he || en) {
@@ -114,9 +157,15 @@ export function parseWorkoutVoice(transcript) {
 
 export function voiceReportHints(language) {
   return language === 'en' ? [
+    'Pause workout', 'Resume workout', 'Equipment busy', 'Equipment available',
+    'Move exercise up', 'Move exercise down', 'Collapse exercise', 'Expand exercise',
+    'Add set', 'Remove set', 'Exercise guide', 'Confirm action', 'Confirm cancel',
     'I did twelve reps with forty kilograms', 'The set was hard', 'It was medium',
     'Add half a minute of rest', 'Confirm finish', 'Undo',
   ] : [
+    'הפסק אימון', 'המשך אימון', 'המכשיר תפוס', 'המכשיר התפנה',
+    'הזז תרגיל למעלה', 'הזז תרגיל למטה', 'מזער תרגיל', 'פתח תרגיל',
+    'הוסף סט', 'הסר סט', 'הדרכה', 'מאשר פעולה', 'מאשר ביטול',
     'עשיתי שתים עשרה חזרות עם ארבעים קילו', 'הסט היה קשה', 'היה בינוני',
     'תוסיף חצי דקה מנוחה', 'מאשר סיום', 'בטל',
   ];

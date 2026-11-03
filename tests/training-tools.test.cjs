@@ -13,7 +13,7 @@ function load(file, names, values = {}) {
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
-  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'workoutEntryAnnouncement', 'setEquipmentBusy',
+  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutEntryAnnouncement', 'workoutSetLabel', 'moveWorkoutExercise', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
   'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'rememberMissingWorkoutLoads', 'editSavedPlanExercise', 'replaceSavedPlan',
   'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan', 'READY_PLAN_TEMPLATES', 'readyPlanTemplates', 'generateReadyPlan',
@@ -422,8 +422,8 @@ test('upcoming speech uses the actual next set, kilograms and honest hold/cardio
   const exercise = { ...find('chest'), defaultReps: '8–12' };
   const current = { ...entry(exercise, [set(20, 12, true), set(27.5, 9), set(30, 8)]), exerciseSnapshot: exercise };
   const speech = tools.workoutEntryAnnouncement(current, catalog);
-  assert.match(speech, /3 סטים, 2 נותרו/);
-  assert.match(speech, /סט 2/);
+  assert.doesNotMatch(speech, /מתוך|נותרו/);
+  assert.match(speech, /סט שני/);
   assert.match(speech, /9 חזרות/);
   assert.match(speech, /27.5 קילו/);
   assert.doesNotMatch(speech, /lbs|פאונד|30 קילו/);
@@ -437,6 +437,222 @@ test('upcoming speech uses the actual next set, kilograms and honest hold/cardio
   assert.match(tools.workoutEntryAnnouncement({ type: 'cardio', exerciseName: 'הליכה', durationSec: 300 }, []), /5 דקות/);
   const assistance = { ...entry(exercise, [set(35, 10)]), exerciseSnapshot: { catalogId: 'assisted' } };
   assert.match(tools.workoutEntryAnnouncement(assistance, []), /סיוע: 35 קילו/);
+});
+
+test('set transitions speak ordinals only unless the next prescription changes', () => {
+  const exercise = { id: 'custom', name: 'Custom', inputType: 'reps', defaultReps: 12 };
+  const current = entry(exercise, [set(25, 12, true, { voiceTargetReps: 12 }), set(25, 12), set(25, 12)]);
+  const announce = () => tools.workoutEntryAnnouncement(current, [exercise], undefined, undefined, { continuation: true });
+  assert.equal(announce(), 'סט שני');
+  current.sets[1].weightKg = 30;
+  assert.equal(announce(), 'סט שני. 12 חזרות. 30 קילו');
+  current.sets[1].weightKg = 25;
+  current.sets[1].reps = 10;
+  assert.equal(announce(), 'סט שני. 10 חזרות. 25 קילו');
+  current.sets[1].completed = true;
+  current.sets[2].reps = 10;
+  assert.equal(announce(), 'סט אחרון');
+  assert.equal(tools.workoutSetLabel(0, 3), 'סט ראשון');
+  assert.equal(tools.workoutSetLabel(0, 1), 'סט ראשון ואחרון');
+  assert.equal(tools.workoutSetLabel(11, 13), 'סט 12');
+  const hold = { ...current, exerciseSnapshot: { inputType: 'hold', holdSeconds: 30 } };
+  hold.sets[1].reps = 37;
+  assert.equal(tools.workoutEntryAnnouncement(hold, [], undefined, undefined, { continuation: true }), 'סט אחרון');
+});
+
+test('busy equipment defers to the following exercise then returns automatically with original sets intact', () => {
+  const a = entry(find('chest'), [set(20, 12, true, { difficulty: 'hard', notes: 'keep' }), set(25, 10)]);
+  const b = entry(find('oneRow'), [set(30, 8), set(30, 8)]);
+  const c = entry(find('squat'), [set(40, 6)]);
+  const original = session([a, b, c]);
+  original.currentExerciseId = a.exerciseId;
+  const waiting = tools.setEquipmentBusy(original, a.exerciseId, true, catalog);
+  assert.equal(waiting.currentExerciseId, b.exerciseId);
+  assert.equal(waiting.entries[0].equipmentBusyAfterId, b.exerciseId);
+  assert.equal(original.entries[0].equipmentBusy, undefined);
+  assert.equal(tools.nextAvailableWorkoutEntry(waiting, waiting.entries[1], catalog).exerciseId, c.exerciseId);
+  waiting.entries[1].sets.forEach((set) => { set.completed = true; });
+  const { context } = pauseController();
+  context.activeSession = waiting;
+  context.exercises = catalog;
+  context.advanceWorkoutFocus(waiting.entries[1]);
+  assert.equal(waiting.currentExerciseId, a.exerciseId);
+  assert.equal(waiting.entries[0].equipmentBusy, undefined);
+  assert.equal(waiting.entries[0].equipmentBusyAfterId, undefined);
+  assert.deepEqual(plain(waiting.entries[0].sets), original.entries[0].sets);
+  assert.match(context.workoutRestContinuation({ ...waiting, restCueExerciseId: b.exerciseId }), /25 קילו/);
+});
+
+test('the visible Equipment busy button immediately selects the successor without opening the alternatives dialog', () => {
+  const a = entry(find('chest')), b = entry(find('oneRow'));
+  let current = { ...session([a, b]), running: true, currentExerciseId: a.exerciseId };
+  let dialogs = 0, refreshed = 0;
+  const context = vm.createContext({ swap: {}, substitution: null, entry: a, actions: {}, tools,
+    api: { getState: () => ({ session: current, exercises: catalog, busy: false }),
+      saveSession: (next) => { current = next; }, dialog: () => { dialogs++; } },
+    safely: (_container, action) => action(), refresh: () => { refreshed++; } });
+  const source = read('www/js/training-ui.js'), start = source.indexOf('swap.onclick = () => {');
+  assert.doesNotMatch(source, /btnEquipmentAlternatives|חלופה לציוד/, 'Remove the separate alternative button without changing the busy flow');
+  vm.runInContext(source.slice(start, source.indexOf('actions.appendChild(swap);', start)), context);
+  context.swap.onclick();
+  assert.equal(dialogs, 0);
+  assert.equal(refreshed, 1);
+  assert.equal(current.currentExerciseId, b.exerciseId);
+  assert.equal(current.entries[0].equipmentBusyAfterId, b.exerciseId);
+  assert.equal(a.equipmentBusy, undefined);
+});
+
+test('deferred equipment returns after its successor even when that successor belongs to a superset', () => {
+  const a = entry(find('chest'));
+  const parts = tools.supersetExercises('leg-press-calves', catalog).map((exercise) =>
+    ({ ...entry(exercise, [set(20, 12)]), exerciseSnapshot: exercise }));
+  const waiting = tools.setEquipmentBusy(session([a, ...parts]), a.exerciseId, true, catalog);
+  const successor = waiting.entries.find((item) => item.exerciseId === waiting.entries[0].equipmentBusyAfterId);
+  successor.sets[0].completed = true;
+  assert.equal(tools.nextAvailableWorkoutEntry(waiting, successor, catalog), waiting.entries[0]);
+  const { context } = pauseController();
+  context.activeSession = waiting;
+  context.exercises = catalog;
+  context.advanceWorkoutFocus(successor);
+  assert.equal(waiting.currentExerciseId, a.exerciseId);
+  assert.equal(waiting.entries[0].equipmentBusy, undefined);
+});
+
+test('session reorder crosses muscle groups, survives serialization, preserves live references and moves supersets together', () => {
+  const a = entry(find('chest'), [set(20, 12, true, { notes: 'keep', difficulty: 'hard' }), set(25, 10)]);
+  const b = entry(find('oneRow'), [set(30, 8)]);
+  const c = { ...entry(find('chest'), [set(35, 6)]), exerciseId: 'other-chest', exerciseSnapshot: find('chest') };
+  const warmup = { exerciseId: 'warmup', type: 'cardio', durationSec: 300 };
+  const cooldown = { exerciseId: 'cooldown', type: 'cardio', durationSec: 300 };
+  const original = { ...session([warmup, a, b, c, cooldown]), running: true, currentExerciseId: a.exerciseId };
+  const moved = tools.moveWorkoutExercise(original, b.exerciseId, -1, catalog);
+  assert.deepEqual(plain(moved.workoutOrder), ['warmup', a.exerciseId, b.exerciseId, c.exerciseId, 'cooldown']);
+  const again = tools.moveWorkoutExercise(moved, b.exerciseId, -1, catalog);
+  assert.equal(again.entries[1], b);
+  assert.equal(again.entries[2], a);
+  assert.equal(again.currentExerciseId, a.exerciseId);
+  assert.equal(original.entries[1], a);
+  assert.equal(tools.moveWorkoutExercise(again, b.exerciseId, -1, catalog), again, 'Warmup stays first');
+  assert.equal(tools.moveWorkoutExercise(again, c.exerciseId, 1, catalog), again, 'Cooldown stays last');
+  const restored = plain(again);
+  assert.deepEqual(plain(tools.workoutMuscleProgress(restored, catalog).order.map((index) => restored.entries[index].exerciseId)), restored.workoutOrder);
+  assert.deepEqual(again.entries[2].sets, original.entries[1].sets);
+  const parts = tools.supersetExercises('leg-press-calves', catalog).map((exercise) =>
+    ({ ...entry(exercise, [set(20, 12)]), exerciseSnapshot: exercise }));
+  const paired = session([a, ...parts, b]);
+  const reordered = tools.moveWorkoutExercise(paired, parts[1].exerciseId, 1, catalog);
+  assert.deepEqual(plain(reordered.entries.map((entry) => entry.exerciseId)), [a.exerciseId, b.exerciseId, ...parts.map((entry) => entry.exerciseId)]);
+});
+
+test('real in-session reorder preserves a running count, active hold, undo identity and storage failure rollback', () => {
+  const { context, api, writes } = controllerContext();
+  const a = context.activeSession.entries[0], b = entry(find('oneRow'), [set(30, 8)]);
+  context.activeSession.entries.push(b);
+  context.activeSession.running = true;
+  context.activeSession.currentExerciseId = a.exerciseId;
+  const before = context.activeSession;
+  context.voiceCountingState = { entry: a, set: a.sets[0], entryIndex: 0, setIndex: 0, count: 7, targetReps: 12 };
+  const hold = { startedAt: 12345, intervalId: 7 };
+  context.holdTimers.set('unrelated:hold:0', hold);
+  context.lastVoiceAction = { kind: 'difficulty', session: before, entry: a, set: a.sets[0] };
+  api.moveWorkoutExercise(b.exerciseId, -1);
+  assert.equal(context.voiceCountingState.count, 7);
+  assert.equal(context.voiceCountingState.entryIndex, 1);
+  assert.equal(context.voiceCountingState.entry, a);
+  assert.equal(context.activeSession.entries[1], a);
+  assert.equal(context.lastVoiceAction.session, context.activeSession);
+  assert.equal(context.holdTimers.get('unrelated:hold:0'), hold);
+  assert.equal(writes.length, 1);
+  const stable = context.activeSession;
+  context.db.saveActiveSession = () => { throw new Error('disk full'); };
+  assert.throws(() => api.moveWorkoutExercise(a.exerciseId, -1), /disk full/);
+  assert.equal(context.activeSession, stable);
+  assert.equal(context.voiceCountingState.entryIndex, 1);
+});
+
+test('reordered equipment substitutions preserve their reviewed position rather than moving after cooldown', () => {
+  const source = find('chest');
+  const replacement = tools.alternatives(source, catalog)[0];
+  assert.ok(replacement);
+  const a = entry(source), b = entry(find('oneRow'));
+  const cooldown = { exerciseId: 'cooldown', type: 'cardio', durationSec: 300 };
+  const moved = tools.moveWorkoutExercise(session([a, b, cooldown]), b.exerciseId, -1, catalog);
+  const swapped = tools.swapExercise(moved, a.exerciseId, replacement, catalog);
+  assert.deepEqual(plain(swapped.workoutOrder), [b.exerciseId, replacement.id, 'cooldown']);
+  const restored = tools.restoreSubstitution(swapped, replacement.id);
+  assert.deepEqual(plain(restored.workoutOrder), [b.exerciseId, a.exerciseId, 'cooldown']);
+  const removed = tools.removeWorkoutExercise(moved, a.exerciseId);
+  const removalRestored = tools.restoreWorkoutExercise(removed, a.exerciseId);
+  assert.deepEqual(plain(removalRestored.workoutOrder), [b.exerciseId, a.exerciseId, 'cooldown']);
+});
+
+test('last-set feedback follows actual completion order and holds automatic finish until rating', () => {
+  const current = { ...session([entry(find('chest'), [set(20, 12), set(20, 12, true)])]), running: true, id: 'feedback' };
+  const { context, records, flush } = autoCompletionController(current);
+  context.activeSession.entries[0].sets[0].completed = true;
+  context.rememberCompletedSet(current.entries[0], current.entries[0].sets[0]);
+  assert.equal(current.entries[0].completionFeedbackSetIndex, 0);
+  assert.equal(current.entries[0].completionFeedbackPending, true);
+  context.scheduleWorkoutAutoFinish();
+  flush();
+  assert.equal(records.length, 0);
+  current.entries[0].sets[0].difficulty = 'right';
+  context.expandedWorkoutExercises = new Set([current.entries[0].exerciseId]);
+  context.expandNextWorkoutCard = () => {};
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function completeWorkoutFeedback('), source.indexOf('function refreshWorkoutCardCompletion(')), context);
+  context.completeWorkoutFeedback(current.entries[0]);
+  flush();
+  assert.equal(records.length, 1);
+  assert.equal(records[0][0].entries[0].sets[0].difficulty, 'right');
+});
+
+test('removing the designated busy successor cannot strand the original exercise after remaining work finishes', () => {
+  const a = entry(find('chest')), b = entry(find('oneRow')), c = entry(find('squat'));
+  const waiting = tools.setEquipmentBusy(session([a, b, c]), a.exerciseId, true, catalog);
+  const changed = tools.removeWorkoutExercise({ ...waiting, running: false, paused: true }, b.exerciseId);
+  const successor = changed.entries.find((item) => item.exerciseId === c.exerciseId);
+  successor.sets.forEach((set) => { set.completed = true; });
+  assert.equal(tools.nextAvailableWorkoutEntry(changed, successor, catalog).exerciseId, a.exerciseId);
+  const { context } = pauseController();
+  context.activeSession = changed;
+  context.exercises = catalog;
+  context.advanceWorkoutFocus(successor);
+  assert.equal(changed.currentExerciseId, a.exerciseId);
+  assert.equal(changed.entries[0].equipmentBusy, undefined);
+  assert.equal(changed.removedExercises[0].entry.exerciseId, b.exerciseId);
+});
+
+test('five-second unrated feedback timeout allows automatic finish without inventing a rating or skip button', () => {
+  const current = { ...session([entry(find('chest'), [set(20, 12, true)])]), running: true, id: 'feedback-timeout' };
+  const { context, records, flush } = autoCompletionController(current);
+  const completed = current.entries[0];
+  completed.completionFeedbackPending = true;
+  completed.completionFeedbackSetIndex = 0;
+  context.expandedWorkoutExercises = new Set([completed.exerciseId]);
+  context.completedWorkoutExercises = new Set();
+  context.rememberWorkoutViewport = () => {};
+  context.qsa = () => [];
+  context.workoutViewport = null;
+  const pending = new Map();
+  let id = 0;
+  context.setTimeout = (callback, delay) => { pending.set(++id, { callback, delay }); return id; };
+  context.clearTimeout = (key) => pending.delete(key);
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function syncCompletedWorkoutCards('), source.indexOf('function configureWorkoutCard(')), context);
+  context.syncCompletedWorkoutCards();
+  context.scheduleWorkoutAutoFinish();
+  flush();
+  assert.equal(records.length, 0);
+  assert.equal(pending.size, 1);
+  const timer = [...pending.values()][0];
+  assert.equal(timer.delay, 5000);
+  timer.callback();
+  flush();
+  assert.equal(records.length, 1);
+  assert.equal(records[0][0].entries[0].sets[0].difficulty, undefined);
+  assert.equal(records[0][0].entries[0].completionFeedbackPending, undefined);
+  assert.doesNotMatch(source, /btnSkipWorkoutFeedback|דלג על דירוג והמשך/);
 });
 
 test('live rest guidance recomputes earlier available work instead of replaying a stale next exercise', () => {
@@ -454,7 +670,8 @@ test('live rest guidance recomputes earlier available work instead of replaying 
   vm.runInContext(source.slice(source.indexOf('function getWorkoutSetProgress()'), source.indexOf('function cardioCompletionMessage(')), context);
   context.startRestTimer({ id: 'b', name: 'Finished', restSeconds: 90 }, true, 'Later');
   assert.match(spoken[0], /התרגיל הבא: Earlier/);
-  assert.match(spoken[0], /25 קילו/);
+  assert.doesNotMatch(spoken[0], /קילו/);
+  assert.match(context.restDoneMessage, /25 קילו/);
   a.equipmentBusy = true;
   context.persistActiveSession();
   assert.match(context.restDoneMessage, /^Later/);
@@ -1050,7 +1267,7 @@ function pauseController(savedSession) {
       voiceStartListening: async () => { calls.push('startListening'); return { listening: true }; } },
     db: { saveActiveSession: (value) => saved.push(plain(value)), saveWorkouts() {}, clearActiveSession() {},
       saveProgramState() {} },
-    i18n: { text: (value) => value, translateDOM() {}, exerciseName: (value) => value, getLanguage: () => 'he', getGender: () => 'general', locale: () => 'he-IL' },
+    i18n: { text: (value) => value, canonicalVoice: (value) => value, translateDOM() {}, exerciseName: (value) => value, getLanguage: () => 'he', getGender: () => 'general', locale: () => 'he-IL' },
     document: { visibilityState: 'visible' }, currentTab: 'workout', voiceListeningActive: !!activeSession.running,
     voiceListeningRequested: !!activeSession.running, voiceFocusedRequested: false, voicePlaybackHandoff: false,
     voiceListeningRevision: 0, voiceActivationPending: false, voiceListeningError: '', voiceInputName: '',
@@ -1078,6 +1295,7 @@ function pauseController(savedSession) {
     ['function persistRestTimerState(', 'function buildWorkoutActivityPayload()'],
     ['function stopWorkoutTimers()', 'function renderWorkoutTab()'],
     ['async function updateVoiceListeningState(', 'function startRestTimer('],
+    ['function normalizeVoiceText(', '/* ---------------- Voice commands dispatch'],
     ['function handleVoiceTranscript(', '/* ---------------- Voice commands: listening lifecycle'],
     ['function finishWorkout()', 'function persistActiveSession()'],
     ['function buildWorkoutActivityPayload()', 'function syncWorkoutActivity()'],
@@ -1307,7 +1525,7 @@ test('failure clearing the draft after history save is recoverable and cannot sa
   assert.equal(context.activeSession.id, 'next');
 });
 
-test('actual pause controller freezes stopwatch/rest/cardio/holds and listening, retaining every entered value', async () => {
+test('actual pause controller freezes stopwatch/rest/cardio/holds while retaining resume-only listening and every entered value', async () => {
   const { context, advance, saved, calls, intervals, el } = pauseController();
   const entries = context.activeSession.entries, first = plain(entries[0]);
   context.pauseWorkout();
@@ -1324,7 +1542,9 @@ test('actual pause controller freezes stopwatch/rest/cardio/holds and listening,
   assert.equal(intervals.size, 0);
   assert.equal(context.holdTimers.size, 0);
   assert.equal(context.voiceCountingState, null);
-  assert.ok(calls.includes('stopListening') && calls.includes('stopBackground') && calls.includes('stoppedPlan'), JSON.stringify(calls));
+  assert.ok(!calls.includes('stopListening') && calls.includes('stopBackground') && calls.includes('stoppedPlan'), JSON.stringify(calls));
+  assert.equal(context.voiceListeningActive, true);
+  assert.equal(context.activeSession.voiceResumeAllowed, true);
   assert.equal(el('btnStartWorkout').textContent, 'המשך אימון');
   assert.equal(el('btnPauseWorkout').disabled, true);
   assert.equal(el('btnFinishWorkout').classList.contains('hidden'), false);
@@ -1364,8 +1584,27 @@ test('actual resume controller excludes multiple long pauses and restores rest, 
   advance(10000);
   assert.equal(context.stopwatch.getElapsed(), 160);
   assert.equal(context.restTimer.endAt - context.Date.now(), 5000);
-  assert.equal(calls.filter((value) => value === 'startListening').length, 2, JSON.stringify(calls));
+  assert.equal(calls.filter((value) => value === 'startListening').length, 0, 'Pause/resume must not restart microphone routing');
   assert.equal(calls.filter((value) => value === 'startBackground').length, 2);
+});
+
+test('pause accepts only explicit voice resume and cannot change sets, timers, ordering or confirmation state', () => {
+  const { context } = pauseController();
+  context.pauseWorkout();
+  const entries = plain(context.activeSession.entries), rest = plain(context.activeSession.pausedRest);
+  for (const command of ['12', 'סט הושלם', 'התחל סט', 'סמן כבוצע', 'המכשיר תפוס', 'הוסף סט',
+    'סיים אימון', 'בטל אימון', 'מאשר פעולה', 'הזז תרגיל למעלה', 'דלג על מנוחה']) {
+    context.handleVoiceTranscript(command);
+    assert.deepEqual(plain(context.activeSession.entries), entries, command);
+    assert.deepEqual(plain(context.activeSession.pausedRest), rest, command);
+    assert.equal(context.activeSession.paused, true);
+    assert.equal(context.pendingVoiceFinish, null);
+  }
+  context.handleVoiceTranscript('המשך אימון');
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.activeSession.paused, false);
+  assert.equal(context.activeSession.voiceResumeAllowed, undefined);
+  assert.equal(context.voiceCountingState.count, 3);
 });
 
 test('persisted paused workout reloads frozen, resumes safely and finishes with active time only', () => {

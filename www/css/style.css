@@ -389,8 +389,8 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .workout-muscle-heading.done .workout-muscle-count { color: var(--success); }
 .workout-muscle-heading.done h2::before { content: '✓' / ''; color: var(--success); font-weight: 900; margin-inline-end: 8px; }
 .workout-quick-status {
-  position: fixed; top: calc(var(--app-header-height, 65px) + 6px);
-  left: 12px; right: 12px; z-index: 19; max-width: 720px; margin: 0 auto;
+  position: sticky; top: calc(var(--app-header-height, 65px) + 6px);
+  z-index: 26; max-width: 720px; margin: 0 auto 12px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px;
   background: var(--surface); box-shadow: var(--shadow);
@@ -401,6 +401,9 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .workout-music-controls { margin-block: 10px; }
 .workout-quick-status [data-music-toggle] { min-height: 40px; max-width: 120px; padding: 6px 8px; flex-shrink: 0; }
 .workout-quick-status:has([data-music-toggle]:not(.hidden)) { gap: 8px; }
+.workout-order-actions { display: flex; gap: 4px; }
+.workout-order-actions button { min-width: 36px; min-height: 40px; }
+.workout-order-actions button:disabled { opacity: .35; cursor: default; }
 .btn-start::before { content: '▶' / ''; margin-inline-end: 8px; }
 .btn-pause::before { content: 'Ⅱ' / ''; margin-inline-end: 8px; font-weight: 900; }
 .btn-cancel::before { content: '✕' / ''; margin-inline-end: 8px; color: #b91c1c; background: #fff; padding: 1px 4px; border-radius: 4px; }

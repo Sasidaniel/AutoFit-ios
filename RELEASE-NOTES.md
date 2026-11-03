@@ -1,5 +1,76 @@
 # AutoFit release notes
 
+## Unreleased - workout flow and speech recovery (2026-11-03)
+
+Candidate 45 follows the owner's ten workout issues and subsequent review.
+Explicit approval for one internal TestFlight release was received on
+2026-11-03 at 08:43:43 UTC, including Git and Markdown updates. Build 44 remains
+the latest delivered binary until native gates and Apple availability are verified.
+
+- Keep a just-completed strength exercise open for difficulty feedback on the
+  set that actually completed it. A rating closes it immediately; without a rating,
+  collapse after five seconds and open the current next exercise. Remove the added
+  skip button; manual collapse remains available. Automatic workout saving waits
+  for final feedback or the timeout; confirmed manual Finish remains available.
+- A tap on Equipment busy immediately defers the exercise until the following exercise
+  is complete. Open and announce the successor, then return to the original with
+  its measurements intact. This is a return prompt, not proof equipment is free.
+  If nothing else is available, retain the reversible waiting state.
+  Remove the separate Equipment alternative button following owner review;
+  preserve the direct busy/return flow and restoration of existing substitutions.
+- Use first/second/last set wording. Speak known reps/load at exercise introduction,
+  then repeat targets only when the next prescription differs, including superset
+  rounds. Add next-exercise details to warmup/cardio completion and explicit rest
+  skipping. Keep percentage-free timed/final completion behavior.
+- Point Hebrew native speech for the standalone set words, without modifying
+  displayed text, canonical exercise names or recognition phrases.
+- Guard native speech against missing start/end delegate callbacks: bound the
+  wait, discard stale pending speech, replace the synthesizer, release announcement
+  ownership and report the failure. Preserve completed-ID deduplication; never
+  replay a stale backlog. The existing user-requested audio recovery also resets
+  speech. The original on-device incident's cause is not confirmed.
+- Add session-only up/down controls, preserving live model references, count
+  indices, hold timers, notes, ratings and voice undo identity. Persist explicit
+  order across muscle groups and reloads; move paired supersets together and keep
+  warmup/cooldown at the ends. Preserve reviewed positions through equipment
+  substitution/restore and exercise restoration.
+- Always show the compact timer/progress/music toolbar on Workout. Use sticky
+  layout rather than observer-driven hiding. Keep it outside the paused inert
+  exercise area and above the pause overlay. Music availability still reflects
+  the real platform; browsers do not pretend to control Apple Music.
+- Fix capture-phase exercise selection preempting card toggles, ordering,
+  busy-equipment actions and final ratings. Preserve completed-card reopening.
+- Add anchored Hebrew/English workout control intents for equipment, ordering,
+  collapse/expand, set add/remove/mark/unmark, remeasurement, guides, photos,
+  notes, advice, time-budget review/restoration and removal review/restoration.
+  Route commands through the existing controls and model guards. “Next set”
+  starts a set, and “Next exercise” respects rendered order and skips busy equipment.
+  Recover the deferred return if its designated successor was subsequently removed.
+- Allow voice Pause and restricted Resume-only listening after a successfully
+  saved pause; retain all interaction locks and freeze counts/timers. Failed
+  saves, leaving Workout or disabling voice still release microphone intent.
+- Require a separate 15-second confirmation for voice cancellation. Finish and
+  cancel confirmations cannot authorize each other. Dialog confirmations are
+  single-use and bound to the live dialog, session and 15-second window.
+  Roll back difficulty on storage failure rather than displaying a saved rating.
+- Show the same authored 33-item command guide inside Settings, cloning before
+  initial localization so switching from an English startup back to Hebrew works.
+  System permissions, file selection, typed notes, ambiguous removed-exercise
+  selection and system confirmation of deleting recorded sets still require touch.
+  Voice microphone recovery cannot work while no transcript is being captured.
+
+Local verification: **711 JS regressions passed**, all 20 web modules parsed.
+An isolated mobile-width browser workout verified feedback-before-collapse,
+single-tap busy-equipment successor/return, reordered notes and persistent toolbar
+while scrolling and paused.
+The follow-up verified immediate collapse after rating and five-second collapse
+without a rating or skip button. Rerenders do not restart the timer; completion
+undo cancels it, and stale callbacks cannot save a different workout.
+Added Swift timeout/pronunciation cases and JS native-wiring regressions.
+**Swift/iOS compilation and physical audio playback have not been run for these
+changes on this Windows host** and remain required before release. Browser origin:
+`http://workout-flow.localhost:8963/?previewSkip=1&tab=workout`.
+
 ## 1.0 (44) - verified internal TestFlight release (2026-11-02)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-02 15:20:02 UTC.**
