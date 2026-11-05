@@ -122,11 +122,16 @@ struct WorkoutAudioPolicyTests {
 
     private static func testAnnouncementRecovery() {
         precondition(WorkoutAnnouncementQueue.spokenText("אפשר להמשיך לסט הבא. סט שני", language: "he-IL")
-            == "אפשר להמשיך לַסֶט הבא. סֶט שני")
+            == "אפשר להמשיך לַסֶט הבא. סֶט שֵׁנִי")
         precondition(WorkoutAnnouncementQueue.spokenText("Next set", language: "en-US") == "Next set")
         precondition(WorkoutAnnouncementQueue.spokenText("סטטוס טקסט", language: "he-IL") == "סטטוס טקסט")
         precondition(WorkoutAnnouncementQueue.spokenText("הסט הבא", language: "he-IL") == "הַסֶט הבא")
         precondition(WorkoutAnnouncementQueue.spokenText("לַסֶט הבא", language: "he-IL") == "לַסֶט הבא")
+        precondition(WorkoutAnnouncementQueue.spokenText("הסתיים זמן המנוחה. עכשיו סט שני", language: "he-IL")
+            == "הסתיים זמן המנוחה. עכשיו סֶט שֵׁנִי")
+        precondition(WorkoutAnnouncementQueue.spokenText("סֶט שֵׁנִי", language: "he-IL") == "סֶט שֵׁנִי")
+        precondition(WorkoutAnnouncementQueue.spokenText("סט שניים סטטוס", language: "he-IL") == "סֶט שניים סטטוס")
+        precondition(WorkoutAnnouncementQueue.spokenText("יום שני, הסט שני", language: "he-IL") == "יום שני, הַסֶט שֵׁנִי")
         precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 1000, started: false) == 8)
         precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 0, started: true) == 15)
         precondition(WorkoutAnnouncementQueue.playbackTimeout(characterCount: 100, started: true) == 26)

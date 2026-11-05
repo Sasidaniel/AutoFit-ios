@@ -347,10 +347,16 @@ public class BackgroundAnnouncerPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSyn
     private func speak(_ text: String, language: String = "he-IL", announcementID: String? = nil) throws {
         if let identifier = announcementID, cancelledPrefixes.contains(where: { identifier.hasPrefix($0) }) { return }
         guard ["he-IL", "en-US"].contains(language),
-              let voice = AVSpeechSynthesisVoice(language: language) else {
+              let defaultVoice = AVSpeechSynthesisVoice(language: language) else {
             throw NSError(domain: "AutoFit.Audio", code: 5,
                 userInfo: [NSLocalizedDescriptionKey: "Requested announcement voice is unavailable"])
         }
+        let voice = language == "he-IL"
+            ? AVSpeechSynthesisVoice.speechVoices().filter { $0.language == language }
+                .reduce(defaultVoice) { best, candidate in
+                    candidate.quality.rawValue > best.quality.rawValue ? candidate : best
+                }
+            : defaultVoice
         if let announcementID = announcementID, speechQueue.contains(announcementID) { return }
         if speechQueue.isEmpty {
             Self.isAnnouncing = true

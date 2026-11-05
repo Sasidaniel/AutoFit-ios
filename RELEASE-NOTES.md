@@ -1,5 +1,31 @@
 # AutoFit release notes
 
+## Candidate 1.0 (46) - Hebrew pronunciation and natural announcements (2026-11-05)
+
+The owner clarified that the incorrect vowel is in **שֵׁנִי (second)**, not
+in the word for set. Point only the second-set ordinal for native speech,
+preserving the existing set pronunciation, UI/recognition text and saved data.
+Use the same “הסתיים זמן המנוחה. עכשיו סט שני” rest-completion sentence
+in foreground and prearmed native background announcements, retaining deadline
+identities and deduplication.
+
+Prefer a higher-quality Hebrew voice only when already installed. Keep the
+default voice on quality ties and preserve English, speech rate and audio routing.
+Use connected reps/load wording, explicit assistance and spoken “to” ranges.
+Say “one minute” rather than “1 minutes”; use seconds for non-whole-minute durations.
+Do not change stored prescriptions or repeat unchanged targets between sets.
+
+Local validation: **715/715 JS regressions passed**, including bilingual
+foreground/background completion parity, natural duration/range phrasing and
+unchanged source data. All 20 web modules parsed. Swift pronunciation regression
+cases were updated but **native compilation and physical iPhone listening remain
+unverified for this follow-up**.
+Fresh explicit owner approval at **2026-11-05 09:36:30 UTC**: **"תשחרר גרסה"**.
+This authorizes one internal TestFlight build **46** after regression/native/layout
+gates, with source and receipt backup on the work branch. No main merge or external
+distribution. Preparing the gated release; build 45 remains the delivered binary
+until actual Apple availability for 46 is confirmed.
+
 ## 1.0 (45) - verified internal TestFlight release (2026-11-03)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-03 09:28:56 UTC.**

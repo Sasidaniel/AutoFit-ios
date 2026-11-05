@@ -23,7 +23,7 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
   ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
-    'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'moveWorkoutExercise', 'setEquipmentBusy', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+    'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'moveWorkoutExercise', 'setEquipmentBusy', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
 
 function musicControlsFixture({ platform = true, authorization = 'authorized', state = 'paused' } = {}) {
   const calls = [], toasts = [];
@@ -7135,6 +7135,63 @@ test('native announcements bound missing start/end callbacks, reset the synthesi
   assert.match(source, /watchSpeech\(utterance, started: true\)/);
   assert.match(source, /WorkoutAnnouncementQueue\.spokenText\(text, language: language\)/);
   assert.match(source, /RunLoop\.main\.add\(timer, forMode: \.common\)/);
+});
+
+test('Hebrew speech prefers the best installed same-language voice without changing English or routing', () => {
+  const source = read('ios/App/App/BackgroundAnnouncerPlugin.swift');
+  const speak = source.slice(source.indexOf('private func speak('), source.indexOf('public func speechSynthesizer('));
+  assert.match(speak, /language == "he-IL"[\s\S]*speechVoices\(\)\.filter \{ \$0\.language == language \}/);
+  assert.match(speak, /candidate\.quality\.rawValue > best\.quality\.rawValue \? candidate : best/);
+  assert.match(speak, /: defaultVoice/);
+  assert.match(speak, /utterance\.rate = AVSpeechUtteranceDefaultSpeechRate/);
+});
+
+test('native pronunciation regexes preserve the set vowel and point only the second-set ordinal', () => {
+  const source = read('ios/App/App/WorkoutAudioPolicy.swift');
+  const body = source.slice(source.indexOf('static func spokenText('), source.indexOf('static func playbackTimeout('));
+  assert.match(body, /guard language == "he-IL" else \{ return text \}/);
+  const replacements = [...body.matchAll(/replacingOccurrences\(of: ("(?:[^"\\]|\\.)*"),\s*with: ("(?:[^"\\]|\\.)*"), options: \.regularExpression\)/g)]
+    .map((match) => [new RegExp(JSON.parse(match[1]), 'gu'), JSON.parse(match[2])]);
+  assert.equal(replacements.length, 4);
+  const spoken = (text) => replacements.reduce((result, [pattern, replacement]) => result.replace(pattern, replacement), text);
+  for (const [input, expected] of [
+    ['הסתיים זמן המנוחה. עכשיו סט שני', 'הסתיים זמן המנוחה. עכשיו סֶט שֵׁנִי'],
+    ['הסט שני', 'הַסֶט שֵׁנִי'],
+    ['לסט שני', 'לַסֶט שֵׁנִי'],
+    ['יום שני, סטטוס וטקסט', 'יום שני, סטטוס וטקסט'],
+    ['סט שניים', 'סֶט שניים'],
+    ['סֶט שֵׁנִי', 'סֶט שֵׁנִי'],
+  ]) {
+    assert.equal(spoken(input), expected);
+    assert.equal(spoken(spoken(input)), expected);
+  }
+});
+
+test('foreground and native rest deadlines both announce completion before the next ordinal in either language', async () => {
+  for (const language of ['he', 'en']) {
+    const spoken = [];
+    let handlers;
+    const foreground = vm.createContext({
+      RestTimer: class { constructor(options) { handlers = options; } },
+      activeSession: {}, settings: { voiceAnnouncements: true }, playBeep() {},
+      el: () => ({ classList: { add() {} } }), showToast() {}, notify() {},
+      speak: (...args) => spoken.push(args),
+    });
+    foreground.i18n.setLanguage(language);
+    vm.runInContext(section('let restDoneMessage =', '// Native deadlines are armed'), foreground);
+    vm.runInContext("restDoneMessage = 'סט שני'", foreground);
+    handlers.onDone(91000);
+    const expected = language === 'he' ? 'הסתיים זמן המנוחה. עכשיו סט שני' : 'Rest complete. Now Second set';
+    assert.equal(spoken[0][0], expected);
+    assert.equal(spoken[0][2], 'rest:91000:done');
+    const { context, calls } = nativePlanContext();
+    context.i18n.setLanguage(language);
+    context.restDoneMessage = 'סט שני';
+    context.restTimer.start(90);
+    await settlePlan(context);
+    assert.equal(calls.at(-1).at(-1).text, expected);
+    assert.equal(calls.at(-1).at(-1).announcementID, spoken[0][2]);
+  }
 });
 
 test('warmup and scheduled cardio completion introduce the actual next or deferred exercise in either language', () => {

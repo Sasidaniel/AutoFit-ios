@@ -105,7 +105,7 @@ const restTimer = new RestTimer({
   onDone: (endAt) => {
     playBeep();
     if (activeSession.restCueExerciseId) restDoneMessage = workoutRestContinuation();
-    if (settings.voiceAnnouncements) speak(`זמן המנוחה הסתיים. ${restDoneMessage}`, i18n.locale(), `rest:${endAt}:done`);
+    if (settings.voiceAnnouncements) speak(trainingTools.workoutRestAnnouncement(restDoneMessage, i18n.text), i18n.locale(), `rest:${endAt}:done`);
     el('restOverlay').classList.add('hidden');
     showToast(`המנוחה הסתיימה — ${restDoneMessage} 💪`);
     notify('זמן המנוחה הסתיים', restDoneMessage);
@@ -129,7 +129,7 @@ function buildBackgroundAnnouncementItems() {
         }
       }
       if (settings.voiceAnnouncements) {
-        items.push({ fireAtMillis: restTimer.endAt, text: `זמן המנוחה הסתיים. ${restDoneMessage}`,
+        items.push({ fireAtMillis: restTimer.endAt, text: trainingTools.workoutRestAnnouncement(restDoneMessage, i18n.text),
           announcementID: `rest:${restTimer.endAt}:done` });
       }
     }

@@ -13,7 +13,7 @@ function load(file, names, values = {}) {
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
 const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
-  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutEntryAnnouncement', 'workoutSetLabel', 'moveWorkoutExercise', 'setEquipmentBusy',
+  'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'workoutSetLabel', 'moveWorkoutExercise', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
   'PLAN_MUSCLES', 'planningCatalog', 'planExercise', 'createSavedWorkout', 'rememberMissingWorkoutLoads', 'editSavedPlanExercise', 'replaceSavedPlan',
   'planIdentity', 'sessionWorkoutTitle', 'calendarWeekStart', 'planCatalog', 'generatePlan', 'READY_PLAN_TEMPLATES', 'readyPlanTemplates', 'generateReadyPlan',
@@ -430,13 +430,22 @@ test('upcoming speech uses the actual next set, kilograms and honest hold/cardio
   current.sets[1] = set();
   delete current.targetReps;
   current.exerciseSnapshot.targetWeightKg = 20;
-  assert.match(tools.workoutEntryAnnouncement(current, catalog), /8–12 חזרות/);
+  assert.match(tools.workoutEntryAnnouncement(current, catalog), /8 עד 12 חזרות/);
   assert.doesNotMatch(tools.workoutEntryAnnouncement(current, catalog), /קילו/);
   const hold = { ...entry(exercise, [set()]), exerciseSnapshot: { inputType: 'hold', holdSeconds: 30 } };
   assert.match(tools.workoutEntryAnnouncement(hold, []), /30 שניות החזקה/);
   assert.match(tools.workoutEntryAnnouncement({ type: 'cardio', exerciseName: 'הליכה', durationSec: 300 }, []), /5 דקות/);
   const assistance = { ...entry(exercise, [set(35, 10)]), exerciseSnapshot: { catalogId: 'assisted' } };
-  assert.match(tools.workoutEntryAnnouncement(assistance, []), /סיוע: 35 קילו/);
+  assert.match(tools.workoutEntryAnnouncement(assistance, []), /עם סיוע של 35 קילו/);
+});
+
+test('spoken prescriptions use natural ranges and durations without altering saved goals', () => {
+  const current = { exerciseName: 'Custom', exerciseSnapshot: {}, sets: [{ reps: '8–12', weightKg: 27.5 }] };
+  const before = JSON.stringify(current);
+  assert.equal(tools.workoutEntryAnnouncement(current, []), 'Custom. סט ראשון ואחרון. 8 עד 12 חזרות, במשקל 27.5 קילו');
+  assert.equal(JSON.stringify(current), before);
+  assert.equal(tools.workoutEntryAnnouncement({ type: 'cardio', exerciseName: 'הליכה', durationSec: 60 }, []), 'הליכה. דקה אחת');
+  assert.equal(tools.workoutEntryAnnouncement({ type: 'cardio', exerciseName: 'הליכה', durationSec: 90 }, []), 'הליכה. 90 שניות');
 });
 
 test('set transitions speak ordinals only unless the next prescription changes', () => {
@@ -445,10 +454,10 @@ test('set transitions speak ordinals only unless the next prescription changes',
   const announce = () => tools.workoutEntryAnnouncement(current, [exercise], undefined, undefined, { continuation: true });
   assert.equal(announce(), 'סט שני');
   current.sets[1].weightKg = 30;
-  assert.equal(announce(), 'סט שני. 12 חזרות. 30 קילו');
+  assert.equal(announce(), 'סט שני. 12 חזרות, במשקל 30 קילו');
   current.sets[1].weightKg = 25;
   current.sets[1].reps = 10;
-  assert.equal(announce(), 'סט שני. 10 חזרות. 25 קילו');
+  assert.equal(announce(), 'סט שני. 10 חזרות, במשקל 25 קילו');
   current.sets[1].completed = true;
   current.sets[2].reps = 10;
   assert.equal(announce(), 'סט אחרון');

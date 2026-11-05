@@ -546,13 +546,20 @@ export function workoutSetLabel(index, total, translate = (text) => text) {
   return translate(labels[index] || 'סט {0}').replace('{0}', index + 1);
 }
 
+export function workoutRestAnnouncement(continuation, translate = (text) => text) {
+  return translate(`הסתיים זמן המנוחה. עכשיו ${continuation}`);
+}
+
 export function workoutEntryAnnouncement(entry, catalog, translate = (text) => text, translateName = (text) => text,
   { continuation = false, includeName = !continuation } = {}) {
   if (!entry) return '';
   const exercise = entry.exerciseSnapshot || catalog.find((item) => item.id === entry.exerciseId) || {};
   const parts = includeName ? [translateName(entry.exerciseName || exercise.name || '')] : [];
   if (entry.type === 'cardio') {
-    if (Number.isFinite(entry.durationSec) && entry.durationSec > 0) parts.push(translate(`${Math.round(entry.durationSec / 6) / 10} דקות`));
+    if (Number.isFinite(entry.durationSec) && entry.durationSec > 0) {
+      parts.push(translate(entry.durationSec === 60 ? 'דקה אחת'
+        : entry.durationSec % 60 === 0 ? `${entry.durationSec / 60} דקות` : `${Math.round(entry.durationSec)} שניות`));
+    }
     return parts.join('. ');
   }
   const remaining = entry.sets.filter((set) => !set.completed);
@@ -568,13 +575,17 @@ export function workoutEntryAnnouncement(entry, catalog, translate = (text) => t
     if (continuation && previous && comparable(target(previous)) === comparable(target(next))
       && comparable(previous.weightKg) === comparable(next.weightKg)) return parts.join('. ');
     const reps = target(next);
+    const prescription = [];
     if (reps !== '' && reps != null && /^\d+(?:\s*[–-]\s*\d+)?$/.test(String(reps))) {
-      parts.push(translate(`${reps} ${exercise.inputType === 'hold' ? 'שניות החזקה' : 'חזרות'}`));
+      const spokenReps = String(reps).replace(/\s*[–-]\s*/, ' עד ');
+      prescription.push(translate(`${spokenReps} ${exercise.inputType === 'hold' ? 'שניות החזקה' : 'חזרות'}`));
     }
     const weight = next.weightKg;
     if (weight !== '' && weight != null && Number.isFinite(Number(weight)) && Number(weight) >= 0) {
-      parts.push(translate(`${exercise.loadKind === 'assistance' || exercise.catalogId === 'assisted' ? 'סיוע: ' : ''}${Number(weight)} קילו`));
+      prescription.push(translate(`${exercise.loadKind === 'assistance' || exercise.catalogId === 'assisted'
+        ? 'עם סיוע של ' : 'במשקל '}${Number(weight)} קילו`));
     }
+    if (prescription.length) parts.push(prescription.join(', '));
   }
   return parts.filter(Boolean).join('. ');
 }

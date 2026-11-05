@@ -96,6 +96,8 @@ struct WorkoutAnnouncementQueue {
                 with: "הַסֶט", options: .regularExpression)
             .replacingOccurrences(of: "(?<![\\p{L}\\p{M}])סט(?![\\p{L}\\p{M}])",
                 with: "סֶט", options: .regularExpression)
+            .replacingOccurrences(of: "(?<=סֶט )שני(?![\\p{L}\\p{M}])",
+                with: "שֵׁנִי", options: .regularExpression)
     }
 
     static func playbackTimeout(characterCount: Int, started: Bool) -> TimeInterval {
