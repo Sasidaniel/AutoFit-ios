@@ -75,11 +75,10 @@ const ACTION_ERRORS = {
   'Selected muscle groups do not cover every split day': 'קבוצות השרירים שנבחרו אינן מכסות כל חלק בחלוקה. בחר גם קבוצות מהחלקים האחרים, או בחר פול בודי.',
   'Invalid plan preferences': 'בדוק שהחלוקה מתאימה למספר האימונים: A/B דורש לפחות שניים, ו-A/B/C לפחות שלושה.',
   'Confirm a jump rope and clear space': 'יש לאשר שיש חבל תקין ומרחב פנוי לפני בניית האימון.',
-  'The plan was selected but the workout could not start': 'התוכנית נבחרה, אבל התחלת האימון נכשלה. פתח את מסך אימון כדי לבדוק ולנסות שוב.',
   'Enter a workout name of 1–80 characters': 'יש להזין שם אימון באורך של עד 80 תווים.',
   'Choose at least one exercise before saving': 'בחר לפחות תרגיל אחד באימון שלי לפני השמירה.',
   'The selected program changed; reopen the save dialog': 'הבחירה השתנתה. פתח שוב את חלון השמירה.',
-  'Finish or save the current workout before starting another': 'יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו לפני התחלת אימון אחר.',
+  'Finish or save the current workout before selecting another': 'יש אימון פעיל או נתונים שהוזנו. יש לסיים ולשמור אותו לפני בחירת תוכנית אחרת.',
   'Confirm a properly installed TRX anchor': 'לפני שילוב TRX יש לאשר עיגון תקין לפי הוראות היצרן. בלי עיגון מתאים, הסר את הבחירה; אין לאלתר חיבור לרהיטים.',
   'Choose an outdoor or gym location for jogging': 'לריצה בחר מיקום בחוץ או חדר כושר. להליכה בבית אפשר לבחור הליכה במקום.',
   'Choose distinct exercises in each session': 'בחר תרגילים שונים בכל אימון כדי לשמור על זהות נפרדת.',
@@ -740,9 +739,11 @@ export function createTrainingUI(api) {
         `${exercise.defaultSets} ${i18n.text('סטים')} · ${exercise.inputType === 'hold' ? `${exercise.holdSeconds || 15} ${i18n.text('שניות')}` : esc(exercise.targetReps || exercise.defaultReps || '—')}`}</li>`).join('')}</ul>
       <p data-no-translate>${i18n.text('זמן האימון המשוער')}: ${durationEstimateText(estimate)}</p>
       ${note('הבחירה והיעדים נשמרו. שמות אישיים ותמונות נלקחים מהספרייה הנוכחית; ההיסטוריה אינה משתנה.')}
-      ${button('btnSelectSavedWorkout', 'בחירה לאימון הבא ללא התחלה', true)}`);
-    document.getElementById('btnSelectSavedWorkout').onclick = () => safely(dialog, () => {
-      api.activatePlan(plan, 0);
+      ${button('btnSelectSavedWorkout', 'בחירה', true)}`);
+    const select = document.getElementById('btnSelectSavedWorkout');
+    select.disabled = !api.canSelectSavedPlan();
+    select.onclick = () => safely(dialog, () => {
+      api.selectSavedPlan(plan, 0);
       dialog.close();
       refresh();
     });
@@ -755,29 +756,29 @@ export function createTrainingUI(api) {
       dialogs.slice(dialogs.indexOf(previous)).reverse().forEach((item) => { item.close(); item.remove(); });
     }
     const plans = trainingSettings().plans || [];
-    const canStart = api.canStartSavedPlan();
-    const dialog = api.dialog(t('תוכניות שמורות שלי'), `${!canStart ? note('יש אימון פעיל או נתונים שהוזנו. סיים ושמור אותו, או בטל אותו במפורש במסך אימון, לפני התחלת אימון אחר. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
+    const canSelect = api.canSelectSavedPlan();
+    const dialog = api.dialog(t('תוכניות שמורות שלי'), `${!canSelect ? note('יש אימון פעיל או נתונים שהוזנו. יש לסיים ולשמור אותו, או לבטל אותו במפורש במסך אימון, לפני בחירת תוכנית אחרת. שום נתון לא יימחק כאן.') + button('btnOpenCurrentWorkout', 'פתיחת האימון הנוכחי') : ''}
       <p class="saved-plans-count" data-no-translate>${i18n.text('תוכניות שמורות שלי')}: ${plans.length}</p>
       ${plans.length ? plans.map((plan, index) => `<section class="training-advice"><strong data-no-translate>${index + 1}. ${esc(workoutTitle(plan))}</strong>
       <p>${plan.sessions.length} <span>${t('אימונים בתוכנית')}</span></p>
       ${plan.options.muscles?.length ? `<p>${plan.options.muscles.map((muscle) => `<span>${esc(t(muscle))}</span>`).join(' · ')}</p>` : ''}
       ${plan.sessions.map((day, dayIndex) => `<p data-no-translate>${plan.sessions.length > 1 ? `${i18n.text('אימון')} ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''} · ` : ''}${day.exercises.length} ${i18n.text('תרגילים')} · ${durationEstimateText(tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false }))}</p>
-        <button class="btn btn-primary btn-small" data-start-plan="${index}" data-plan-day="${dayIndex}" ${canStart ? '' : 'disabled'}>${t('בחירה והתחלת אימון')}${plan.sessions.length > 1 ? ` ${dayIndex + 1}${/^[A-C]$/.test(day.label) ? ` (${day.label})` : ''}` : ''}</button>`).join('')}
+        <button class="btn btn-primary btn-small" data-select-plan="${index}" data-plan-day="${dayIndex}" ${canSelect ? '' : 'disabled'}>${t('בחירה')}</button>`).join('')}
       <div class="training-actions"><button class="btn btn-secondary btn-small" data-preview="${index}">${t(plan.kind === 'saved-workout' ? 'בדיקת האימון השמור' : 'בדיקה ועריכה')}</button>
       <button class="btn btn-secondary btn-small" data-edit-plan="${index}">${t('עריכת התוכנית השמורה')}</button>
       <button class="btn btn-secondary btn-small" data-rename-plan="${index}">${t('שינוי שם האימון')}</button>
-      <button class="btn btn-secondary btn-small" data-delete-plan="${index}">${t('מחיקת התוכנית החלופית')}</button></div></section>`).join('') : note('עדיין אין תוכניות חלופיות שמורות.')}
+      <button class="btn btn-secondary btn-small" data-delete-plan="${index}">${t('מחיקת התוכנית')}</button></div></section>`).join('') : note('עדיין אין תוכניות שמורות.')}
       ${note('לשמירת תוכנית, פתח בניית תוכנית אישית, צור הצעה ולחץ בתחתית ההצעה על שמירה כתוכנית חלופית. שמירה אינה הפעלה.')}
       ${button('btnCreateSavedPlan', 'יצירת תוכנית חדשה')}
-      ${note('עד שמונה תוכניות חלופיות במכשיר. מחיקה כאן לא משנה אימון פעיל או את האימון שלי.')}
+      ${note('עד שמונה תוכניות שמורות במכשיר. מחיקה כאן לא משנה אימון פעיל או את האימון שלי.')}
       ${trainingSettings().programBackup ? button('btnRestoreProgram', 'שחזור הבחירה שלפני התוכנית', true) : ''}`);
     dialog.classList.add('saved-plans-dialog');
     dialog.scrollTop = scrollTop;
     document.getElementById('btnCreateSavedPlan').onclick = () => planBuilder();
     const openCurrent = document.getElementById('btnOpenCurrentWorkout');
     if (openCurrent) openCurrent.onclick = () => { dialog.close(); api.openCurrentWorkout(); };
-    dialog.querySelectorAll('[data-start-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
-      api.startSavedPlan(plans[Number(btn.dataset.startPlan)], Number(btn.dataset.planDay));
+    dialog.querySelectorAll('[data-select-plan]').forEach((btn) => btn.onclick = () => safely(dialog, () => {
+      api.selectSavedPlan(plans[Number(btn.dataset.selectPlan)], Number(btn.dataset.planDay));
       dialog.close();
       refresh();
     }));

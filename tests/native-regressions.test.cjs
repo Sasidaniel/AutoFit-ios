@@ -5917,11 +5917,63 @@ test('reviewed home-plan activation adds only chosen catalog entries and restore
     .every((exercise) => exercise.active === false));
 });
 
-test('one-click saved-plan start uses the real workout controller, blocks logged work and remains idle on a failed start write', () => {
+test('history heading counts all stored workouts, localizes singular/plural and updates after deletion', () => {
+  for (const language of ['he', 'en']) {
+    let saved = [];
+    const node = () => ({
+      textContent: '', children: [], controls: new Map(), handlers: new Map(), dataset: {},
+      classList: { toggle() {} },
+      set innerHTML(value) { this.children = []; },
+      appendChild(child) { this.children.push(child); },
+      addEventListener(event, handler) { this.handlers.set(event, handler); },
+    });
+    const nodes = new Map();
+    const el = (id) => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
+    const qs = (selector, root) => {
+      if (!root.controls.has(selector)) root.controls.set(selector, node());
+      return root.controls.get(selector);
+    };
+    const context = vm.createContext({
+      el, qs, document: { createElement: node }, computeVolume: () => 0,
+      db: { getWorkouts: () => saved, saveWorkouts: (records) => { saved = records; } },
+      updateHistorySelectBar() {}, renderDashboard() {}, confirm: () => true,
+      formatDate: String, formatHMS: String,
+    });
+    context.i18n.setLanguage(language);
+    vm.runInContext(section('const selectedWorkoutIds =', 'function openEditWorkoutModal('), context);
+    for (const count of [0, 1, 10]) {
+      saved = Array.from({ length: count }, (_, index) => ({ id: `record-${index}`, entries: [], durationSec: 60, dateISO: '2026-11-05' }));
+      context.renderHistoryTab();
+      const expected = language === 'he' ? count === 1 ? 'אימון אחד מתועד' : `${count} אימונים מתועדים`
+        : `${count} recorded workout${count === 1 ? '' : 's'}`;
+      assert.equal(el('historyWorkoutCount').textContent, `— ${expected}`);
+    }
+    vm.runInContext("selectedWorkoutIds.add('record-1')", context);
+    context.renderHistoryTab();
+    assert.match(el('historyWorkoutCount').textContent, /10/);
+    const item = el('historyList').children[0];
+    qs('.btnDeleteWorkout', item).handlers.get('click')({ stopPropagation() {} });
+    assert.equal(saved.length, 9);
+    assert.match(el('historyWorkoutCount').textContent, /9/);
+  }
+});
+
+test('saved-plan list and preview expose selection without automatic-start or alternate-delete wording', () => {
+  const source = read('www/js/training-ui.js');
+  const saved = source.slice(source.indexOf('function savedWorkoutPreview('), source.indexOf('function refresh(', source.indexOf('function savedWorkoutPreview(')));
+  assert.match(saved, /data-select-plan=/);
+  assert.match(saved, /api\.selectSavedPlan\(plans\[Number\(btn\.dataset\.selectPlan\)\], Number\(btn\.dataset\.planDay\)\)/);
+  assert.match(saved, /api\.selectSavedPlan\(plan, 0\)/);
+  assert.match(saved, /t\('מחיקת התוכנית'\)/);
+  assert.doesNotMatch(saved, /startSavedPlan|בחירה והתחלת אימון|מחיקת התוכנית החלופית/);
+});
+
+test('saved-plan selection navigates without starting, protects logged work and stays unchanged on storage failure', () => {
   const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
     ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity'], { ...library, ...insights });
   for (const failure of [false, true]) {
-    let starts = 0, persisted, failStart = failure;
+    let starts = 0, persisted, failSelection = failure;
+    const navigation = [];
     const definition = { ...library.LIBRARY_EXERCISES.find((item) => item.catalogId === 'chairStand'), active: true };
     const newDraft = () => ({ id: 'draft:next', running: false, startedAt: null,
       entries: [{ exerciseId: definition.id, exerciseSnapshot: { catalogId: 'chairStand' },
@@ -5930,10 +5982,10 @@ test('one-click saved-plan start uses the real workout controller, blocks logged
       trainingTools, exercises: [definition], settings: { voiceAnnouncements: false }, activeSession: newDraft(),
       voiceCountingState: null, holdTimers: new Map(),
       db: { uid: () => 'test-id',
-        saveProgramState: (exercises, settings, session) => { persisted = JSON.parse(JSON.stringify(session)); },
-        saveActiveSession: (session) => { if (failStart) throw Error('storage full'); persisted = JSON.parse(JSON.stringify(session)); } },
+        saveProgramState: (exercises, settings, session) => { if (failSelection) throw Error('storage full'); persisted = JSON.parse(JSON.stringify(session)); },
+        saveActiveSession: (session) => { persisted = JSON.parse(JSON.stringify(session)); } },
       openTrainingDialog() {}, openExerciseGuide() {}, renderExercisesTab() {}, renderWorkoutTab() {}, renderHomeTab() {}, showToast() {},
-      buildProgramDraft: newDraft, primeSpeech() {}, switchTab: () => {},
+      buildProgramDraft: newDraft, primeSpeech() { throw Error('Selection must not prime speech'); }, switchTab: (tab) => navigation.push(tab),
       stopwatch: { start: () => { starts++; } }, requestWakeLock() {}, cancelWorkoutGreeting() {},
       el: () => ({ classList: { add() {}, remove() {} } }), native: { isNative: () => false },
       syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {},
@@ -5943,27 +5995,36 @@ test('one-click saved-plan start uses the real workout controller, blocks logged
     vm.runInContext(section('function ensureWorkoutStarted()', 'function cancelWorkoutGreeting()'), context);
     const api = context.trainingAPI();
     const plan = { id: 'chosen:plan', sessions: [{ exercises: [definition] }] };
-    assert.equal(api.canStartSavedPlan(), true, 'autofilled values are not newly entered records');
+    assert.equal(api.canSelectSavedPlan(), true, 'autofilled values are not newly entered records');
     if (failure) {
-      assert.throws(() => api.startSavedPlan(plan, 0),
-        (error) => /plan was selected/.test(error.message) && error.cause?.message === 'storage full');
+      const before = context.activeSession;
+      assert.throws(() => api.selectSavedPlan(plan, 0), /storage full/);
+      assert.equal(context.activeSession, before);
       assert.equal(context.activeSession.running, false);
-      assert.equal(persisted.running, false);
+      assert.equal(persisted, undefined);
+      assert.equal(context.settings.training, undefined);
+      assert.deepEqual(navigation, []);
       assert.equal(starts, 0);
-      failStart = false;
+      failSelection = false;
     }
-    api.startSavedPlan(plan, 0);
+    api.selectSavedPlan(plan, 0);
+    assert.equal(context.activeSession.running, false);
+    assert.equal(context.activeSession.startedAt, null);
+    assert.equal(persisted.running, false);
+    assert.equal(context.settings.training.activePlan.id, plan.id);
+    assert.deepEqual(navigation, ['workout']);
+    assert.equal(starts, 0);
+    context.ensureWorkoutStarted();
     assert.equal(context.activeSession.running, true);
     assert.equal(persisted.running, true);
-    assert.equal(context.settings.training.activePlan.id, plan.id);
     assert.equal(starts, 1);
     const before = JSON.stringify(context.activeSession);
-    assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+    assert.throws(() => api.selectSavedPlan(plan, 0), /current workout/);
     assert.equal(JSON.stringify(context.activeSession), before);
     context.activeSession = newDraft();
     context.activeSession.entries[0].userEdited = true;
-    assert.equal(api.canStartSavedPlan(), false);
-    assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+    assert.equal(api.canSelectSavedPlan(), false);
+    assert.throws(() => api.selectSavedPlan(plan, 0), /current workout/);
     const protectedDrafts = [
       (draft) => { draft.paused = true; },
       (draft) => { draft.startedAt = '2026-10-22T10:00:00.000Z'; },
@@ -5977,16 +6038,16 @@ test('one-click saved-plan start uses the real workout controller, blocks logged
       context.activeSession = newDraft();
       protect(context.activeSession);
       const before = JSON.stringify(context.activeSession);
-      assert.equal(api.canStartSavedPlan(), false);
-      assert.throws(() => api.startSavedPlan(plan, 0), /current workout/);
+      assert.equal(api.canSelectSavedPlan(), false);
+      assert.throws(() => api.selectSavedPlan(plan, 0), /current workout/);
       assert.equal(JSON.stringify(context.activeSession), before);
     }
     context.activeSession = newDraft();
     context.voiceCountingState = {};
-    assert.equal(api.canStartSavedPlan(), false);
+    assert.equal(api.canSelectSavedPlan(), false);
     context.voiceCountingState = null;
     context.holdTimers.set('exercise:set', {});
-    assert.equal(api.canStartSavedPlan(), false);
+    assert.equal(api.canSelectSavedPlan(), false);
   }
 });
 

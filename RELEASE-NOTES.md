@@ -1,5 +1,29 @@
 # AutoFit release notes
 
+## Candidate 1.0 (47) - history totals and explicit saved-plan selection (2026-11-05)
+
+Show the total stored workout count in the history heading, with zero/singular/
+plural Hebrew and English text. Refresh from storage with the history list after
+deletion/import/sync; selection for sharing does not change the total.
+
+Replace the saved-plan automatic-start action with **Select**, including the
+saved-workout preview. Select the reviewed day and navigate to Workout while the
+session remains idle; starting is a separate explicit action there. Preserve
+active/recorded-session guards and atomic selection storage failure behavior.
+Use **Delete plan** instead of **Delete alternate plan**; deletion still removes
+only the saved template, not history or the current workout.
+
+Local validation: **717/717 JS regressions passed**, all 20 web modules parsed.
+An isolated synthetic browser verified the 10-workout heading in both languages,
+a single Select control for the one-day template, navigation to Workout with
+running=false, startedAt=null and a 00:00 timer, and unchanged recorded history.
+Preview: `http://history-plan-review.localhost:8963/?previewSkip=1&tab=history`.
+Fresh explicit approval at **2026-11-05 10:13:37 UTC**: **"תשחרר גרסה"**.
+This authorizes one internal TestFlight build **47**, after regression/native/layout
+gates and actual Apple availability verification, with source/receipt backup on
+the work branch. No main merge or external distribution. Preparing the gated
+release; build 46 remains the delivered binary until 47 is verified.
+
 ## 1.0 (46) - verified internal TestFlight release (2026-11-05)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 09:55:42 UTC.**

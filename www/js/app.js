@@ -1254,7 +1254,7 @@ function trainingAPI() {
     renderExercisesTab();
     renderWorkoutTab();
     renderHomeTab();
-    showToast(keepSession ? 'התוכנית נשמרה לאימון הבא. האימון הנוכחי לא הוחלף.' : 'התוכנית הופעלה. הבחירה הקודמת זמינה לשחזור.');
+    showToast(keepSession ? 'התוכנית נשמרה לאימון הבא. האימון הנוכחי לא הוחלף.' : 'התוכנית נבחרה. הבחירה הקודמת זמינה לשחזור.');
   };
   return {
     uid: db.uid, dialog: openTrainingDialog, guide: openExerciseGuide,
@@ -1341,18 +1341,10 @@ function trainingAPI() {
       db.saveSettings(next);
       settings = next;
     },
-    canStartSavedPlan: () => !sessionHasData() && !voiceCountingState && holdTimers.size === 0,
-    startSavedPlan(plan, day) {
-      if (!this.canStartSavedPlan()) throw new Error('Finish or save the current workout before starting another');
-      primeSpeech();
+    canSelectSavedPlan: () => !sessionHasData() && !voiceCountingState && holdTimers.size === 0,
+    selectSavedPlan(plan, day) {
+      if (!this.canSelectSavedPlan()) throw new Error('Finish or save the current workout before selecting another');
       this.activatePlan(plan, day);
-      const draft = { ...activeSession };
-      try { ensureWorkoutStarted(); }
-      catch (error) {
-        activeSession = draft;
-        renderWorkoutTab();
-        throw new Error('The plan was selected but the workout could not start', { cause: error });
-      }
       switchTab('workout');
       renderHomeTab();
     },
@@ -3640,6 +3632,7 @@ const selectedWorkoutIds = new Set();
 
 function renderHistoryTab() {
   workouts = db.getWorkouts();
+  el('historyWorkoutCount').textContent = `— ${i18n.text(workouts.length === 1 ? 'אימון אחד מתועד' : `${workouts.length} אימונים מתועדים`)}`;
   const validIds = new Set(workouts.map((w) => w.id));
   [...selectedWorkoutIds].forEach((id) => { if (!validIds.has(id)) selectedWorkoutIds.delete(id); });
   updateHistorySelectBar();
