@@ -1,12 +1,23 @@
 # AutoFit release notes
 
-## 1.0 (50) - approved internal TestFlight release (pending)
+## 1.0 (50) - verified internal TestFlight release (2026-11-05)
 
 Fresh user approval on **2026-11-05**, observed at **13:47:19 UTC**:
 **"לאחר התיקון תוציא בבקשה גרסה 50"**.
 One internal TestFlight release is authorized after validation, including
-current-workout grouping and the cardio-arrow correction. Upload and actual
-Apple availability are pending; no main merge or external distribution.
+current-workout grouping and the cardio-arrow correction.
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 14:12:20 UTC.**
+Uploaded once at 14:09:55 UTC from source
+`4fce6f94dc9f5afc98e075d301d7379b9846b046`.
+Apple build ID: `29be71a9-dd47-408c-b75d-bfff879b4688`.
+[Release run 42039747799](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42039747799)
+passed 772 JS regressions, all four Swift suites, both native-to-JavaScript
+counting contracts, all 144 real SwiftUI layouts, signed app/widget archive and
+IPA export. Maximum Lock Screen height: 157/160; island body: 129/138.
+One release dispatch and one binary upload. External state remains
+READY_FOR_BETA_SUBMISSION; no external distribution or main merge.
+Approval is consumed; a subsequent release requires fresh approval.
 
 Exercises added from the library to the current workout join the existing
 primary-muscle group instead of creating another heading at the end. Placement
@@ -27,8 +38,7 @@ browser test added a second shoulder exercise through the library during a
 running workout: one shoulder heading with two exercises, unchanged start time
 and existing entries, and all 11 synthetic history records, program defaults and
 saved plans unchanged. Cardio header layout was checked collapsed/expanded,
-RTL/LTR and at 320, 375 and 430 CSS-pixel widths. Physical-iPhone review remains
-the user's follow-up after the approved build becomes available.
+RTL/LTR and at 320, 375 and 430 CSS-pixel widths. Physical-iPhone review remains the user's follow-up in the available build.
 
 ## 1.0 (49) - verified internal TestFlight release (2026-11-05)
 
