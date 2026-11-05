@@ -1,6 +1,14 @@
 # AutoFit release notes
 
-## Candidate 1.0 (47) - history totals and explicit saved-plan selection (2026-11-05)
+## 1.0 (47) - verified internal TestFlight release (2026-11-05)
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 10:35:17 UTC.**
+Uploaded once at 10:31:40 UTC.
+Uploaded source: `debc68abe3de4ab46d089d2376d989c840d78cf5`.
+Apple build ID: `51704612-14de-4a73-969c-e5d4f1d11059`.
+[Release run 42009054460](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42009054460)
+passed all gates, signing/archive/export, one upload and actual Apple internal
+availability verification. One release dispatch and one binary upload.
 
 Show the total stored workout count in the history heading, with zero/singular/
 plural Hebrew and English text. Refresh from storage with the history list after
@@ -21,8 +29,15 @@ Preview: `http://history-plan-review.localhost:8963/?previewSkip=1&tab=history`.
 Fresh explicit approval at **2026-11-05 10:13:37 UTC**: **"תשחרר גרסה"**.
 This authorizes one internal TestFlight build **47**, after regression/native/layout
 gates and actual Apple availability verification, with source/receipt backup on
-the work branch. No main merge or external distribution. Preparing the gated
-release; build 46 remains the delivered binary until 47 is verified.
+the work branch. The release repeated **717 JS regressions**, all four Swift
+suites, both real native-to-JavaScript transcript contracts and **144 real SwiftUI
+layouts**. Maximum Lock Screen height **157/160**, island body **129/138**.
+The signed app/widget archive and IPA export passed on macOS with Xcode 26.3.
+There is no native audio source change from build 46. Physical iPhone listening,
+installed voice quality, microphone and Apple Music acceptance remain unverified.
+External state remains READY_FOR_BETA_SUBMISSION; no main merge, external beta
+or App Store submission. Source and receipt are backed up on the work branch.
+This approval is consumed; another release requires fresh approval.
 
 ## 1.0 (46) - verified internal TestFlight release (2026-11-05)
 
