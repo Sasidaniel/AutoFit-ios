@@ -11,6 +11,170 @@ function load(file, names, values = {}) {
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
 const config = load('www/js/commercial-config.js', ['COMMERCIAL_CONFIG', 'commercialReadiness']);
+const cardio = load('www/js/cardio-tools.js', ['walkingActivity', 'validateCardioMeasurements', 'elapsedCardioSeconds',
+  'editCardioEntry', 'completeCardioEntry', 'resetCardioEntry', 'cardioHistorySnapshot', 'appendWorkoutExercise', 'measurementFieldsHTML']);
+
+test('cardio edits preserve a running timer, elapsed work and immutable targets until explicitly saved', () => {
+  const entry = { exerciseId: 'warmup', type: 'cardio', durationSec: 300, startedAt: 1000, elapsedSec: 40,
+    pace: 'legacy unparsed', extra: { preserved: true } };
+  const before = plain(entry);
+  const next = cardio.editCardioEntry(entry, { durationSec: 1200, cardioActivity: 'walk', location: 'treadmill',
+    speedKmh: '5.5', incline: '8', inclineUnit: 'level', cardioMachineId: 'T-1' }, 31000);
+  assert.deepEqual(plain(entry), before);
+  assert.equal(next.startedAt, 1000);
+  assert.equal(next.elapsedSec, 40);
+  assert.equal(next.durationSec, 1200);
+  assert.equal(next.plannedDurationSec, 1200);
+  assert.equal(next.speedKmh, 5.5);
+  assert.equal(next.inclineUnit, 'level');
+  assert.equal(next.pace, 'legacy unparsed');
+  assert.equal(next.extra, entry.extra);
+  assert.throws(() => cardio.editCardioEntry(entry, { durationSec: 30 }, 31000), /זמן היעד/);
+  assert.throws(() => cardio.editCardioEntry(entry, { durationSec: 0 }), /זמן/);
+});
+
+test('cardio unknown measurements stay unknown; numeric zero, units and clear operations are explicit', () => {
+  const values = { cardioActivity: 'run', speedKmh: '', incline: '0' };
+  const measured = cardio.validateCardioMeasurements(values);
+  assert.equal(measured.speedKmh, null);
+  assert.equal(measured.incline, 0);
+  assert.equal(measured.inclineUnit, 'level');
+  assert.throws(() => cardio.validateCardioMeasurements({ ...values, speedKmh: 'bad' }), /מהירות/);
+  assert.throws(() => cardio.validateCardioMeasurements({ ...values, inclineUnit: 'degrees' }), /יחידת/);
+  const cleared = cardio.editCardioEntry({ durationSec: 300, speedKmh: 7, incline: 8, cardioMachineId: 'old' },
+    { durationSec: 300, cardioActivity: 'walk', speedKmh: '', incline: '', cardioMachineId: '' });
+  assert.equal(Object.hasOwn(cleared, 'speedKmh'), false);
+  assert.equal(Object.hasOwn(cleared, 'incline'), false);
+  assert.equal(Object.hasOwn(cleared, 'cardioMachineId'), false);
+});
+
+test('cardio fields omit the removed machine-identification interface without discarding stored identifiers', () => {
+  const entry = { exerciseId: 'warmup', durationSec: 1200, cardioMachineId: 'existing', speedKmh: 5.5, incline: 8, inclineUnit: 'level' };
+  const html = cardio.measurementFieldsHTML(entry, String);
+  assert.doesNotMatch(html, /cardioMachine|מזהה המכשיר|זיהוי מכשיר/);
+  assert.match(html, /cardioSpeed/);
+  assert.match(html, /cardioInclineUnit/);
+  assert.match(html, /דרגה במכשיר/);
+  assert.equal(cardio.editCardioEntry(entry, { durationSec: 600 }).cardioMachineId, 'existing');
+});
+
+test('cardio completion distinguishes measured elapsed, timed expiry and explicit manual reporting', () => {
+  const entry = { exerciseId: 'warmup', type: 'cardio', durationSec: 300, elapsedSec: 70, startedAt: 1000 };
+  const early = cardio.completeCardioEntry(entry, 11000);
+  assert.equal(early.actualDurationSec, 80);
+  assert.equal(early.plannedDurationSec, 300);
+  assert.equal(early.elapsedSec, 300);
+  assert.equal(early.cardioDurationSource, 'timer');
+  assert.equal(early.completionFeedbackPending, true);
+  const timer = cardio.completeCardioEntry(entry, 900000, true);
+  assert.equal(timer.actualDurationSec, 300);
+  const manual = cardio.completeCardioEntry({ durationSec: 1200 });
+  assert.equal(manual.actualDurationSec, 1200);
+  assert.equal(manual.cardioDurationSource, 'manual');
+  const reset = cardio.resetCardioEntry({ ...early, difficulty: 'hard' });
+  assert.equal(reset.durationSec, 300);
+  assert.equal(reset.elapsedSec, 0);
+  assert.equal(reset.completed, false);
+  assert.equal(Object.hasOwn(reset, 'actualDurationSec'), false);
+  assert.equal(Object.hasOwn(reset, 'difficulty'), false);
+});
+
+test('cardio history snapshots retain measurements, source, difficulty and independent guide snapshots without fabricating old data', () => {
+  const entry = { exerciseId: 'walk', type: 'cardio', durationSec: 1200, actualDurationSec: 1100, plannedDurationSec: 1200,
+    cardioDurationSource: 'manual', speedKmh: 5.5, incline: 8, inclineUnit: 'level', difficulty: 'right',
+    exerciseSnapshot: { id: 'walk', custom: { original: true } }, startedAt: 5, completed: true };
+  const snapshot = cardio.cardioHistorySnapshot(entry);
+  assert.equal(snapshot.actualDurationSec, 1100);
+  assert.equal(snapshot.cardioDurationSource, 'manual');
+  assert.equal(snapshot.difficulty, 'right');
+  assert.equal(snapshot.incline, 8);
+  assert.equal(Object.hasOwn(snapshot, 'startedAt'), false);
+  snapshot.exerciseSnapshot.custom.original = false;
+  assert.equal(entry.exerciseSnapshot.custom.original, true);
+  assert.equal(Object.hasOwn(cardio.cardioHistorySnapshot({ durationSec: 300, completed: true }), 'actualDurationSec'), false);
+});
+
+test('adding an exercise during a workout keeps all existing object identities and progress, and never changes the program', () => {
+  const warmup = { exerciseId: 'warmup', completed: true };
+  const strength = { exerciseId: 'lift', sets: [{ reps: 12, completed: true }], hold: { running: true } };
+  const cooldown = { exerciseId: 'cooldown' };
+  const session = { id: 'same', entries: [warmup, strength, cooldown], running: true, paused: false,
+    currentExerciseId: 'lift', accumulatedSec: 100, activityControlRevision: 4, rest: { remaining: 45 } };
+  const added = { exerciseId: 'new', type: 'cardio', durationSec: 1200 };
+  const next = cardio.appendWorkoutExercise(session, added);
+  assert.equal(next.id, 'same');
+  assert.equal(next.entries[1], strength);
+  assert.equal(next.entries[1].sets[0], strength.sets[0]);
+  assert.equal(next.rest, session.rest);
+  assert.equal(next.currentExerciseId, 'lift');
+  assert.equal(next.running, true);
+  assert.equal(next.activityControlRevision, 5);
+  const deferred = [{ exerciseId: 'deferred' }];
+  const budgeted = cardio.appendWorkoutExercise({ ...session,
+    timeBudget: { order: ['warmup', 'lift', 'deferred', 'cooldown'], deferred } }, added);
+  assert.equal(budgeted.timeBudget.deferred, deferred);
+  assert.equal(budgeted.timeBudget.order.join(','), 'warmup,lift,deferred,new,cooldown');
+  assert.deepEqual(next.entries.map((entry) => entry.exerciseId).join(','), 'warmup,lift,new,cooldown');
+  assert.equal(session.entries.length, 3);
+  assert.throws(() => cardio.appendWorkoutExercise(next, added), /כבר/);
+  assert.throws(() => cardio.appendWorkoutExercise({ ...session, removedExercises: [{ entry: added }] }, added), /כבר/);
+  assert.throws(() => cardio.appendWorkoutExercise({ ...session, timeBudget: { deferred: [added] } }, added), /כבר/);
+  assert.throws(() => cardio.appendWorkoutExercise({ ...session, substitutions: [{ original: added }] }, added), /כבר/);
+});
+
+test('real library addition controller consumes muscle-progress indices and preserves live references on success and storage failure', () => {
+  const source = read('www/js/app.js');
+  const entry = { exerciseId: 'lift', sets: [{ reps: 12, completed: true }] };
+  const session = { id: 'active', entries: [{ exerciseId: 'warmup', completed: true }, entry, { exerciseId: 'cooldown' }],
+    currentExerciseId: 'lift', running: true };
+  const counting = { entry, set: entry.sets[0], entryIndex: 1 };
+  const action = { session, entry, set: entry.sets[0] };
+  const exercises = [{ id: 'new', active: false }];
+  let saved, fail = false, rendered = 0;
+  const context = vm.createContext({ cardioTools: cardio, activeSession: session, exercises, finishingWorkout: false,
+    privacyErasing: false, lastVoiceAction: action, lastVoiceReport: null, lastAutoCountCompletion: null,
+    voiceCountingState: counting, console: { error() {} }, showToast() {}, syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {},
+    renderWorkoutTab: () => rendered++, renderExercisesTab() {},
+    buildProgramDraft: (program) => ({ entries: [{ exerciseId: program[0].id, sets: [{ completed: false }] }] }),
+    trainingTools: { workoutMuscleProgress: () => ({ order: [0, 1, 2] }) },
+    db: { saveActiveSession: (next) => { if (fail) throw new Error('full'); saved = next; } } });
+  vm.runInContext(source.slice(source.indexOf('function addExerciseToCurrentWorkout('), source.indexOf('function wireExercisesTab()')), context);
+  fail = true;
+  assert.equal(context.addExerciseToCurrentWorkout(exercises[0]), false);
+  assert.equal(context.activeSession, session);
+  assert.equal(action.session, session);
+  assert.equal(rendered, 0);
+  fail = false;
+  assert.equal(context.addExerciseToCurrentWorkout(exercises[0]), true);
+  assert.equal(context.activeSession, saved);
+  assert.equal(saved.entries[1], entry);
+  assert.equal(counting.set, entry.sets[0]);
+  assert.equal(counting.entryIndex, 1);
+  assert.equal(action.session, saved);
+  assert.equal(saved.currentExerciseId, 'lift');
+  assert.equal(saved.entries.at(-1).exerciseId, 'cooldown');
+  assert.equal(exercises[0].active, false);
+  assert.equal(rendered, 1);
+});
+
+test('real selected-cardio chart uses actual minutes and never plots legacy target duration as performance', () => {
+  const source = read('www/js/app.js');
+  const workouts = [
+    { dateISO: '2026-11-03T10:00:00Z', entries: [{ exerciseId: 'walk', type: 'cardio', durationSec: 1200 }] },
+    { dateISO: '2026-11-04T10:00:00Z', entries: [{ exerciseId: 'walk', type: 'cardio', durationSec: 1200, actualDurationSec: 600 }] },
+    { dateISO: '2026-11-05T10:00:00Z', entries: [{ exerciseId: 'walk', type: 'cardio', durationSec: 1200, actualDurationSec: 900, cardioDurationSource: 'manual' }] },
+  ];
+  let chart;
+  const context = vm.createContext({ window: { Chart: true }, workouts, exerciseChartInstance: null,
+    insights: { exerciseProgress: () => ({ evidence: [{ entry: workouts[2].entries[0] }] }), statisticsHistory: () => [...workouts] },
+    el: (id) => id === 'exercisePickerChart' ? { value: 'walk' }
+      : id === 'exerciseMetricPicker' ? { value: 'seconds', selectedOptions: [{ textContent: 'Actual time in minutes' }] } : {},
+    Chart: function (_, value) { chart = value; }, chartBaseOptions: () => ({}), i18n: { locale: () => 'en-US', text: String } });
+  vm.runInContext(source.slice(source.indexOf('function renderExerciseChart()'), source.indexOf('function renderConsistencyChart()')), context);
+  context.renderExerciseChart();
+  assert.deepEqual(plain(chart.data.datasets[0].data), [15, 10]);
+  assert.equal(chart.data.datasets[0].label, 'Actual time in minutes');
+});
 const legal = load('www/js/legal.js', ['POLICY_VERSION', 'PERSONAL_DATA_KEYS', 'CLOUD_ERASURE_KEY',
   'hasCurrentConsent', 'acceptLegalConsent', 'profileAgeAllowed', 'cloudRestoreAllowed', 'legalDocumentHTML',
   'exportPersonalData', 'exportLegacyCloudData', 'eraseLocalPersonalData', 'restorableCloudData'], config);

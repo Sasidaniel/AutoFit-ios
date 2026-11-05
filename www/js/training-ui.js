@@ -1,6 +1,7 @@
 import * as tools from './training-tools.js';
 import { progressRecommendation, statisticsOverview } from './workout-insights.js';
 import * as i18n from './i18n.js';
+import { mountCardioGoals } from './cardio-insights.js';
 
 // Keep authored Hebrew in DOM templates so the shared translator can reverse a language switch.
 const t = (value) => value;
@@ -122,6 +123,12 @@ export function createTrainingUI(api) {
   savedTargets.className = 'card';
   savedTargets.innerHTML = `<h3>${t('יעדים לתרגילים')}</h3><div id="progressSavedTargets" data-no-translate></div>`;
   goals.appendChild(savedTargets);
+  const cardioGoalsSection = document.createElement('section');
+  goals.appendChild(cardioGoalsSection);
+  const cardioGoals = mountCardioGoals(cardioGoalsSection, {
+    getState: api.getState, saveSettings: api.saveSettings, uid: api.uid,
+    text: i18n.text, locale: i18n.locale,
+  });
   const controls = document.createElement('div');
   controls.className = 'training-workout-tools';
   controls.innerHTML = `<section class="training-duration"><strong id="trainingDurationTotal" data-no-translate></strong>
@@ -868,6 +875,7 @@ export function createTrainingUI(api) {
     const rest = state.restSeconds > 0 ? `${t('מנוחה')}: ${Math.ceil(state.restSeconds)} ${t('שניות')}` : '';
     write('trainingListening', [listening, rest].filter(Boolean).join(' · '));
     if (live) return;
+    cardioGoals.refresh();
     write('trainingSessionStatus', state.session.timeBudget ? t('בחירת זמן פעילה באימון הזה בלבד — ניתן לשחזר את האימון המלא')
       : state.session.substitutions?.length ? t('החלפת ציוד פעילה באימון הזה בלבד — ניתן לשחזר בכרטיס התרגיל') : '');
     for (const [id, minutes] of [['btnTimeBudget', 30], ['btnTimeBudget60', 60], ['btnTimeBudget90', 90], ['btnFullWorkout', null]]) {

@@ -20,6 +20,9 @@ const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMusc
   'removeWorkoutExercise', 'restoreWorkoutExercise', 'workoutHistoryEntries',
   'generateRopePlan', 'ropeIntervalSchedule', 'cardioIntervalPhase', 'activatePlanExercises', 'weeklyMuscleWork', 'monthlyGoalProgress'], library);
 const insights = load('www/js/workout-insights.js', ['completedEntrySnapshot', 'progressRecommendation', 'compareEntries'], library);
+const cardioTools = load('www/js/cardio-tools.js', ['walkingActivity', 'validateCardioMeasurements',
+  'elapsedCardioSeconds', 'editCardioEntry', 'completeCardioEntry', 'resetCardioEntry',
+  'cardioHistorySnapshot', 'appendWorkoutExercise', 'measurementFieldsHTML']);
 const catalog = plain(library.LIBRARY_EXERCISES);
 const find = (id) => plain(catalog.find((exercise) => exercise.catalogId === id));
 
@@ -757,7 +760,7 @@ test('unnamed rope workout titles retain the saved level and duration with share
   plan.id = 'saved-rope';
   const workout = { planSnapshot: tools.planIdentity(plan, 0) };
   assert.equal(tools.sessionWorkoutTitle(workout), 'קפיצה על חבל · בינונית · 15 דקות');
-  const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: library.LIBRARY_TRANSLATIONS });
+  const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: library.LIBRARY_TRANSLATIONS, CARDIO_INSIGHT_TRANSLATIONS: cardioInsights.CARDIO_INSIGHT_TRANSLATIONS });
   const { HE_FEMALE } = load('www/js/translations-he-female.js', ['HE_FEMALE']);
   const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN, HE_FEMALE });
   i18n.setLanguage('en');
@@ -1120,7 +1123,7 @@ test('real rope cardio ticking updates only phase labels until completion and co
   const item = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio',
     intervals: exercise.intervals, durationSec: 600, startedAt: 1000 };
   const nodes = new Map(), speech = [];
-  const context = vm.createContext({ trainingTools: tools, activeSession: { entries: [item] },
+  const context = vm.createContext({ trainingTools: tools, cardioTools, activeSession: { entries: [item] },
     Date: { now: () => now }, i18n: { text: (value) => value, locale: () => 'he-IL' },
     el: (id) => { if (!nodes.has(id)) nodes.set(id, { textContent: '' }); return nodes.get(id); },
     settings: { voiceAnnouncements: true }, formatHMS: (seconds) => String(Math.ceil(seconds)),
@@ -1211,7 +1214,7 @@ test('expanded per-side exercises count both sides without doubling rests, trans
 });
 
 test('one average estimate formats minute/hour boundaries through the real Hebrew and English translator', () => {
-  const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: {} });
+  const { EN } = load('www/js/translations-en.js', ['EN'], { LIBRARY_TRANSLATIONS: {}, CARDIO_INSIGHT_TRANSLATIONS: cardioInsights.CARDIO_INSIGHT_TRANSLATIONS });
   const { HE_FEMALE } = load('www/js/translations-he-female.js', ['HE_FEMALE']);
   const i18n = load('www/js/i18n.js', ['text', 'setLanguage'], { EN, HE_FEMALE });
   const { durationEstimateText } = load('www/js/training-ui.js', ['durationEstimateText'], { i18n });
@@ -1285,7 +1288,7 @@ function pauseController(savedSession) {
     isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.every((set) => set.completed),
     showToast: (value) => messages.push(value),
     syncNativeAnnouncementPlan: () => calls.push(context.activeSession.running ? 'runningPlan' : 'stoppedPlan'),
-    syncWorkoutActivity() {}, insights, trainingTools: tools, syncWorkoutToHealth() {}, showCelebration() {}, renderHistoryTab() {},
+    syncWorkoutActivity() {}, insights, trainingTools: tools, cardioTools, syncWorkoutToHealth() {}, showCelebration() {}, renderHistoryTab() {},
     buildDraftSession: () => ({ id: 'next', running: false, entries: [] }),
     renderWorkoutTab: () => context.updateWorkoutPauseControls(),
   });
@@ -1349,13 +1352,26 @@ test('100 percent waits for cardio and saves the fully completed workout once wi
   assert.equal(queue.length, 0);
   const original = context.activeSession;
   original.planSnapshot = { id: 'A', name: 'My custom workout', days: 1 };
-  original.entries.at(-1).completed = true;
+  const cardio = original.entries.at(-1);
+  Object.assign(cardio, cardioTools.completeCardioEntry(cardio, context.Date.now(), true));
+  assert.equal(cardio.completionFeedbackPending, true);
   context.updateProgress();
   context.updateProgress();
   assert.equal(el('overallProgressBadge').textContent, '100%');
-  assert.equal(queue.length, 1);
+  assert.equal(queue.length, 0, 'Completed cardio must wait for its effort feedback before automatic saving');
+  flush();
+  assert.equal(records.length, 0);
   original.entries[0].sets[1].difficulty = 'hard';
   original.entries[0].sets[1].notes = 'Last voice report before deferred finish';
+  cardio.difficulty = 'right';
+  context.expandedWorkoutExercises = new Set([cardio.exerciseId]);
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function expandNextWorkoutCard('), source.indexOf('function refreshWorkoutCardCompletion(')), context);
+  context.completeWorkoutFeedback(cardio);
+  assert.equal(cardio.completionFeedbackPending, undefined);
+  context.updateProgress();
+  context.updateProgress();
+  assert.equal(queue.length, 1, 'Rating the final completed cardio schedules exactly one automatic save');
   let rests = 0;
   context.restTimer.start = () => rests++;
   context.startRestTimer(context.exercises[0], true, null);
@@ -1368,12 +1384,20 @@ test('100 percent waits for cardio and saves the fully completed workout once wi
   assert.equal(records[0][0].planSnapshot.name, 'My custom workout');
   assert.equal(records[0][0].entries[0].sets[1].difficulty, 'hard');
   assert.equal(records[0][0].entries[0].sets[1].notes, 'Last voice report before deferred finish');
+  assert.equal(records[0][0].entries.at(-1).difficulty, 'right');
+  assert.equal(records[0][0].entries.at(-1).actualDurationSec, 600);
+  assert.equal(records[0][0].entries.at(-1).cardioDurationSource, 'timer');
+  assert.equal(records[0][0].entries.at(-1).completionFeedbackPending, undefined);
   assert.equal(summaries.length, 1);
   assert.equal(context.activeSession.id, 'next');
   const spoken = calls.filter((call) => Array.isArray(call) && call[0] === 'speak').map((call) => call[1]);
   assert.equal(spoken.length, 1);
   assert.ok(spoken[0].endsWith('האימון הסתיים. כל הכבוד על האימון וההתקדמות!'));
   assert.doesNotMatch(spoken[0], /אחוז|percent|%/);
+  context.scheduleWorkoutAutoFinish();
+  flush();
+  assert.equal(records.length, 1);
+  assert.equal(summaries.length, 1);
 });
 
 test('manual partial workout finish explicitly announces completion without progress, respecting the voice setting', () => {
@@ -2032,7 +2056,7 @@ test('cardio completion replaces only its own card and keeps unrelated focused i
   const previous = { replaceWith(next) { nodes[1] = next; } };
   nodes[1] = previous;
   let progress = 0;
-  const context = vm.createContext({ activeSession: { entries: [{ exerciseId: 'strength' }, entry] },
+  const context = vm.createContext({ cardioTools, activeSession: { entries: [{ exerciseId: 'strength' }, entry] },
     Date: { now: () => 3000 }, settings: { voiceAnnouncements: false },
     el: () => null, qs: (selector) => { assert.match(selector, /data-entry-index="1"/); return previous; },
     renderCardioCard: (value, number) => { assert.equal(value, entry); assert.equal(number, 2); return replacement; },
@@ -2564,7 +2588,7 @@ function controllerContext(initial = {}) {
     activeSession: session([entry(find('chest'))]), workouts: [], voiceListeningActive: false, voiceActivationPending: false,
     voiceCountingState: null, holdTimers: new Map(), restTimer: { endAt: null }, lastVoiceAction: null,
     lastVoiceReport: null, lastAutoCountCompletion: null, ...initial };
-  const context = vm.createContext({ ...state, trainingTools: tools,
+  const context = vm.createContext({ ...state, trainingTools: tools, cardioTools,
     db: { uid: () => 'new-draft', getWorkouts: () => [], saveExercises: (data) => writes.push(plain(data)),
       saveSettings: (data) => writes.push(plain(data)), saveActiveSession: (data) => writes.push(plain(data)),
       saveProgramState: (...data) => writes.push(plain(data)) },
@@ -2700,7 +2724,7 @@ test('live training state reuses in-memory history and exercises instead of clon
 
 test('real draft builder carries independent interval prescriptions and source identity into cardio entries', () => {
   const exercise = { ...plain(tools.generateRopePlan('advanced', 15, catalog).sessions[0].exercises[0]), active: true };
-  const context = vm.createContext({ exercises: [exercise], settings: {}, db: { uid: () => 'rope-draft' },
+  const context = vm.createContext({ cardioTools, exercises: [exercise], settings: {}, db: { uid: () => 'rope-draft' },
     getLastCompletedValuesByExercise: () => ({}) });
   const source = read('www/js/app.js');
   vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
@@ -3039,6 +3063,7 @@ test('a baseline storage failure preserves the completed workout for retry witho
 test('all authored training UI labels use the shared bilingual dictionary', () => {
   const context = vm.createContext();
   for (const file of ['exercise-library.js', 'translations-en.js', 'translations-he-female.js', 'seed.js', 'i18n.js']) {
+    context.CARDIO_INSIGHT_TRANSLATIONS = cardioInsights.CARDIO_INSIGHT_TRANSLATIONS;
     vm.runInContext(read(`www/js/${file}`).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   }
   context.setLanguage('en');
@@ -3097,7 +3122,7 @@ test('saved plan schema never duplicates user photos or custom notes across days
 test('a personal plan uses its reviewed set count, independently of the old program-week ramp', () => {
   const source = read('www/js/app.js');
   const context = vm.createContext({
-    exercises: [], settings: { programWeek: 1 }, db: { uid: () => 'next-session' }, getLastCompletedValuesByExercise: () => ({}),
+    cardioTools, exercises: [], settings: { programWeek: 1 }, db: { uid: () => 'next-session' }, getLastCompletedValuesByExercise: () => ({}),
   });
   const start = source.indexOf('function buildDraftSession()');
   const end = source.indexOf('function applyProgramWeekToActiveSession(', start);
@@ -3151,4 +3176,336 @@ test('clearing an accepted future load is explicit, persistent and leaves curren
   assert.equal(context.exercises.find((exercise) => exercise.id === id).targetWeightKg, undefined);
   assert.equal(context.settings.training.decisions[id], undefined);
   assert.equal(JSON.stringify(context.activeSession), before);
+});
+
+const cardioInsights = load('www/js/cardio-insights.js', ['cardioRecords', 'cardioOverview',
+  'cardioRecommendation', 'cardioWeekStart', 'validateCardioGoal', 'saveCardioGoal',
+  'removeCardioGoal', 'cardioGoalProgress', 'renderCardioStatistics', 'mountCardioGoals', 'CARDIO_INSIGHT_TRANSLATIONS']);
+const cardioNow = new Date(2026, 10, 5, 12);
+const cardioEntry = (patch = {}) => ({ exerciseId: 'warmup', type: 'cardio', completed: true,
+  cardioActivity: 'walk', location: 'treadmill', durationSec: 600, plannedDurationSec: 600,
+  actualDurationSec: 600, speedKmh: 5, incline: 2, inclineUnit: 'level', cardioMachineId: 'gym-A',
+  cardioDurationSource: 'timer', difficulty: 'right', ...patch });
+const cardioWorkout = (id, day, entries = [cardioEntry()]) => ({
+  id, dateISO: new Date(2026, 10, day, 10).toISOString(), entries,
+});
+const cardioGoal = (patch = {}) => ({ id: 'my-cardio', role: 'warmup', activity: 'walk',
+  location: 'treadmill', metric: 'weeklyMinutes', targetMinutes: 30, ...patch });
+const cardioPair = (latest = {}, previous = {}) => cardioInsights.cardioRecords([
+  cardioWorkout('new', 4, [cardioEntry(latest)]), cardioWorkout('old', 3, [cardioEntry(previous)]),
+], cardioNow);
+
+test('cardio insights distinguish completed actual, target and legacy without fabricated speed or distance', () => {
+  const history = [cardioWorkout('actual', 4, [cardioEntry({ actualDurationSec: 120, durationSec: 600 })]),
+    cardioWorkout('legacy', 3, [cardioEntry({ actualDurationSec: undefined, plannedDurationSec: undefined,
+      speedKmh: undefined, incline: undefined, inclineUnit: undefined, pace: '6 km/h, incline 3' })])];
+  const records = cardioInsights.cardioRecords(history, cardioNow);
+  assert.equal(records[0].actualDurationSec, 120);
+  assert.equal(records[0].plannedDurationSec, 600);
+  assert.equal(records[1].actualDurationSec, null);
+  assert.equal(records[1].plannedDurationSec, null);
+  assert.equal(records[1].legacyDurationSec, 600);
+  assert.equal(records[1].speedKmh, null);
+  assert.equal(records[1].inclineUnit, null);
+  assert.equal(records[1].pace, '6 km/h, incline 3');
+  assert.equal(records[1].distanceKm, undefined);
+  const [group] = cardioInsights.cardioOverview(history, cardioNow);
+  assert.equal(group.actualSeconds, 120);
+  assert.equal(group.legacySeconds, 600);
+  assert.equal(group.legacyCount, 1);
+  assert.equal(cardioInsights.cardioRecommendation(records).kind, 'insufficient');
+});
+
+test('cardio insights retain actual zero, reject invalid/missing measures and require explicit completion', () => {
+  const entries = [cardioEntry({ actualDurationSec: 0, speedKmh: 0, incline: 0 }),
+    ...[undefined, null, '', '600', -1, Infinity, NaN].map((actualDurationSec) => cardioEntry({ actualDurationSec })),
+    cardioEntry({ completed: false }), cardioEntry({ completed: undefined }),
+    { type: 'strength', completed: true, actualDurationSec: 600 }];
+  const records = cardioInsights.cardioRecords([cardioWorkout('one', 4, entries)], cardioNow);
+  assert.equal(records.length, 8);
+  assert.equal(records[0].actualDurationSec, 0);
+  assert.equal(records[0].speedKmh, 0);
+  assert.equal(records[0].incline, 0);
+  assert.ok(records.slice(1).every((record) => record.actualDurationSec === null));
+  assert.equal(cardioInsights.cardioRecommendation(records).kind, 'insufficient');
+});
+
+test('cardio insights separate warmup, cooldown, independent walking/running and each location', () => {
+  const entries = [cardioEntry(), cardioEntry({ exerciseId: 'cooldown' }),
+    cardioEntry({ exerciseId: 'walking' }), cardioEntry({ exerciseId: 'running', cardioActivity: 'run' }),
+    cardioEntry({ location: 'outside' }), cardioEntry({ location: '' })];
+  const groups = cardioInsights.cardioOverview([cardioWorkout('one', 4, entries)], cardioNow);
+  assert.equal(groups.length, 6);
+  assert.ok(groups.every((group) => group.actualSeconds === 600));
+  assert.equal(cardioInsights.cardioGoalProgress([cardioWorkout('one', 4, entries)], cardioGoal(), cardioNow).minutes, 10);
+  const crossRole = cardioPair({}, { exerciseId: 'cooldown' });
+  assert.equal(cardioInsights.cardioRecommendation(crossRole).kind, 'insufficient');
+});
+
+test('cardio insights never infer walking/running from names, pace text, generic activity or rope/mixed intervals', () => {
+  const entries = [cardioEntry({ cardioActivity: undefined, exerciseName: 'Walking', pace: 'run 5' }),
+    cardioEntry({ intervals: { kind: 'rope' } }), cardioEntry({ exerciseSnapshot: { intervals: { rounds: 5 } } }),
+    cardioEntry({ cardioActivity: 'fitness' })];
+  const records = cardioInsights.cardioRecords([cardioWorkout('one', 4, entries)], cardioNow);
+  assert.ok(records.every((record) => record.activity === 'other'));
+  assert.equal(cardioInsights.cardioRecommendation(records).evidence.length, 0);
+  assert.equal(cardioInsights.cardioGoalProgress([cardioWorkout('one', 4, entries)], cardioGoal(), cardioNow).minutes, 0);
+  assert.equal(cardioInsights.cardioOverview([cardioWorkout('one', 4, entries)], cardioNow)[0].actualSeconds, 2400);
+});
+
+test('cardio insights require known matching machine IDs for device levels, including level zero', () => {
+  for (const [current, previous] of [
+    [{ cardioMachineId: '' }, {}], [{ cardioMachineId: 'gym-B' }, {}],
+    [{ inclineUnit: undefined }, {}], [{ inclineUnit: 'percent' }, {}],
+    [{ incline: undefined }, {}], [{ speedKmh: undefined }, {}],
+    [{ location: '' }, { location: '' }],
+  ]) {
+    assert.equal(cardioInsights.cardioRecommendation(cardioPair(current, previous)).kind, 'insufficient');
+  }
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ incline: 0 }, { incline: 0 })).kind, 'hold');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ inclineUnit: 'percent', cardioMachineId: '' },
+    { inclineUnit: 'percent', cardioMachineId: '' })).kind, 'hold');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ inclineUnit: 'percent', cardioMachineId: 'A' },
+    { inclineUnit: 'percent', cardioMachineId: 'B' })).kind, 'insufficient');
+});
+
+test('cardio insights retain recorded zero speed and signed incline without inventing motion or converting units', () => {
+  const records = cardioPair({ speedKmh: 0, incline: -3, inclineUnit: 'percent' });
+  assert.equal(records[0].speedKmh, 0);
+  assert.equal(records[0].incline, -3);
+  assert.equal(records[0].inclineUnit, 'percent');
+  assert.equal(cardioInsights.cardioRecommendation(records).kind, 'insufficient');
+  const goal = cardioGoal({ incline: -3, inclineUnit: 'percent' });
+  assert.equal(cardioInsights.validateCardioGoal(goal).incline, -3);
+  const history = [cardioWorkout('decline', 4, [cardioEntry({ incline: -3, inclineUnit: 'percent' })])];
+  assert.equal(cardioInsights.cardioGoalProgress(history, goal, cardioNow).minutes, 10);
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ incline: -3, inclineUnit: 'percent' },
+    { incline: -3, inclineUnit: 'percent' })).kind, 'hold');
+});
+
+test('cardio insights give only conservative evidence-backed choices, never an invented increase or fitness proof', () => {
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ difficulty: 'easy' })).reason, 'lower-effort');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ difficulty: 'hard' })).reason, 'hard');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({}, { difficulty: 'hard' })).reason, 'hard');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair()).reason, 'same');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ difficulty: undefined })).reason, 'rating');
+  for (const patch of [{ actualDurationSec: 900 }, { speedKmh: 6 }, { incline: 3 }]) {
+    const result = cardioInsights.cardioRecommendation(cardioPair(patch));
+    assert.equal(result.kind, 'insufficient');
+    assert.equal(result.evidence.length, 2);
+    assert.equal(result.proposedTarget, undefined);
+  }
+  const sameWorkout = cardioInsights.cardioRecords([cardioWorkout('one', 4, [cardioEntry(), cardioEntry()])], cardioNow);
+  assert.equal(cardioInsights.cardioRecommendation(sameWorkout).reason, 'history');
+});
+
+test('cardio insights can compare outdoor sessions without inventing incline or transferring treadmill evidence', () => {
+  const outside = { location: 'outside', incline: undefined, inclineUnit: undefined, cardioMachineId: undefined };
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair(outside, outside)).kind, 'hold');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair(outside)).kind, 'insufficient');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ ...outside, speedKmh: undefined }, outside)).kind, 'insufficient');
+});
+
+test('cardio insights label manual self-report honestly, count it as recorded actual and do not compare it to timer measurement', () => {
+  const history = [cardioWorkout('manual', 4, [cardioEntry({ cardioDurationSource: 'manual' })])];
+  assert.equal(cardioInsights.cardioRecords(history, cardioNow)[0].durationSource, 'manual');
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow).minutes, 10);
+  const node = { setAttribute() {}, innerHTML: '' };
+  cardioInsights.renderCardioStatistics(node, history, { now: cardioNow });
+  assert.match(node.innerHTML, /זמן מדווח ידנית/);
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ cardioDurationSource: 'manual' })).kind, 'insufficient');
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ cardioDurationSource: 'manual' },
+    { cardioDurationSource: 'manual' })).kind, 'hold');
+});
+
+test('cardio weekly minutes use local Sunday boundary, exclude future/duplicate/invalid records and count zero honestly', () => {
+  const sunday = cardioInsights.cardioWeekStart(cardioNow);
+  assert.equal(sunday.getDay(), 0);
+  assert.equal(sunday.getHours(), 0);
+  const at = (id, date, entryPatch = {}) => ({ id, dateISO: date.toISOString(), entries: [cardioEntry(entryPatch)] });
+  const history = [at('boundary', sunday), at('prior', new Date(sunday.getTime() - 1)),
+    at('now', cardioNow), at('future', new Date(cardioNow.getTime() + 1)), at('zero', cardioNow, { actualDurationSec: 0 }),
+    at('boundary', sunday), { id: 'invalid', dateISO: 'invalid', entries: [cardioEntry()] },
+    { ...at('not-completed', cardioNow), completed: false }];
+  const result = cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow);
+  assert.equal(result.minutes, 20);
+  assert.equal(result.count, 3);
+  assert.equal(cardioInsights.cardioOverview(history, cardioNow)[0].actualSeconds, 1800);
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal({ metric: 'sessionMinutes' }), cardioNow).minutes, 10);
+});
+
+test('cardio goal progress is recomputed from edited history and never uses duration targets or legacy as actual', () => {
+  const history = [cardioWorkout('one', 4, [cardioEntry()]), cardioWorkout('legacy', 3,
+    [cardioEntry({ actualDurationSec: undefined })])];
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow).minutes, 10);
+  history[0].entries[0].actualDurationSec = 120;
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow).minutes, 2);
+  history[0].entries[0].location = 'outside';
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow).minutes, 0);
+});
+
+test('cardio goals require explicit valid target and context; optional incline defaults to device level only for new goals', () => {
+  for (const patch of [{ targetMinutes: 0 }, { targetMinutes: '' }, { targetMinutes: NaN }, { targetMinutes: 10081 },
+    { role: 'all' }, { activity: 'other' }, { location: '' }, { metric: 'speed' }, { id: '' },
+    { speedKmh: 0 }, { incline: -101 }, { incline: 0, inclineUnit: 'degrees' },
+    { incline: 0, location: 'outside', cardioMachineId: 'outdoor' },
+    { metric: 'sessionMinutes', targetMinutes: 1441 }]) {
+    assert.throws(() => cardioInsights.validateCardioGoal(cardioGoal(patch)), /Invalid|machine/);
+  }
+  const goal = cardioInsights.validateCardioGoal(cardioGoal({ incline: 0, cardioMachineId: ' device-1 ' }));
+  assert.equal(goal.incline, 0);
+  assert.equal(goal.inclineUnit, 'level');
+  assert.equal(goal.cardioMachineId, 'device-1');
+  assert.equal(cardioInsights.validateCardioGoal(cardioGoal({ incline: 1, inclineUnit: 'percent' })).inclineUnit, 'percent');
+  assert.equal(cardioInsights.validateCardioGoal(cardioGoal({ incline: 1 })).cardioMachineId, undefined);
+});
+
+test('cardio optional goal context matches speed, unit and same identified machine rather than comparing unknown levels', () => {
+  const history = [cardioWorkout('one', 4, [cardioEntry(), cardioEntry({ speedKmh: 6 }),
+    cardioEntry({ cardioMachineId: '' }), cardioEntry({ cardioMachineId: 'B' }), cardioEntry({ inclineUnit: 'percent' })])];
+  const goal = cardioGoal({ speedKmh: 5, incline: 2, inclineUnit: 'level', cardioMachineId: 'gym-A' });
+  assert.equal(cardioInsights.cardioGoalProgress(history, goal, cardioNow).minutes, 10);
+  assert.equal(cardioInsights.cardioGoalProgress(history, cardioGoal(), cardioNow).minutes, 50);
+  assert.equal(cardioInsights.cardioGoalProgress(history, { ...goal, inclineUnit: 'percent', cardioMachineId: undefined }, cardioNow).minutes, 10);
+});
+
+test('cardio goal persistence is additive, immutable and independent from strength goals, plans and other user data', () => {
+  const settings = { weeklyGoal: 3, voice: true, training: { monthlyGoal: { target: 9 },
+    plans: [{ id: 'p' }], progressFocus: 'weight', decisions: { bench: { weight: 20 } } } };
+  const before = JSON.stringify(settings);
+  const saved = cardioInsights.saveCardioGoal(settings, cardioGoal());
+  assert.equal(JSON.stringify(settings), before);
+  assert.equal(saved.training.plans, settings.training.plans);
+  assert.equal(saved.training.decisions, settings.training.decisions);
+  assert.equal(saved.training.monthlyGoal, settings.training.monthlyGoal);
+  assert.equal(saved.weeklyGoal, 3);
+  const updated = cardioInsights.saveCardioGoal(saved, cardioGoal({ targetMinutes: 40 }));
+  assert.equal(updated.training.cardioGoals.length, 1);
+  assert.equal(updated.training.cardioGoals[0].targetMinutes, 40);
+  const removed = cardioInsights.removeCardioGoal(updated, 'my-cardio');
+  assert.equal(removed.training.cardioGoals.length, 0);
+  assert.equal(removed.training.decisions, settings.training.decisions);
+  assert.throws(() => cardioInsights.saveCardioGoal(saved, cardioGoal({ targetMinutes: -1 })), /Invalid/);
+  assert.equal(saved.training.cardioGoals[0].targetMinutes, 30);
+});
+
+function cardioGoalUI() {
+  const nodes = {};
+  for (const key of ['.cardio-insights-status', '.cardio-insights-goal-list', '.cardio-insights-recommendations',
+    '.cardio-insights-goal-editor']) nodes[key] = { innerHTML: '', textContent: '' };
+  const listeners = {};
+  const elements = {};
+  for (const [name, value] of Object.entries({ role: 'warmup', activity: 'walk', location: 'treadmill', metric: 'weeklyMinutes',
+    targetMinutes: '', speedKmh: '', incline: '', inclineUnit: 'level' })) {
+    elements[name] = { value, focus() {} };
+  }
+  const form = { elements, addEventListener(name, handler) { listeners[name] = handler; }, reset() {} };
+  nodes.form = form;
+  const container = { innerHTML: '', setAttribute() {}, contains() { return true; },
+    querySelector(selector) { return nodes[selector]; }, addEventListener(name, handler) { listeners[name] = handler; } };
+  let state = { settings: { training: { decisions: { bench: 'keep' } } }, history: [] };
+  let fail = false, writes = 0;
+  const mounted = cardioInsights.mountCardioGoals(container, { getState: () => state, uid: () => 'ui-goal',
+    saveSettings(next) { writes++; if (fail) throw new Error('Storage full'); state = { ...state, settings: next }; } });
+  return { nodes, form, listeners, mounted, container, state: () => state, writes: () => writes,
+    fail: () => { fail = true; }, setHistory: (history) => { state.history = history; } };
+}
+
+test('cardio Goals UI saves only on explicit submit through atomic settings API and preserves state on failure', () => {
+  const ui = cardioGoalUI();
+  assert.equal(ui.writes(), 0);
+  ui.form.elements.targetMinutes.value = '20';
+  ui.listeners.submit({ preventDefault() {} });
+  assert.equal(ui.state().settings.training.cardioGoals[0].targetMinutes, 20);
+  assert.equal(ui.state().settings.training.decisions.bench, 'keep');
+  ui.fail();
+  ui.form.elements.targetMinutes.value = '40';
+  ui.listeners.submit({ preventDefault() {} });
+  assert.equal(ui.state().settings.training.cardioGoals[0].targetMinutes, 20);
+  assert.match(ui.nodes['.cardio-insights-status'].textContent, /לא ניתן לשמור/);
+  assert.equal(ui.writes(), 2);
+});
+
+test('cardio Goals UI has no machine identifier input and unknown device levels never become comparable', () => {
+  const ui = cardioGoalUI();
+  assert.doesNotMatch(ui.container.innerHTML, /name="cardioMachineId"/);
+  const savedGoal = cardioGoal({ id: 'existing', incline: 2, cardioMachineId: 'gym-A' });
+  ui.state().settings.training.cardioGoals = [savedGoal];
+  ui.form.elements.targetMinutes.value = '20';
+  ui.form.elements.incline.value = '2';
+  ui.listeners.submit({ preventDefault() {} });
+  const goals = ui.state().settings.training.cardioGoals;
+  assert.equal(goals[0].cardioMachineId, 'gym-A', 'Existing identifiers are preserved unchanged');
+  assert.equal(goals[1].inclineUnit, 'level');
+  assert.equal(goals[1].cardioMachineId, undefined);
+  const unknown = [cardioWorkout('unknown', 4, [cardioEntry({ cardioMachineId: undefined })])];
+  const progress = cardioInsights.cardioGoalProgress(unknown, goals[1], cardioNow);
+  assert.equal(progress.comparable, false);
+  assert.equal(progress.minutes, null);
+  assert.equal(progress.percent, null);
+  assert.equal(progress.evidence.length, 0);
+  assert.equal(cardioInsights.cardioGoalProgress(unknown, savedGoal, cardioNow).minutes, 0);
+  assert.equal(cardioInsights.cardioRecommendation(cardioPair({ cardioMachineId: '' }, { cardioMachineId: '' })).kind, 'insufficient');
+  assert.match(ui.nodes['.cardio-insights-goal-list'].innerHTML, /אין די נתונים להשוואת דרגה במכשיר/);
+  assert.match(ui.container.innerHTML, /<option value="level">דרגה במכשיר<\/option>/);
+});
+
+test('cardio Goals UI maintain/dismiss never apply targets and an edited history refresh invalidates prior evidence', () => {
+  const ui = cardioGoalUI();
+  const history = [cardioWorkout('new', 4), cardioWorkout('old', 3)];
+  ui.setHistory(history);
+  ui.mounted.refresh();
+  assert.match(ui.nodes['.cardio-insights-recommendations'].innerHTML, /data-cardio-action="maintain"/);
+  const click = (action) => ui.listeners.click({ target: { closest() {
+    return { dataset: { cardioAction: action, recommendation: '0' } };
+  } } });
+  click('maintain');
+  assert.equal(ui.state().settings.training.cardioGoals, undefined);
+  assert.equal(ui.nodes['.cardio-insights-recommendations'].innerHTML, '');
+  history[0].entries[0].actualDurationSec = 120;
+  ui.mounted.refresh();
+  assert.match(ui.nodes['.cardio-insights-recommendations'].innerHTML, /data-cardio-action="dismiss"/);
+  click('goal');
+  assert.equal(ui.nodes['.cardio-insights-goal-editor'].open, true);
+  assert.equal(ui.form.elements.targetMinutes.value, '');
+  assert.equal(ui.state().settings.training.cardioGoals, undefined);
+});
+
+test('cardio statistics render escaped legacy context without claiming actual data, and reflect history edits', () => {
+  const node = { setAttribute() {}, innerHTML: '' };
+  const history = [cardioWorkout('legacy', 4, [cardioEntry({ actualDurationSec: undefined,
+    plannedDurationSec: undefined, pace: '<script>bad</script>', cardioMachineId: '<img>' })])];
+  cardioInsights.renderCardioStatistics(node, history, { now: cardioNow, locale: 'en-US' });
+  assert.match(node.innerHTML, /&lt;script&gt;/);
+  assert.ok(!node.innerHTML.includes('<script>'));
+  assert.match(node.innerHTML, /זמן בפועל לא תועד \/ אינו ידוע/);
+  history[0].entries[0].actualDurationSec = 120;
+  cardioInsights.renderCardioStatistics(node, history, { now: cardioNow });
+  assert.match(node.innerHTML, /2 דקות בפועל/);
+  assert.match(read('www/js/training-ui.js'), /cardioGoals\.refresh\(\)/);
+  assert.match(read('www/js/app.js'), /renderCardioStatistics\(cardioStatistics, workouts/);
+});
+
+test('cardio statistics all-legacy collapsed summaries show unknown actual time and legacy counts, not zero exercise', () => {
+  const node = { setAttribute() {}, innerHTML: '' };
+  const legacy = cardioEntry({ actualDurationSec: undefined, plannedDurationSec: undefined, durationSec: 660 });
+  const history = [cardioWorkout('legacy-one', 4, [legacy]), cardioWorkout('legacy-two', 3, [{ ...legacy }])];
+  cardioInsights.renderCardioStatistics(node, history, { now: cardioNow });
+  const summary = node.innerHTML.match(/<summary>([\s\S]*?)<\/summary>/)[1];
+  assert.match(summary, /זמן בפועל לא תועד \/ אינו ידוע/);
+  assert.match(summary, /רישומים ישנים ללא זמן ביצוע מובחן: 2/);
+  assert.doesNotMatch(summary, /0 דקות בפועל/);
+  assert.equal(cardioInsights.cardioOverview(history, cardioNow)[0].actualCount, 0);
+  history.push(cardioWorkout('manual', 5, [cardioEntry({ actualDurationSec: 123, cardioDurationSource: 'manual' })]));
+  cardioInsights.renderCardioStatistics(node, history, { now: cardioNow });
+  const mixed = node.innerHTML.match(/<summary>([\s\S]*?)<\/summary>/)[1];
+  assert.match(mixed, /2\.1 דקות בפועל בכל ההיסטוריה/);
+  assert.match(mixed, /2\.1 דקות בפועל השבוע/);
+  assert.match(mixed, /רישומים ישנים ללא זמן ביצוע מובחן: 2/);
+  assert.equal(cardioInsights.cardioOverview(history, cardioNow)[0].actualSeconds, 123);
+  history.push(cardioWorkout('timer', 5, [cardioEntry({ actualDurationSec: 57 })]));
+  assert.equal(cardioInsights.cardioOverview(history, cardioNow)[0].actualSeconds, 180);
+  const zeroHistory = [cardioWorkout('zero', 4, [cardioEntry({ actualDurationSec: 0 })])];
+  cardioInsights.renderCardioStatistics(node, zeroHistory, { now: cardioNow });
+  assert.match(node.innerHTML.match(/<summary>([\s\S]*?)<\/summary>/)[1], /0 דקות בפועל בכל ההיסטוריה/);
 });

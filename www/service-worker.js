@@ -1,5 +1,5 @@
 // service-worker.js — app shell caching for offline + installability
-const CACHE_NAME = 'autofit-v112';
+const CACHE_NAME = 'autofit-v114';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -10,6 +10,9 @@ const PRECACHE_URLS = [
   './js/exercise-library.js',
   './js/workout-insights.js',
   './js/training-tools.js',
+  './js/cardio-tools.js',
+  './js/cardio-insights.js',
+  './js/history-editor.js',
   './js/music-controls.js',
   './js/training-ui.js',
   './js/commercial-config.js',

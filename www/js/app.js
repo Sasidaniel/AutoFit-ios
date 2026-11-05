@@ -9,11 +9,14 @@ import * as insights from './workout-insights.js';
 import * as voiceReports from './voice-reports.js';
 import { createTrainingUI, durationEstimateText } from './training-ui.js';
 import * as trainingTools from './training-tools.js';
+import { renderCardioStatistics } from './cardio-insights.js';
+import * as cardioTools from './cardio-tools.js';
 import * as legal from './legal.js';
 import { createPrivacyUI, consentFormHTML } from './privacy-ui.js';
 import { createCommerceUI } from './commerce-ui.js';
 import { createMusicControls } from './music-controls.js';
 import { renderProfileFields, readProfileGender } from './profile-fields.js';
+import * as historyEditor from './history-editor.js';
 
 const KG_TO_LBS = 2.20462;
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -762,9 +765,14 @@ function makeCardioEntry(kind, program = exercises) {
   const name = ex.name || (kind === 'warmup' ? DEFAULT_WARMUP_NAME : DEFAULT_COOLDOWN_NAME);
   const minutes = ex.durationMinutes || 5;
   const walkingBoundary = kind === 'warmup' || kind === 'cooldown';
-  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, startedAt: null, completed: false, location: ex.location || (walkingBoundary ? 'treadmill' : ''), pace: ex.pace || (walkingBoundary ? DEFAULT_CARDIO_PACE : ''),
-    ...(ex.intervals ? { intervals: JSON.parse(JSON.stringify(ex.intervals)),
-      exerciseSnapshot: { id: ex.id, name: ex.name, catalogId: ex.catalogId, inputType: 'cardio' } } : {}) };
+  const activity = cardioTools.walkingActivity({ exerciseId: kind }, ex);
+  const { images, ...snapshot } = ex;
+  return { exerciseId: kind, exerciseName: name, type: 'cardio', durationSec: minutes * 60, plannedDurationSec: minutes * 60,
+    startedAt: null, completed: false, location: ex.location || (walkingBoundary ? 'treadmill' : ''), pace: ex.pace || (walkingBoundary ? DEFAULT_CARDIO_PACE : ''),
+    ...(activity ? { cardioActivity: activity, inclineUnit: ex.inclineUnit || 'level' } : {}),
+    ...Object.fromEntries(['cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId'].filter((key) => ex[key] !== undefined).map((key) => [key, ex[key]])),
+    exerciseSnapshot: snapshot,
+    ...(ex.intervals ? { intervals: JSON.parse(JSON.stringify(ex.intervals)) } : {}) };
 }
 
 function setsForWeek(ex, config = settings) {
@@ -1172,9 +1180,7 @@ function finishWorkout() {
           .map((e) => {
             if (e.type === 'cardio') {
               return e.completed
-                ? { exerciseId: e.exerciseId, exerciseName: e.exerciseName, type: 'cardio', durationSec: e.durationSec, completed: true, location: e.location || '', pace: e.pace || '',
-                  ...(e.intervals ? { intervals: JSON.parse(JSON.stringify(e.intervals)), exerciseSnapshot: e.exerciseSnapshot } : {}),
-                  ...(e.removedFromWorkout ? { removedFromWorkout: true } : {}) }
+                ? cardioTools.cardioHistorySnapshot(e)
                 : null;
             }
             const completed = insights.completedEntrySnapshot(e, e.exerciseSnapshot || exercises.find((exercise) => exercise.id === e.exerciseId));
@@ -1239,7 +1245,7 @@ function persistActiveSession() {
 function trainingAPI() {
   const remainingRest = () => activeSession.pausedRest?.remainingSec
     || (restTimer.endAt ? Math.max(0, (restTimer.endAt - Date.now()) / 1000) : 0);
-  const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'autoLoadBaseline', 'restSeconds', 'durationMinutes', 'holdSeconds', 'pace', 'intervals']
+  const backupFields = (exercise) => Object.fromEntries(['id', 'active', 'defaultSets', 'defaultReps', 'targetReps', 'targetWeightKg', 'autoLoadBaseline', 'restSeconds', 'durationMinutes', 'holdSeconds', 'pace', 'location', 'cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId', 'intervals']
     .map((key) => [key, exercise[key] ?? null]));
   const sessionHasData = () => activeSession.running || activeSession.paused || activeSession.startedAt || activeSession.accumulatedSec > 0
     || activeSession.timeBudget || activeSession.substitutions?.length || activeSession.removedExercises?.length
@@ -2211,11 +2217,10 @@ function renderCardioCard(entry, number) {
   const info = library.exerciseGuide(mediaExercise);
   const hasGuide = !!info;
   const activityOnly = info?.activityOnly === true;
+  const walkingActivity = cardioTools.walkingActivity(entry, mediaExercise);
   const treadmillAvailable = !info || ['walk', 'jog'].includes(info.pose) || entry.location === 'treadmill';
   card.className = 'exercise-card' + (entry.completed ? ' done' : '');
   const minutes = Math.round(entry.durationSec / 6) / 10;
-  const fullDurationSec = entry.intervals ? trainingTools.ropeIntervalSchedule(entry.intervals).reduce((total, phase) => total + phase.seconds, 0)
-    : (ex.durationMinutes || 5) * 60;
   const interval = entry.intervals && trainingTools.cardioIntervalPhase(entry, Date.now());
   card.innerHTML = `
     <div class="exercise-card-head">
@@ -2223,7 +2228,7 @@ function renderCardioCard(entry, number) {
         <span class="exercise-num">${number}</span>
         <div>
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
-          <div class="exercise-meta">${activityOnly ? 'תרגול לפי זמן' : entry.exerciseId === 'warmup' || entry.exerciseId === 'cooldown' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
+          <div class="exercise-meta">${activityOnly ? 'תרגול לפי זמן' : walkingActivity === 'run' ? 'ריצה' : walkingActivity === 'walk' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
           <div class="exercise-head-right">
             <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
             ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
@@ -2236,7 +2241,8 @@ function renderCardioCard(entry, number) {
       ${interval ? `<div class="rope-phase" role="status" data-no-translate><strong id="rope-phase-${entry.exerciseId}">${escapeHtml(intervalPhaseText(interval))}</strong>
         <span id="rope-remaining-${entry.exerciseId}">${formatHMS(interval.remainingSeconds)}</span></div>` : ''}
       <div class="cardio-timer-display" id="cardio-remaining-${entry.exerciseId}">${formatHMS(Math.max(0, entry.durationSec - (entry.elapsedSec || 0) - (entry.startedAt ? (Date.now() - entry.startedAt) / 1000 : 0)))}</div>
-      <div class="cardio-pace-row">
+      ${cardioTools.measurementFieldsHTML(entry, escapeAttr, mediaExercise)}
+      ${walkingActivity ? '' : `<div class="cardio-pace-row">
         <select class="select cardioLocation">
           <option value="" ${!entry.location ? 'selected' : ''}>מיקום (לא צויין)</option>
           ${treadmillAvailable ? `<option value="treadmill" ${entry.location === 'treadmill' ? 'selected' : ''}>🏃 הליכון</option>` : ''}
@@ -2244,64 +2250,104 @@ function renderCardioCard(entry, number) {
           <option value="outside" ${entry.location === 'outside' ? 'selected' : ''}>🌳 בחוץ</option>
           <option value="home" ${entry.location === 'home' ? 'selected' : ''}>🏠 בבית</option>
         </select>
-        <input class="input cardioPace" type="text" placeholder="${activityOnly ? 'הערות לתרגול (רשות)' : 'קצב/מהירות (לדוגמה: מהירות 6 ~10 קמ&quot;ש)'}" value="${escapeHtml(entry.pace || '')}">
-      </div>
+        <input class="input cardioPace" type="text" aria-label="${walkingActivity ? 'מידע קודם / הערות' : activityOnly ? 'הערות לתרגול (רשות)' : 'קצב/מהירות'}" placeholder="${walkingActivity ? 'מידע קודם / הערות' : activityOnly ? 'הערות לתרגול (רשות)' : 'קצב/מהירות (לדוגמה: מהירות 6 ~10 קמ&quot;ש)'}" value="${escapeHtml(entry.pace || '')}">
+      </div>`}
       <div class="settings-actions">
         <button class="btn btn-secondary btn-small btnCardioStart">${entry.startedAt && !entry.completed ? '⏸ עצור' : '▶ התחל'}</button>
         <button class="btn btn-secondary btn-small btnCardioReset">↺ איפוס</button>
         <button class="btn btn-small ${entry.completed ? 'btn-primary' : 'btn-secondary'} btnCardioDone">${entry.completed ? '✓ בוצע' : 'סמן כבוצע'}</button>
       </div>
+      ${entry.completed ? `<div class="set-feedback"><div class="field-label">איך היה? אפשר לדלג</div><div class="set-feedback-row">
+        ${Object.entries(insights.DIFFICULTY_LABELS).map(([value, label]) => `<button class="btn btn-secondary btn-small difficulty-chip" data-cardio-difficulty="${value}" aria-pressed="${entry.difficulty === value}">${label}</button>`).join('')}
+      </div></div>` : ''}
     </div>
   `;
   if (hasGuide) qs('.btnExerciseGuide', card).addEventListener('click', () => openExerciseGuide(mediaExercise));
   qs('.btnRemoveWorkoutExercise', card).addEventListener('click', () => openWorkoutRemovalDialog(entry.exerciseId));
   if (hasGuide || mediaExercise.images?.length) qs('.btnShowPhoto', card).addEventListener('click', () => openPhotoModal(mediaExercise));
-  qs('.cardioLocation', card).addEventListener('change', (e) => {
-    entry.userEdited = true;
-    entry.location = e.target.value;
-    persistActiveSession();
-  });
-  i18n.localizeInput(qs('.cardioPace', card), entry.pace || '');
-  qs('.cardioPace', card).addEventListener('input', (e) => {
-    entry.userEdited = true;
-    entry.pace = i18n.inputValue(e.target);
-    persistActiveSession();
-  });
+  const commit = (next, rerender = true) => {
+    const previous = { ...entry };
+    for (const key of Object.keys(entry)) delete entry[key];
+    Object.assign(entry, next);
+    try { persistActiveSession(); }
+    catch (error) {
+      for (const key of Object.keys(entry)) delete entry[key];
+      Object.assign(entry, previous);
+      console.error('Cardio update failed', error);
+      showToast('פרטי האירובי לא נשמרו. הנתונים הקודמים נשמרו; נסה שוב.');
+      return false;
+    }
+    if (rerender) renderWorkoutTab();
+    return true;
+  };
+  const saveFields = (rerender = false) => {
+    try {
+      const values = { durationSec: Number(qs('.cardioMinutes', card).value) * 60 };
+      if (entry.completed) {
+        const value = qs('.cardioActualMinutes', card).value;
+        if (value !== (entry.actualDurationSec == null ? '' : String(entry.actualDurationSec / 60))) values.actualDurationSec = value === '' ? null : Number(value) * 60;
+      }
+      if (walkingActivity) Object.assign(values, { cardioActivity: qs('.cardioActivity', card).value,
+        location: entry.location || '', speedKmh: qs('.cardioSpeed', card).value,
+        incline: qs('.cardioIncline', card).value, inclineUnit: qs('.cardioInclineUnit', card).value,
+        cardioMachineId: entry.cardioMachineId || '' });
+      if (!commit(cardioTools.editCardioEntry(entry, values), rerender)) return false;
+      if (!rerender) {
+        const activity = cardioTools.walkingActivity(entry, mediaExercise);
+        qs('.exercise-meta', card).textContent = `${i18n.text(activityOnly ? 'תרגול לפי זמן' : activity === 'run' ? 'ריצה' : activity === 'walk' ? 'הליכה' : 'אירובי')} ${Math.round(entry.durationSec / 6) / 10} ${i18n.text('דקות')}`;
+        qs('.cardio-timer-display', card).textContent = formatHMS(Math.max(0, entry.durationSec - cardioTools.elapsedCardioSeconds(entry)));
+        refreshWorkoutCardCompletion();
+        if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
+      }
+      return true;
+    } catch (error) {
+      console.error('Invalid cardio edit', error);
+      showToast(error.message);
+      return false;
+    }
+  };
+  qsa('.cardio-measurement-fields input, .cardio-measurement-fields select', card)
+    .forEach((input) => input.addEventListener('change', () => saveFields()));
+  qsa('[data-cardio-difficulty]', card).forEach((button) => button.addEventListener('click', () => {
+    const difficulty = button.dataset.cardioDifficulty;
+    if (!commit({ ...entry, difficulty }, false)) return;
+    if (entry.completionFeedbackPending) completeWorkoutFeedback(entry);
+    qsa('[data-cardio-difficulty]', card).forEach((chip) =>
+      chip.setAttribute('aria-pressed', String(chip.dataset.cardioDifficulty === difficulty)));
+  }));
+  if (!walkingActivity) {
+    qs('.cardioLocation', card).addEventListener('change', (e) => {
+      if (!commit({ ...entry, userEdited: true, location: e.target.value }, false)) e.target.value = entry.location || '';
+    });
+    i18n.localizeInput(qs('.cardioPace', card), entry.pace || '');
+    qs('.cardioPace', card).addEventListener('input', (e) => {
+      commit({ ...entry, userEdited: true, pace: i18n.inputValue(e.target) }, false);
+    });
+  }
   qs('.btnCardioStart', card).addEventListener('click', () => {
     if (activeSession.paused) { showToast('לחץ על המשך אימון לפני הפעלת טיימר.'); return; }
+    let next;
     if (entry.startedAt && !entry.completed) {
       const elapsed = (Date.now() - entry.startedAt) / 1000;
-      entry.elapsedSec = Math.min(entry.durationSec, (entry.elapsedSec || 0) + elapsed);
-      entry.startedAt = null;
+      next = { ...entry, elapsedSec: Math.min(entry.durationSec, (entry.elapsedSec || 0) + elapsed), startedAt: null };
     } else {
       ensureWorkoutStarted();
       restTimer.stop();
       el('restOverlay').classList.add('hidden');
-      if (entry.completed) entry.elapsedSec = 0;
-      entry.completed = false;
-      if ((entry.elapsedSec || 0) === 0) delete entry.intervalPhaseIndex;
-      entry.startedAt = Date.now();
+      next = entry.completed ? cardioTools.resetCardioEntry(entry) : { ...entry };
+      if ((next.elapsedSec || 0) === 0) delete next.intervalPhaseIndex;
+      next.startedAt = Date.now();
     }
-    persistActiveSession();
-    renderWorkoutTab();
+    commit(next);
   });
   qs('.btnCardioReset', card).addEventListener('click', () => {
-    delete entry.resumeAfterPause;
-    entry.durationSec = fullDurationSec;
-    entry.elapsedSec = 0;
-    entry.startedAt = null;
-    entry.completed = false;
-    delete entry.intervalPhaseIndex;
-    persistActiveSession();
-    renderWorkoutTab();
+    commit(cardioTools.resetCardioEntry(entry));
   });
   qs('.btnCardioDone', card).addEventListener('click', () => {
-    delete entry.resumeAfterPause;
-    entry.completed = !entry.completed;
-    if (entry.completed) advanceWorkoutFocus(entry);
-    if (entry.completed) ensureWorkoutStarted();
-    entry.elapsedSec = entry.completed ? entry.durationSec : 0;
-    entry.startedAt = null;
+    const next = entry.completed ? cardioTools.resetCardioEntry(entry) : cardioTools.completeCardioEntry(entry);
+    delete next.resumeAfterPause;
+    if (!commit(next, false)) return;
+    if (entry.completed) { advanceWorkoutFocus(entry); ensureWorkoutStarted(); }
     persistActiveSession();
     renderWorkoutTab();
     if (entry.completed && settings.voiceAnnouncements && !activeSession.paused) {
@@ -2338,9 +2384,7 @@ function tickCardioTimers() {
     }
     if (remaining <= 0) {
       const announcementID = `cardio:${entry.exerciseId}:${entry.startedAt}`;
-      entry.completed = true;
-      entry.elapsedSec = entry.durationSec;
-      entry.startedAt = null;
+      Object.assign(entry, cardioTools.completeCardioEntry(entry, Date.now(), true));
       advanceWorkoutFocus(entry);
       persistActiveSession();
       playBeep();
@@ -3719,81 +3763,246 @@ function renderHistoryTab() {
 }
 
 function openEditWorkoutModal(workout) {
-  const clone = JSON.parse(JSON.stringify(workout));
+  const state = historyEditor.createHistoryDraft(workout);
+  const clone = state.workout;
+  const catalog = library.browsableLibrary(exercises, SEED_EXERCISES);
   const overlay = document.createElement('div');
-  overlay.className = 'photo-overlay';
+  overlay.className = 'photo-overlay history-editor-overlay';
   overlay.innerHTML = `
-    <div class="photo-modal">
-      <div class="photo-modal-head"><b>עריכת אימון — ${formatDate(clone.dateISO)}</b><button class="btn-icon btnCloseEditW">✕</button></div>
-      <div class="edit-workout-body">
-        ${clone.entries.map((e, ei) => e.type === 'cardio' ? `
-          <div class="edit-exercise-block">
-            <div class="edit-exercise-title">${e.exerciseId === 'warmup' ? '🔥' : '🧘'} <span data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</span> — ✅ בוצע</div>
-          </div>
-        ` : `
-          <div class="edit-exercise-block" data-ei="${ei}">
-            <div class="edit-exercise-title" data-no-translate data-exercise-name="${escapeAttr(e.exerciseName)}">${escapeHtml(i18n.exerciseName(e.exerciseName))}</div>
-            ${e.sets.map((s, si) => `
-              <div class="edit-set-row" data-si="${si}">
-                <span class="set-num">סט ${si + 1}</span>
-                <input type="number" inputmode="decimal" class="input edit-weight" value="${s.weightKg}" placeholder="ק&quot;ג">
-                <input type="number" inputmode="numeric" class="input edit-reps" value="${s.reps}" placeholder="${e.inputType === 'hold' ? 'שניות' : 'חזרות'}">
-                <select class="select edit-difficulty" aria-label="תחושת קושי">
-                  <option value="">ללא דירוג</option>
-                  ${Object.entries(insights.DIFFICULTY_LABELS).map(([value, label]) => `<option value="${value}" ${s.difficulty === value ? 'selected' : ''}>${label}</option>`).join('')}
-                </select>
-                <input class="input edit-set-notes" type="text" maxlength="500" aria-label="${escapeAttr(i18n.text('הערות לסט'))}" data-no-translate value="${escapeAttr(s.notes || '')}">
-                <button class="btn-icon btnDeleteEditSet">🗑️</button>
-              </div>
-            `).join('')}
-          </div>
-        `).join('')}
+    <div class="photo-modal history-editor-modal" role="dialog" aria-modal="true" aria-labelledby="historyEditorTitle">
+      <div class="photo-modal-head"><b id="historyEditorTitle"><span>עריכת אימון</span> — ${formatDate(clone.dateISO)}</b><button type="button" class="btn-icon btnCloseEditW" aria-label="ביטול">✕</button></div>
+      <p class="field-hint">השינויים נשמרים באימון הזה בלבד, ללא שינוי בתוכנית או באימון הפעיל.</p>
+      <p class="field-hint">עריכה ידנית אינה מעדכנת את Apple Health. פרטי המסירה הקודמים נשמרים, אך אינם אישור לנתונים הערוכים.</p>
+      <div class="history-editor-content"></div>
+      <div class="history-editor-library">
+        <label class="field-label" for="historyEditorSearch">חיפוש בספריית התרגילים</label>
+        <input id="historyEditorSearch" class="input history-editor-search" type="search" autocomplete="off">
+        <label class="field-label" for="historyEditorExercise">הוספת תרגיל לאימון המתועד</label>
+        <select id="historyEditorExercise" class="select history-editor-exercise-picker"></select>
+        <button type="button" class="btn btn-secondary history-editor-add-exercise">הוספת תרגיל</button>
       </div>
+      <p class="history-editor-error" role="alert" hidden></p>
       <div class="settings-actions">
-        <button class="btn btn-primary btnSaveEditW">שמור שינויים</button>
-        <button class="btn btn-secondary btnCancelEditW">ביטול</button>
+        <button type="button" class="btn btn-primary btnSaveEditW">שמור שינויים</button>
+        <button type="button" class="btn btn-secondary btnCancelEditW">ביטול</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  let saving = false;
+  const previousFocus = document.activeElement;
+  const close = () => {
+    if (saving) return;
+    overlay.remove();
+    previousFocus?.focus?.({ preventScroll: true });
+  };
+  const message = (error) => {
+    const labels = {
+      'history-number': 'יש להזין מספר תקין שאינו שלילי; חזרות וזמנים בשניות חייבים להיות מספרים שלמים.',
+      'history-empty': 'האימון חייב לכלול לפחות תרגיל אחד.',
+      'history-empty-sets': 'לתרגיל כוח או החזקה דרוש לפחות סט אחד. אפשר להסיר את התרגיל כולו.',
+      'history-conflict': 'האימון השתנה מאז פתיחת העורך. יש לבטל ולפתוח אותו מחדש.',
+      'history-missing': 'האימון כבר אינו קיים. השינויים לא נשמרו.',
+      'history-busy': 'האימון נשלח כעת לבריאות. יש להמתין לסיום השליחה לפני שמירה.',
+      'history-duplicate': 'התרגיל כבר מופיע באימון.',
+    };
+    const target = qs('.history-editor-error', overlay);
+    target.hidden = !error;
+    target.textContent = error ? i18n.text(labels[error.message] || 'לא ניתן לשמור את השינויים. הנתונים המקוריים נשמרו; אפשר לנסות שוב.') : '';
+  };
+  const option = (value, label, selected) => `<option value="${escapeAttr(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(i18n.text(label))}</option>`;
+  const numeric = (field, label, value, { optional = false, integer = false, minutes = false, className = '' } = {}) => {
+    const displayed = minutes ? historyEditor.historySecondsToMinutes(value) : String(value ?? '');
+    return `
+    <label class="history-editor-field"><span class="field-label">${escapeHtml(i18n.text(label))}</span>
+      <input type="number" class="input ${className}" data-field="${field}" data-number="${minutes ? 'minutes' : integer ? 'integer' : 'decimal'}"
+        data-optional="${optional}" data-initial="${escapeAttr(displayed)}" min="0" step="${integer && !minutes ? '1' : 'any'}"
+        inputmode="${integer ? 'numeric' : 'decimal'}" value="${escapeAttr(displayed)}">
+    </label>`;
+  };
+  const textField = (field, label, value, max = 500) => `
+    <label class="history-editor-field history-editor-wide"><span class="field-label">${escapeHtml(i18n.text(label))}</span>
+      <input type="text" class="input" data-field="${field}" data-initial="${escapeAttr(value ?? '')}"
+        value="${escapeAttr(value ?? '')}" maxlength="${max}" data-no-translate>
+    </label>`;
+  const selectField = (field, label, value, options) => {
+    const chosen = value ?? '';
+    return `<label class="history-editor-field"><span class="field-label">${escapeHtml(i18n.text(label))}</span>
+      <select class="select" data-field="${field}" data-initial="${escapeAttr(chosen)}">
+        ${options.map(([key, text]) => option(key, text, chosen)).join('')}
+        ${chosen && !options.some(([key]) => key === chosen) ? `<option value="${escapeAttr(chosen)}" selected data-no-translate>${escapeHtml(chosen)}</option>` : ''}
+      </select></label>`;
+  };
+  const difficulty = (value) => selectField('difficulty', 'תחושת קושי', value, [['', 'ללא דירוג'], ...Object.entries(insights.DIFFICULTY_LABELS)]);
+  const inputOrigins = new WeakMap();
+  const capture = () => {
+    const changedInclines = new Set();
+    qsa('[data-field]', qs('.history-editor-content', overlay)).forEach((input) => {
+      const block = input.closest('[data-ei]');
+      const row = input.closest('[data-si]');
+      const entry = block ? clone.entries[Number(block.dataset.ei)] : null;
+      const target = row ? entry.sets[Number(row.dataset.si)] : entry || clone;
+      const field = input.dataset.field;
+      if (!inputOrigins.has(input)) inputOrigins.set(input, {
+        present: Object.hasOwn(target, field), value: target[field], durationSec: entry?.durationSec,
+        cardioDurationSource: entry?.cardioDurationSource,
+      });
+      if (input.value === input.dataset.initial) {
+        const original = inputOrigins.get(input);
+        if (original.present) target[field] = original.value;
+        else delete target[field];
+        if (entry?.type === 'cardio' && field === 'plannedDurationSec') entry.durationSec = original.durationSec;
+        if (entry?.type === 'cardio' && field === 'actualDurationSec') {
+          if (original.cardioDurationSource === undefined) delete entry.cardioDurationSource;
+          else entry.cardioDurationSource = original.cardioDurationSource;
+        }
+        return;
+      }
+      let value = input.value;
+      if (input.dataset.number) value = (input.dataset.number === 'minutes' ? historyEditor.historyMinutesToSeconds : historyEditor.historyNumber)(value, {
+        optional: input.dataset.optional === 'true', integer: input.dataset.number === 'integer',
+      });
+      if (value === undefined || (value === '' && ['difficulty', 'cardioActivity'].includes(field))) delete target[field];
+      else target[field] = value;
+      if (entry?.type === 'cardio' && field === 'plannedDurationSec') entry.durationSec = value;
+      if (entry?.type === 'cardio' && field === 'actualDurationSec') {
+        if (value === undefined) delete entry.cardioDurationSource;
+        else entry.cardioDurationSource = 'manual';
+      }
+      if (entry?.type === 'cardio' && field === 'incline' && value !== undefined) changedInclines.add(entry);
+    });
+    changedInclines.forEach((entry) => { if (!entry.inclineUnit) entry.inclineUnit = 'level'; });
+  };
+  const renderPicker = () => {
+    const query = qs('.history-editor-search', overlay).value.trim().toLocaleLowerCase();
+    const available = catalog.filter((exercise) => !clone.entries.some((entry) => entry.exerciseId === exercise.id)
+      && `${exercise.name} ${i18n.exerciseName(exercise.name)} ${exercise.category || ''}`.toLocaleLowerCase().includes(query));
+    const picker = qs('.history-editor-exercise-picker', overlay);
+    picker.innerHTML = `<option value="">${escapeHtml(i18n.text(available.length ? 'בחירת תרגיל מהספרייה' : 'לא נמצאו תרגילים'))}</option>`
+      + available.map((exercise) => `<option data-no-translate value="${escapeAttr(exercise.id)}">${escapeHtml(i18n.exerciseName(exercise.name))}</option>`).join('');
+  };
+  const render = () => {
+    qs('.history-editor-content', overlay).innerHTML = `
+      ${numeric('durationSec', 'משך האימון הכולל (דקות)', clone.durationSec, { minutes: true })}
+      <div class="edit-workout-body history-editor-entries">
+        ${clone.entries.map((entry, ei) => `
+          <section class="edit-exercise-block history-editor-entry" data-ei="${ei}">
+            <div class="history-editor-entry-head">
+              <b class="edit-exercise-title" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</b>
+              <button type="button" class="btn btn-secondary btn-small history-editor-remove-exercise">הסרת תרגיל</button>
+            </div>
+            ${entry.exerciseId === 'warmup' ? `<p>${i18n.text('חימום')}</p>` : entry.exerciseId === 'cooldown' ? `<p>${i18n.text('שחרור')}</p>` : ''}
+            ${entry.type === 'cardio' ? `
+              <div class="history-editor-grid">
+                ${selectField('cardioActivity', 'סוג פעילות', entry.cardioActivity, [['', 'קרדיו אחר / לא ידוע'], ['walk', 'הליכה'], ['run', 'ריצה']])}
+                ${numeric('plannedDurationSec', 'זמן יעד (דקות)', entry.plannedDurationSec ?? entry.durationSec, { minutes: true })}
+                ${numeric('actualDurationSec', 'זמן שבוצע בפועל (דקות)', entry.actualDurationSec, { optional: true, minutes: true })}
+                ${numeric('speedKmh', 'מהירות (קמ״ש)', entry.speedKmh, { optional: true })}
+                ${numeric('incline', 'שיפוע', entry.incline, { optional: true })}
+                ${selectField('inclineUnit', 'יחידת שיפוע', entry.inclineUnit ?? 'level', [['level', 'דרגה במכשיר'], ['percent', 'אחוזים']])}
+                ${selectField('location', 'מיקום', entry.location, [['', 'לא ידוע'], ['treadmill', 'הליכון'], ['outside', 'בחוץ'], ['gym', 'חדר כושר'], ['home', 'בבית']])}
+                ${difficulty(entry.difficulty)}
+                ${textField('pace', 'קצב מתועד (טקסט)', entry.pace)}
+                ${textField('notes', 'הערות', entry.notes)}
+              </div>
+              ${entry.actualDurationSec == null ? state.origins.has(entry)
+                ? `<p class="field-hint"><span>זמן מתועד ישן; לא ידוע אם נמדד בפועל</span>: <span data-no-translate>${escapeHtml(formatHMS(entry.durationSec || 0))}</span></p>`
+                : `<p class="field-hint">זמן בפועל עדיין לא הוזן</p>` : ''}
+              <p class="field-hint">שדה ריק משמעו לא ידוע. דרגה במכשיר אינה אחוז שיפוע; אין המרה אוטומטית.</p>
+            ` : `
+              ${(entry.sets || []).map((set, si) => `
+                <div class="edit-set-row history-editor-set" data-si="${si}">
+                  <b class="history-editor-wide"><span>סט</span> ${si + 1}</b>
+                  ${numeric('weightKg', 'משקל (ק״ג)', set.weightKg, { className: 'edit-weight' })}
+                  ${numeric('reps', entry.inputType === 'hold' || entry.exerciseSnapshot?.inputType === 'hold' ? 'החזקה (שניות)' : 'חזרות', set.reps, { integer: true, className: 'edit-reps' })}
+                  ${difficulty(set.difficulty)}
+                  ${textField('notes', 'הערות לסט', set.notes)}
+                  <button type="button" class="btn btn-secondary btn-small btnDeleteEditSet">הסרת סט</button>
+                </div>
+              `).join('')}
+              <button type="button" class="btn btn-secondary btn-small history-editor-add-set">הוספת סט</button>
+            `}
+          </section>
+        `).join('')}
+      </div>`;
+    renderPicker();
+    i18n.translateDOM(overlay);
+  };
+  const changeStructure = (action) => {
+    try { capture(); action(); message(null); render(); }
+    catch (error) { message(error); }
+  };
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+    if (saving) return;
+    const entry = event.target.closest('[data-ei]');
+    if (event.target.closest('.history-editor-remove-exercise')) {
+      changeStructure(() => historyEditor.removeHistoryExercise(state, Number(entry.dataset.ei)));
+    } else if (event.target.closest('.history-editor-add-set')) {
+      changeStructure(() => historyEditor.addHistorySet(state, Number(entry.dataset.ei)));
+    } else if (event.target.closest('.btnDeleteEditSet')) {
+      const row = event.target.closest('[data-si]');
+      changeStructure(() => historyEditor.removeHistorySet(state, Number(entry.dataset.ei), Number(row.dataset.si)));
+    }
+  });
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Tab') {
+      const controls = qsa('button:not([disabled]), input:not([disabled]), select:not([disabled])', overlay);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
   qs('.btnCloseEditW', overlay).addEventListener('click', close);
   qs('.btnCancelEditW', overlay).addEventListener('click', close);
-  qsa('.btnDeleteEditSet', overlay).forEach((btn) => {
-    btn.addEventListener('click', () => btn.closest('.edit-set-row').remove());
+  qs('.history-editor-search', overlay).addEventListener('input', renderPicker);
+  qs('.history-editor-add-exercise', overlay).addEventListener('click', () => {
+    const exercise = catalog.find((item) => item.id === qs('.history-editor-exercise-picker', overlay).value);
+    if (exercise) changeStructure(() => historyEditor.addHistoryExercise(state, exercise));
   });
-  qs('.btnSaveEditW', overlay).addEventListener('click', () => {
-    qsa('.edit-exercise-block[data-ei]', overlay).forEach((block) => {
-      const ei = Number(block.dataset.ei);
-      const rows = qsa('.edit-set-row', block);
-      clone.entries[ei].sets = rows.map((row) => {
-        const { difficulty, ...original } = clone.entries[ei].sets[Number(row.dataset.si)];
-        const value = qs('.edit-difficulty', row).value;
-        return {
-          ...original,
-          weightKg: Number(qs('.edit-weight', row).value) || 0,
-          reps: Number(qs('.edit-reps', row).value) || 0,
-          completed: true,
-          notes: qs('.edit-set-notes', row).value,
-          ...(Object.hasOwn(insights.DIFFICULTY_LABELS, value) ? { difficulty: value } : {}),
-        };
+  qs('.btnSaveEditW', overlay).addEventListener('click', async () => {
+    if (saving) return;
+    try {
+      if (healthSyncInFlight.has(workout.id)) throw new Error('history-busy');
+      capture();
+      saving = true;
+      qsa('button, input, select', overlay).forEach((control) => { control.disabled = true; });
+      await historyEditor.saveHistoryDraft(state, {
+        getWorkouts: () => db.getWorkouts(), saveWorkouts: (next) => db.saveWorkouts(next),
+        healthReason: i18n.text('האימון נערך ידנית ב-AutoFit; Apple Health לא עודכן. פרטי המסירה הקודמים מתייחסים לגרסה שלפני העריכה.'),
+        publish: (next) => { workouts = next; },
       });
-    });
-    clone.entries = clone.entries.filter((e) => e.type === 'cardio' || e.sets.length > 0);
-    workouts = db.getWorkouts().map((w) => (w.id === clone.id ? { ...clone,
-      healthDelivery: w.healthDelivery, healthSyncPending: w.healthSyncPending, healthSyncedAt: w.healthSyncedAt } : w));
-    db.saveWorkouts(workouts);
+    } catch (error) {
+      message(error);
+      return;
+    } finally {
+      saving = false;
+      qsa('button, input, select', overlay).forEach((control) => { control.disabled = false; });
+    }
     close();
     renderHistoryTab();
     renderDashboard();
-    showToast('האימון עודכן ✅');
+    renderHomeTab();
+    if (typeof trainingUI !== 'undefined') trainingUI?.refresh();
+    if (typeof refreshHealthSummaries === 'function') refreshHealthSummaries(workout.id);
+    showToast(i18n.text('האימון עודכן ✅'));
   });
+  render();
+  qs('.btnCloseEditW', overlay).focus();
 }
 
 /* ---------------- share workout(s) (email / WhatsApp / PDF / image) ---------------- */
 function formatCardioExtra(entry) {
   const parts = [];
+  if (entry.cardioActivity) parts.push(i18n.text(entry.cardioActivity === 'run' ? 'ריצה' : 'הליכה'));
+  if (entry.actualDurationSec != null) parts.push(`${i18n.text('זמן בפועל')}: ${formatHMS(entry.actualDurationSec)}`);
+  if (entry.plannedDurationSec != null) parts.push(`${i18n.text('זמן יעד')}: ${formatHMS(entry.plannedDurationSec)}`);
+  if (entry.cardioDurationSource === 'manual') parts.push(i18n.text('דיווח ידני'));
+  if (entry.speedKmh != null) parts.push(`${entry.speedKmh} ${i18n.text('קמ״ש')}`);
+  if (entry.incline != null) parts.push(`${i18n.text('שיפוע')}: ${entry.incline} ${i18n.text(entry.inclineUnit === 'percent' ? 'אחוזים (%)' : 'דרגה במכשיר')}`);
+  if (entry.cardioMachineId) parts.push(`${i18n.text('מכשיר')}: ${entry.cardioMachineId}`);
+  if (insights.DIFFICULTY_LABELS[entry.difficulty]) parts.push(i18n.text(insights.DIFFICULTY_LABELS[entry.difficulty]));
   if (entry.location === 'treadmill') parts.push(`🏃 ${i18n.text('הליכון')}`);
   else if (entry.location === 'outside') parts.push(`🌳 ${i18n.text('בחוץ')}`);
   else if (entry.location === 'home') parts.push(`🏠 ${i18n.text('בבית')}`);
@@ -4415,6 +4624,13 @@ function renderDashboard() {
   renderStatsGrid();
   renderExercisePicker();
   const details = el('statisticsDetails');
+  let cardioStatistics = document.getElementById('cardioInsightsStatistics');
+  if (!cardioStatistics) {
+    cardioStatistics = document.createElement('section');
+    cardioStatistics.id = 'cardioInsightsStatistics';
+    details.before(cardioStatistics);
+  }
+  renderCardioStatistics(cardioStatistics, workouts, { text: i18n.text, locale: i18n.locale() });
   details.ontoggle = () => { if (details.open) renderDetailedStatistics(); };
   if (details.open) renderDetailedStatistics();
 }
@@ -4548,7 +4764,7 @@ function renderExerciseProgress() {
         : explanations[result.reason];
   const measurement = result.evidence[0]?.entry;
   const timed = measurement?.type === 'cardio' || measurement?.inputType === 'hold';
-  const metrics = timed ? [['seconds', 'זמן בשניות'], ...(measurement.type === 'cardio' ? [] : [['sets', 'סטים שהושלמו']])]
+  const metrics = timed ? [['seconds', measurement.type === 'cardio' ? 'זמן בפועל בדקות' : 'זמן בשניות'], ...(measurement.type === 'cardio' ? [] : [['sets', 'סטים שהושלמו']])]
     : [['weight', measurement?.loadKind === 'assistance' ? 'משקל סיוע מקסימלי (ק"ג)' : EXERCISE_METRIC_LABELS.weight],
       ['reps', EXERCISE_METRIC_LABELS.reps], ['sets', EXERCISE_METRIC_LABELS.sets],
       ...(measurement?.loadKind === 'assistance' ? [] : [['volume', EXERCISE_METRIC_LABELS.volume]])];
@@ -4558,7 +4774,7 @@ function renderExerciseProgress() {
   el('exerciseProgressSummary').innerHTML = `<p>${escapeHtml(i18n.text(message))}</p>
     ${result.evidence.length ? `<div class="statistics-evidence">${result.evidence.map((record, index) => {
       const sets = (record.entry.sets || []).filter((set) => set.completed !== false);
-      const values = record.entry.type === 'cardio' ? `${Math.round(Number(record.entry.durationSec) || 0)} ${i18n.text('שניות')}`
+      const values = record.entry.type === 'cardio' ? `${Math.round((Number(record.entry.actualDurationSec ?? record.entry.durationSec) || 0) / 6) / 10} ${i18n.text('דקות')} · ${i18n.text(record.entry.actualDurationSec != null ? 'זמן בפועל' : 'זמן מתועד ישן; לא ידוע אם נמדד בפועל')}`
         : sets.map((set) => record.entry.inputType === 'hold' ? `${Number(set.reps) || 0} ${i18n.text('שניות')}`
           : `${set.weightKg === '' || set.weightKg == null ? '—' : Number(set.weightKg)} ${i18n.text('ק"ג')} × ${Number(set.reps) || 0}`).join(' · ');
       return `<p><strong>${i18n.text(index === 0 ? 'האימון האחרון' : 'האימון הקודם')}</strong>
@@ -4588,7 +4804,8 @@ function renderExerciseChart() {
     if (metric !== 'seconds' && !completedSets.length) return;
     let value;
     if (metric === 'seconds') {
-      value = entry.type === 'cardio' ? Number(entry.durationSec) : completedSets.reduce((sum, set) => sum + Number(set.reps), 0);
+      if (entry.type === 'cardio' && entry.actualDurationSec == null) return;
+      value = entry.type === 'cardio' ? Number(entry.actualDurationSec) / 60 : completedSets.reduce((sum, set) => sum + Number(set.reps), 0);
     } else if (metric === 'reps') {
       value = Math.max(...completedSets.map((s) => Number(s.reps)));
     } else if (metric === 'sets') {
@@ -4767,6 +4984,33 @@ function setExerciseInMyWorkout(ex, included) {
   showToast(included ? `"${ex.name}" נוסף לאימון שלי` : `"${ex.name}" הוסר מהאימון שלי ונשאר בספרייה`);
 }
 
+function addExerciseToCurrentWorkout(exercise) {
+  if (finishingWorkout || privacyErasing) { showToast('לא ניתן לשנות את האימון כרגע'); return false; }
+  try {
+    const previous = activeSession || buildProgramDraft(exercises);
+    const entry = buildProgramDraft([{ ...exercise, active: true }]).entries[0];
+    const order = trainingTools.workoutMuscleProgress(previous, exercises).order.map((index) => previous.entries[index].exerciseId);
+    const next = cardioTools.appendWorkoutExercise(previous, entry, order);
+    db.saveActiveSession(next);
+    activeSession = next;
+    for (const action of [lastVoiceAction, lastVoiceReport, lastAutoCountCompletion]) {
+      if (action?.session === previous) action.session = next;
+    }
+    if (voiceCountingState) voiceCountingState.entryIndex = next.entries.indexOf(voiceCountingState.entry);
+    renderWorkoutTab();
+    renderExercisesTab();
+    syncWorkoutActivity();
+    syncNativeAnnouncementPlan();
+    showToast('התרגיל נוסף לאימון הנוכחי בלבד. האימון שלי לא השתנה.');
+    return true;
+  } catch (error) {
+    console.error('Current-workout addition failed', error);
+    showToast(error.message === 'התרגיל כבר נמצא באימון או ברשימת השחזור'
+      ? error.message : 'התרגיל לא נוסף. בדוק את האחסון ונסה שוב.');
+    return false;
+  }
+}
+
 function wireExercisesTab() {
   el('libraryMuscle').innerHTML = `<option value="">${i18n.text('כל קבוצות השרירים')}</option>${EXERCISE_LIBRARY_CATEGORIES
     .filter((group) => group.id !== 'supersets')
@@ -4816,7 +5060,8 @@ function wireExercisesTab() {
     const group = EXERCISE_LIBRARY_CATEGORIES.find((item) => item.id === exerciseLibraryCategory);
     const draft = { id: db.uid(), name: '', category: group?.category || 'כללי', defaultSets: 3, defaultReps: '12',
       restSeconds: 90, notes: '', images: [], active: exerciseLibraryCategory === 'my',
-      inputType: group?.inputType || 'reps', durationMinutes: 5, holdSeconds: 15 };
+      inputType: group?.inputType || 'reps', durationMinutes: 5, holdSeconds: 15,
+      ...(group?.inputType === 'cardio' ? { cardioActivity: 'walk', inclineUnit: 'level', location: 'treadmill' } : {}) };
     openExerciseEditModal(draft, { isNew: true });
   });
 }
@@ -4860,10 +5105,14 @@ function openExerciseGuide(exercise) {
     ${exercise.images?.length ? `<details class="guide-saved-images"><summary>תמונות שמורות</summary>${exercise.images
       .map((src) => `<img src="${escapeAttr(src)}" alt="" loading="lazy">`).join('')}</details>` : ''}
     <button class="btn btn-primary guide-membership">${exercise.active !== false ? 'הסר מהאימון שלי' : '+ הוסף לאימון שלי'}</button>
+    <button class="btn btn-secondary guide-current-workout">הוסף לאימון הנוכחי בלבד</button>
   `, exercise.name);
   qs('.guide-membership', dialog).addEventListener('click', () => {
     setExerciseInMyWorkout(exercise, exercise.active === false);
     dialog.close();
+  });
+  qs('.guide-current-workout', dialog).addEventListener('click', () => {
+    if (addExerciseToCurrentWorkout(exercise)) dialog.close();
   });
 }
 
@@ -5028,6 +5277,7 @@ function renderExercisesTab() {
       <button class="btn btn-secondary btn-small exercise-membership-button" aria-pressed="${ex.active !== false}">
         ${isMyWorkout ? 'הסר מהאימון שלי' : ex.active !== false ? '✓ באימון שלי · הסר מהאימון' : '+ הוסף לאימון שלי'}
       </button>
+      <button class="btn btn-secondary btn-small btnAddCurrentWorkout" ${activeSession?.entries.some((entry) => entry.exerciseId === ex.id) ? 'disabled' : ''}>${activeSession?.entries.some((entry) => entry.exerciseId === ex.id) ? '✓ באימון הנוכחי' : 'הוסף לאימון הנוכחי בלבד'}</button>
     `;
     qs('.btnLibraryGuide', item).addEventListener('click', () => openExerciseGuide(ex));
     qs('.btnEditEx', item).addEventListener('click', () => openExerciseEditModal(ex, { isNew: !installed }));
@@ -5041,6 +5291,7 @@ function renderExercisesTab() {
       });
     }
     qs('.exercise-membership-button', item).addEventListener('click', () => setExerciseInMyWorkout(ex, ex.active === false));
+    qs('.btnAddCurrentWorkout', item).addEventListener('click', () => addExerciseToCurrentWorkout(ex));
     const positionInput = qs('.exercise-order-input', item);
     if (positionInput) positionInput.addEventListener('change', () => {
       const position = Number(positionInput.value);
@@ -5237,10 +5488,10 @@ function openExerciseEditModal(ex, options = {}) {
   });
 }
 
-/* lightweight edit modal for the warm-up/cool-down cardio "exercises" — just a
-   name + duration (minutes), no sets/reps/images since their data is duration-based */
 function openCardioEditModal(ex, options = {}) {
   const isNew = !!options.isNew;
+  const entry = makeCardioEntry(ex.id, [ex]);
+  const walkingActivity = cardioTools.walkingActivity(entry, ex);
   const overlay = document.createElement('div');
   overlay.className = 'photo-overlay';
   overlay.innerHTML = `
@@ -5248,10 +5499,16 @@ function openCardioEditModal(ex, options = {}) {
       <div class="photo-modal-head"><b>${isNew ? 'תרגיל חדש' : 'עריכת תרגיל'}</b><button class="btn-icon btnCloseExEdit">✕</button></div>
       <label class="field-label">שם</label>
       <input class="input" id="editCardioName" value="${escapeAttr(ex.name)}">
-      <label class="field-label">משך (דקות)</label>
-      <input type="number" min="1" class="input" id="editCardioMinutes" value="${ex.durationMinutes || 5}">
+      ${cardioTools.measurementFieldsHTML(entry, escapeAttr, ex)}
+      ${walkingActivity ? '' : `<label class="training-field"><span>מיקום</span><select class="select cardioLocation">
+        <option value="" ${!entry.location ? 'selected' : ''}>מיקום (לא צויין)</option>
+        <option value="treadmill" ${entry.location === 'treadmill' ? 'selected' : ''}>הליכון</option>
+        <option value="outside" ${entry.location === 'outside' ? 'selected' : ''}>בחוץ</option>
+        <option value="gym" ${entry.location === 'gym' ? 'selected' : ''}>חדר כושר</option>
+        <option value="home" ${entry.location === 'home' ? 'selected' : ''}>בבית</option>
+      </select></label>
       <label class="field-label">קצב/מהירות ברירת מחדל</label>
-      <input class="input" id="editCardioPace" value="${escapeAttr(ex.pace || '')}" placeholder='לדוגמה: 6-10 קמ"ש'>
+      <input class="input" id="editCardioPace" value="${escapeAttr(ex.pace || '')}" placeholder='לדוגמה: 6-10 קמ"ש'>`}
       <label class="checkbox-row"><input type="checkbox" id="editCardioActive" ${ex.active !== false ? 'checked' : ''}> כלול באימונים הבאים</label>
       <p class="edit-program-duration field-hint" data-no-translate></p>
       <div class="settings-actions">
@@ -5262,10 +5519,10 @@ function openCardioEditModal(ex, options = {}) {
   `;
   document.body.appendChild(overlay);
   i18n.localizeInput(qs('#editCardioName', overlay), ex.name, 'name');
-  i18n.localizeInput(qs('#editCardioPace', overlay), ex.pace || '');
+  if (!walkingActivity) i18n.localizeInput(qs('#editCardioPace', overlay), ex.pace || '');
   const updateEditDuration = () => showProgramEditDuration(overlay, { ...ex,
     active: qs('#editCardioActive', overlay).checked,
-    durationMinutes: Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5) }, isNew);
+    durationMinutes: Number(qs('.cardioMinutes', overlay).value) || 5 }, isNew);
   overlay.addEventListener('input', updateEditDuration);
   overlay.addEventListener('change', updateEditDuration);
   updateEditDuration();
@@ -5276,11 +5533,27 @@ function openCardioEditModal(ex, options = {}) {
   qs('#btnSaveExEdit', overlay).addEventListener('click', () => {
     const name = i18n.inputValue(qs('#editCardioName', overlay)).trim();
     if (!name) { showToast('נא להזין שם'); return; }
-    ex.name = name;
-    ex.durationMinutes = Math.max(1, Number(qs('#editCardioMinutes', overlay).value) || 5);
-    ex.pace = i18n.inputValue(qs('#editCardioPace', overlay)).trim();
-    ex.active = qs('#editCardioActive', overlay).checked;
-    const next = isNew ? [...exercises, ex] : exercises;
+    let updated;
+    try {
+      const values = { durationSec: Number(qs('.cardioMinutes', overlay).value) * 60 };
+      if (walkingActivity) Object.assign(values, { cardioActivity: qs('.cardioActivity', overlay).value,
+        location: entry.location || '', speedKmh: qs('.cardioSpeed', overlay).value,
+        incline: qs('.cardioIncline', overlay).value, inclineUnit: qs('.cardioInclineUnit', overlay).value,
+        cardioMachineId: entry.cardioMachineId || '' });
+      updated = cardioTools.editCardioEntry(entry, values);
+    } catch (error) {
+      console.error('Invalid cardio program edit', error);
+      showToast(error.message);
+      return;
+    }
+    const proposed = { ...ex, name, durationMinutes: updated.durationSec / 60,
+      location: walkingActivity ? ex.location : qs('.cardioLocation', overlay).value,
+      pace: walkingActivity ? ex.pace : i18n.inputValue(qs('#editCardioPace', overlay)).trim(), active: qs('#editCardioActive', overlay).checked };
+    if (walkingActivity) for (const key of ['cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId']) {
+      if (updated[key] === undefined) delete proposed[key];
+      else proposed[key] = updated[key];
+    }
+    const next = isNew ? [...exercises, proposed] : exercises.map((item) => item.id === ex.id ? proposed : item);
     try {
       db.saveExercises(next);
     } catch (error) {
@@ -5296,7 +5569,7 @@ function openCardioEditModal(ex, options = {}) {
       exerciseLibraryCategory = 'warmup';
       el('libraryMuscle').value = 'warmup';
     }
-    syncExerciseNameEverywhere(ex);
+    syncExerciseNameEverywhere(proposed);
     renderExercisesTab();
     reorderActiveSessionToMatchExercises();
     close();

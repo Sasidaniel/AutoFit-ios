@@ -1,3 +1,10 @@
+.cardio-insights-field { display: block; margin-block: 0.75rem; }
+.cardio-insights-field > span { display: block; margin-block-end: 0.3rem; }
+.cardio-insights-form .input, .cardio-insights-form .select { max-width: 100%; }
+.cardio-insights-group, .cardio-insights-advice, .cardio-insights-goal { margin-block: 1rem; }
+.cardio-insights-evidence { overflow-wrap: anywhere; }
+.cardio-insights-advice .btn { margin: 0.25rem; }
+
 :root {
   --bg: #f4f6fb;
   --surface: #ffffff;
@@ -461,6 +468,10 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .cardio-pace-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .cardio-pace-row .select { margin-bottom: 0; flex: none; width: auto; }
 .cardio-pace-row .input { margin-bottom: 0; }
+.cardio-measurement-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cardio-measurement-fields .training-field { margin: 0 0 8px; }
+.cardio-measurement-fields .input, .cardio-measurement-fields .select { min-width: 0; width: 100%; margin-bottom: 0; }
+.btnAddCurrentWorkout { width: 100%; margin-top: 6px; white-space: normal; }
 
 .sets-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .set-table-wrap { margin: 0 -4px; padding: 0 4px; }
@@ -512,6 +523,20 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .history-sets-line div { padding: 1px 0; }
 
 /* Edit workout modal */
+.history-editor-modal { max-width: 640px; }
+.history-editor-modal .history-editor-entries { max-height: 45vh; overflow-y: auto; overscroll-behavior: contain; }
+.history-editor-entry { padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.history-editor-entry-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.history-editor-entry-head .edit-exercise-title { overflow-wrap: anywhere; }
+.history-editor-grid, .history-editor-set { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.history-editor-set { padding: 10px 0; border-top: 1px solid var(--border); margin-block: 8px; }
+.history-editor-field { display: block; min-width: 0; }
+.history-editor-field .input, .history-editor-field .select { width: 100%; margin-bottom: 0; min-height: 44px; }
+.history-editor-wide { grid-column: 1 / -1; }
+.history-editor-library { padding-block: 12px; border-top: 1px solid var(--border); }
+.history-editor-error { color: var(--danger); padding: 10px; border: 1px solid currentColor; border-radius: 8px; }
+.history-editor-modal .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-editor-modal button { min-height: 44px; }
 .edit-workout-body { max-height: 50vh; overflow-y: auto; }
 .edit-exercise-block { margin-bottom: 14px; }
 .edit-exercise-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--text); }

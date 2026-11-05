@@ -953,7 +953,7 @@ test('the page uses document scrolling rather than a fixed-height nested body sc
 const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData', 'profileAgeAllowed'],
   loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
-  const context = nodeVM.createContext(extras);
+  const context = nodeVM.createContext({ ...loadPhaseOneModule('www/js/cardio-insights.js', ['CARDIO_INSIGHT_TRANSLATIONS']), ...extras });
   nodeVM.runInContext(read('www/js/exercise-library.js').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/translations-en.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   nodeVM.runInContext(read('www/js/translations-he-female.js').replace(/^export /gm, ''), context);
@@ -965,7 +965,9 @@ const vm = {
   ...nodeVM,
   createContext(values = {}) {
     const i18n = localizationContext();
-    return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
+    const cardioTools = loadPhaseOneModule('www/js/cardio-tools.js', ['walkingActivity', 'measurementFieldsHTML',
+      'elapsedCardioSeconds', 'editCardioEntry', 'completeCardioEntry', 'resetCardioEntry', 'cardioHistorySnapshot', 'appendWorkoutExercise']);
+    return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, cardioTools, qsa: () => [], voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       finishingWorkout: false, pendingWorkoutAutoFinish: null,
       expandedWorkoutExercises: new Set(), refreshWorkoutCardCompletion() {}, completeWorkoutFeedback() {},
@@ -1652,28 +1654,16 @@ test('summary separates holds and cardio, and leaves legacy measurements unknown
 });
 
 for (const difficulty of ['right', '']) {
-  test(`editing history ${difficulty ? 'retains' : 'clears'} rating and preserves surviving set metadata`, () => {
+  test(`editing history ${difficulty ? 'retains' : 'clears'} rating and preserves surviving set metadata`, async () => {
     const record = insightRecord('record', 1, [[20, 10, 'hard'], [25, 12, 'easy']]);
     record.entries[0].sets[1].customField = 'Keep this';
-    let save, saved;
-    const block = { dataset: { ei: '0' } }, row = { dataset: { si: '1' } };
-    const context = vm.createContext({
-      JSON, workouts: [record], document: { createElement: () => ({ addEventListener() {}, remove() {} }), body: { appendChild() {} } },
-      formatDate: () => 'Date', escapeAttr: (value) => value, escapeHtml: (value) => value,
-      qs: (selector) => {
-        if (selector === '.edit-weight') return { value: '27' };
-        if (selector === '.edit-reps') return { value: '13' };
-        if (selector === '.edit-difficulty') return { value: difficulty };
-        return { addEventListener: (event, callback) => { if (selector === '.btnSaveEditW') save = callback; } };
-      },
-      qsa: (selector) => selector === '.edit-exercise-block[data-ei]' ? [block] : selector === '.edit-set-row' ? [row] : [],
-      db: { getWorkouts: () => [record], saveWorkouts: (value) => { saved = value; } },
-      renderHistoryTab() {}, renderDashboard() {}, showToast() {},
-    });
-    vm.runInContext(section('function openEditWorkoutModal(', '/* ---------------- share workout'), context);
-    context.openEditWorkoutModal(record);
-    save();
-    const entry = saved[0].entries[0];
+    const fixture = historyEditorDOMFixture([record]);
+    fixture.field('weightKg', 0, 1).value = '27';
+    fixture.field('reps', 0, 1).value = '13';
+    fixture.field('difficulty', 0, 1).value = difficulty;
+    fixture.structural('.btnDeleteEditSet', 0, 0);
+    await fixture.click('.btnSaveEditW');
+    const entry = fixture.saved[0].entries[0];
     assert.equal(entry.comparisonKey, record.entries[0].comparisonKey);
     assert.equal(entry.inputType, 'reps');
     assert.equal(entry.sets.length, 1);
@@ -7331,4 +7321,565 @@ test('timed completion never announces a percentage while visual progress remain
   assert.equal(context.cardioCompletionMessage({ exerciseId: 'walk', exerciseName: 'Walk' }), 'התרגיל Walk הסתיים');
   context.activeSession.entries = [];
   assert.equal(context.getWorkoutSetProgress().percent, 0);
+});
+const historyEditor = loadPhaseOneModule('www/js/history-editor.js', [
+  'createHistoryDraft', 'historyNumber', 'historySecondsToMinutes', 'historyMinutesToSeconds', 'addHistoryExercise', 'addHistorySet',
+  'removeHistoryExercise', 'removeHistorySet', 'validateHistoryDraft', 'prepareHistorySave', 'saveHistoryDraft',
+]);
+
+function historyEditorRecords() {
+  return Array.from({ length: 11 }, (_, index) => ({
+    id: `saved-${index}`, dateISO: `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00Z`,
+    finishedAt: `2026-10-${String(index + 1).padStart(2, '0')}T10:30:00Z`, durationSec: 1800,
+    planId: 'original-plan', planSnapshot: { name: 'Original plan', unknownPlanField: ['keep'] },
+    unknownRecord: { keep: index }, healthSyncedAt: '2026-10-25T10:00:00Z',
+    healthSyncPending: false, healthDelivery: { status: 'saved', nativeId: `native-${index}`, customDelivery: true },
+    entries: [
+      { exerciseId: 'custom:hold', exerciseName: 'My canonical custom hold', inputType: 'hold',
+        exerciseSnapshot: { id: 'custom:hold', name: 'My canonical custom hold', inputType: 'hold', customSnapshot: true },
+        customEntry: 'retained', sets: [
+          { weightKg: 0, reps: 30, completed: true, notes: 'First note', difficulty: 'hard', customSet: 'first' },
+          { weightKg: 5, reps: 45, completed: true, notes: 'Second note', difficulty: 'easy', customSet: 'second' },
+        ] },
+      { exerciseId: 'warmup', exerciseName: 'Legacy warmup', type: 'cardio', durationSec: 300,
+        completed: true, pace: 'Device setting 7; not km/h or percent', location: 'treadmill', unknownCardio: { keep: true } },
+      { exerciseId: 'library:jogging', exerciseName: 'ריצה קלה', type: 'cardio', durationSec: 600, plannedDurationSec: 600,
+        actualDurationSec: 570, cardioDurationSource: 'timer', completed: true, cardioActivity: 'run', speedKmh: 8,
+        incline: 2, inclineUnit: 'level', cardioMachineId: 'Device A', difficulty: 'right', notes: 'Running note',
+        exerciseSnapshot: { id: 'library:jogging', catalogId: 'jog', inputType: 'cardio' } },
+      { exerciseId: 'cooldown', exerciseName: 'Cooldown', type: 'cardio', durationSec: 120, completed: true },
+      { exerciseId: 'interval-custom', exerciseName: 'Intervals', type: 'cardio', durationSec: 90, completed: true,
+        intervals: { rounds: 3, workSeconds: 20, recoverySeconds: 10 }, exerciseSnapshot: { catalogId: 'jumpRope' } },
+    ],
+  }));
+}
+
+test('expanded history editor preserves all 11 records, identity, snapshots, timestamps and untouched metadata', async () => {
+  const records = historyEditorRecords(), before = JSON.stringify(records);
+  const state = historyEditor.createHistoryDraft(records[5]);
+  state.workout.durationSec = 1957;
+  state.workout.entries[0].sets[1].weightKg = 7.5;
+  state.workout.entries[0].sets[1].notes = 'Edited note';
+  state.workout.entries[0].sets[1].difficulty = 'right';
+  let published, stored;
+  const result = await historyEditor.saveHistoryDraft(state, {
+    getWorkouts: () => records, saveWorkouts: (next) => { stored = next; },
+    publish: (next) => { assert.equal(next, stored); published = next; }, now: '2026-11-05T10:00:00Z',
+  });
+  assert.equal(result.changed, true);
+  assert.equal(JSON.stringify(records), before);
+  assert.equal(published.length, 11);
+  assert.equal(new Set(published.map((record) => record.id)).size, 11);
+  published.forEach((record, index) => {
+    if (index !== 5) assert.equal(record, records[index]);
+  });
+  const edited = published[5];
+  assert.equal(edited.id, records[5].id);
+  assert.equal(edited.durationSec, 1957);
+  for (const key of ['dateISO', 'finishedAt', 'planId', 'planSnapshot', 'unknownRecord']) {
+    assert.equal(JSON.stringify(edited[key]), JSON.stringify(records[5][key]));
+  }
+  assert.equal(edited.entries[0].sets[1].customSet, 'second');
+  assert.equal(edited.entries[0].sets[1].notes, 'Edited note');
+  assert.equal(edited.entries[0].sets[1].difficulty, 'right');
+  assert.equal(edited.entries[0].sets[0].reps, 30);
+  assert.equal(edited.entries[0].exerciseName, 'My canonical custom hold');
+  assert.equal(JSON.stringify(edited.entries.slice(1)), JSON.stringify(records[5].entries.slice(1)));
+  assert.equal(edited.healthSyncedAt, undefined);
+  assert.equal(edited.healthSyncPending, false);
+  assert.equal(edited.healthDelivery.status, 'unknown');
+  assert.equal(edited.healthDelivery.nativeId, records[5].healthDelivery.nativeId);
+  assert.equal(edited.healthDeliveryBeforeEdit.healthSyncedAt, records[5].healthSyncedAt);
+  assert.equal(JSON.stringify(edited.healthDeliveryBeforeEdit.healthDelivery), JSON.stringify(records[5].healthDelivery));
+});
+
+test('expanded history editor no-op and abandoned draft neither save nor mutate even legacy missing fields', async () => {
+  const records = historyEditorRecords();
+  delete records[0].entries[0].sets[0].weightKg;
+  records[0].entries[0].sets[0].reps = '';
+  const before = JSON.stringify(records);
+  const abandoned = historyEditor.createHistoryDraft(records[0]);
+  abandoned.workout.entries.splice(0, 3);
+  abandoned.workout.planSnapshot.name = 'Draft only';
+  assert.equal(JSON.stringify(records), before);
+  let writes = 0, publications = 0;
+  const unchanged = await historyEditor.saveHistoryDraft(historyEditor.createHistoryDraft(records[0]), {
+    getWorkouts: () => records, saveWorkouts: () => { writes++; }, publish: () => { publications++; },
+  });
+  assert.equal(unchanged.changed, false);
+  assert.equal(unchanged.workouts, records);
+  assert.equal(writes, 0);
+  assert.equal(publications, 0);
+  assert.equal(JSON.stringify(records), before);
+});
+
+test('expanded history editor adds/removes exercises and sets without borrowing loads or changing catalog/program', () => {
+  const records = historyEditorRecords(), state = historyEditor.createHistoryDraft(records[0]);
+  const exercise = { id: 'library:new-hold', name: 'Catalog hold', catalogId: 'sidePlank', inputType: 'hold', holdSeconds: 20,
+    targetWeightKg: 90, defaultSets: 5, notes: 'Library guidance' };
+  const originalExercise = JSON.stringify(exercise);
+  const added = historyEditor.addHistoryExercise(state, exercise);
+  assert.equal(JSON.stringify(exercise), originalExercise);
+  assert.equal(added.exerciseId, exercise.id);
+  assert.equal(added.exerciseSnapshot.catalogId, 'sidePlank');
+  assert.equal(added.sets.length, 1);
+  assert.equal(added.sets[0].weightKg, 0);
+  assert.equal(added.sets[0].reps, 0);
+  assert.throws(() => historyEditor.addHistoryExercise(state, exercise), /history-duplicate/);
+  historyEditor.addHistorySet(state, 5);
+  added.sets[1].weightKg = 2;
+  added.sets[1].reps = 35;
+  added.sets[1].difficulty = 'hard';
+  added.sets[1].notes = 'Added hold';
+  historyEditor.removeHistorySet(state, 5, 0);
+  assert.equal(added.sets[0].notes, 'Added hold');
+  historyEditor.removeHistorySet(state, 0, 0);
+  assert.equal(state.workout.entries[0].sets[0].customSet, 'second');
+  historyEditor.removeHistoryExercise(state, 1);
+  assert.equal(state.workout.entries.some((entry) => entry.exerciseId === 'warmup'), false);
+  assert.equal(state.workout.entries.some((entry) => entry.exerciseId === 'cooldown'), true);
+  assert.equal(historyEditor.validateHistoryDraft(state), true);
+  const saved = historyEditor.prepareHistorySave(records, state).record;
+  assert.equal(saved.entries.length, 5);
+  assert.equal(records[0].entries.length, 5);
+  assert.equal(records[0].entries[0].sets.length, 2);
+});
+
+test('expanded history editor keeps cardio target, actual, missing and explicit zero distinct', () => {
+  const records = historyEditorRecords(), state = historyEditor.createHistoryDraft(records[0]);
+  const walking = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:walking');
+  const added = historyEditor.addHistoryExercise(state, walking);
+  assert.equal(added.cardioActivity, 'walk');
+  assert.equal(added.durationSec, 600);
+  assert.equal(added.plannedDurationSec, 600);
+  assert.equal(Object.hasOwn(added, 'actualDurationSec'), false);
+  assert.equal(Object.hasOwn(added, 'speedKmh'), false);
+  assert.equal(Object.hasOwn(added, 'incline'), false);
+  assert.equal(added.exerciseSnapshot.id, walking.id);
+  added.actualDurationSec = 0;
+  added.speedKmh = 0;
+  added.incline = 0;
+  added.inclineUnit = 'level';
+  added.difficulty = 'easy';
+  added.cardioMachineId = 'Machine 4';
+  state.workout.entries[2].actualDurationSec = 642;
+  const saved = historyEditor.prepareHistorySave(records, state).record;
+  const editedRun = saved.entries[2], savedWalk = saved.entries.at(-1), legacy = saved.entries[1];
+  assert.equal(editedRun.actualDurationSec, 642);
+  assert.equal(editedRun.durationSec, 600);
+  assert.equal(editedRun.plannedDurationSec, 600);
+  assert.equal(editedRun.cardioDurationSource, 'manual');
+  assert.equal(savedWalk.actualDurationSec, 0);
+  assert.equal(savedWalk.cardioDurationSource, 'manual');
+  assert.equal(savedWalk.speedKmh, 0);
+  assert.equal(savedWalk.incline, 0);
+  assert.equal(savedWalk.inclineUnit, 'level');
+  assert.equal(Object.hasOwn(legacy, 'actualDurationSec'), false);
+  assert.equal(Object.hasOwn(legacy, 'plannedDurationSec'), false);
+  assert.equal(Object.hasOwn(legacy, 'speedKmh'), false);
+  assert.equal(Object.hasOwn(legacy, 'inclineUnit'), false);
+  assert.equal(legacy.pace, records[0].entries[1].pace);
+  assert.equal(Object.hasOwn(saved.entries[4], 'cardioActivity'), false);
+  assert.equal(JSON.stringify(saved.entries[4].intervals), JSON.stringify(records[0].entries[4].intervals));
+});
+
+test('expanded history editor rejects invalid edited fields and empty exercises without normalizing untouched legacy data', () => {
+  const records = historyEditorRecords();
+  for (const [field, value] of [['durationSec', -1], ['durationSec', 1.5], ['durationSec', Infinity], ['durationSec', NaN]]) {
+    const state = historyEditor.createHistoryDraft(records[0]);
+    state.workout[field] = value;
+    assert.throws(() => historyEditor.validateHistoryDraft(state), /history-number/);
+  }
+  for (const [field, value] of [['weightKg', -0.5], ['reps', 1.2], ['notes', 'x'.repeat(501)], ['difficulty', 'unknown']]) {
+    const state = historyEditor.createHistoryDraft(records[0]);
+    state.workout.entries[0].sets[0][field] = value;
+    assert.throws(() => historyEditor.validateHistoryDraft(state), /history-/);
+  }
+  for (const [field, value] of [['speedKmh', -1], ['actualDurationSec', 3.2], ['inclineUnit', 'degrees'], ['cardioActivity', 'invented']]) {
+    const state = historyEditor.createHistoryDraft(records[0]);
+    state.workout.entries[1][field] = value;
+    assert.throws(() => historyEditor.validateHistoryDraft(state), /history-/);
+  }
+  const state = historyEditor.createHistoryDraft(records[0]);
+  state.workout.entries[0].sets = [];
+  assert.throws(() => historyEditor.validateHistoryDraft(state), /history-empty-sets/);
+  state.workout.entries = [];
+  assert.throws(() => historyEditor.validateHistoryDraft(state), /history-empty/);
+  assert.equal(historyEditor.historyNumber('0'), 0);
+  assert.equal(historyEditor.historyNumber('', { optional: true }), undefined);
+  assert.throws(() => historyEditor.historyNumber(''), /history-number/);
+  assert.throws(() => historyEditor.historyNumber('not a number'), /history-number/);
+});
+
+test('expanded history editor waits for confirmed storage and failed storage leaves prior published state intact', async () => {
+  const records = historyEditorRecords(), before = JSON.stringify(records);
+  for (const failure of ['throw', 'false', 'reject']) {
+    const state = historyEditor.createHistoryDraft(records[0]);
+    state.workout.durationSec = 1900;
+    let published = records;
+    await assert.rejects(historyEditor.saveHistoryDraft(state, {
+      getWorkouts: () => records, publish: (next) => { published = next; },
+      saveWorkouts: () => {
+        if (failure === 'throw') throw new Error('disk full');
+        if (failure === 'false') return false;
+        return Promise.reject(new Error('disk full'));
+      },
+    }));
+    assert.equal(published, records);
+    assert.equal(JSON.stringify(records), before);
+  }
+  let confirm, published = records;
+  const state = historyEditor.createHistoryDraft(records[0]);
+  state.workout.durationSec = 1900;
+  const save = historyEditor.saveHistoryDraft(state, {
+    getWorkouts: () => records, saveWorkouts: () => new Promise((resolve) => { confirm = resolve; }),
+    publish: (next) => { published = next; },
+  });
+  assert.equal(published, records);
+  confirm();
+  await save;
+  assert.notEqual(published, records);
+  assert.equal(published[0].durationSec, 1900);
+});
+
+test('expanded history editor preserves concurrent health updates and refuses stale records or resurrecting deleted workouts', () => {
+  const records = historyEditorRecords(), state = historyEditor.createHistoryDraft(records[0]);
+  state.workout.durationSec = 2000;
+  records[0].healthDelivery = { status: 'saved', nativeId: 'new-native-id', unknown: 'new' };
+  records[0].healthSyncedAt = 'new-sync';
+  records[0].newExternalMetadata = true;
+  const edited = historyEditor.prepareHistorySave(records, state).record;
+  assert.equal(edited.healthDeliveryBeforeEdit.healthDelivery.nativeId, 'new-native-id');
+  assert.equal(edited.healthDeliveryBeforeEdit.healthSyncedAt, 'new-sync');
+  assert.equal(edited.newExternalMetadata, true);
+  assert.throws(() => historyEditor.prepareHistorySave(records.slice(1), state), /history-missing/);
+  records[0].entries[0].sets[0].reps = 90;
+  assert.throws(() => historyEditor.prepareHistorySave(records, state), /history-conflict/);
+});
+
+function historyEditorDOMFixture(records = historyEditorRecords()) {
+  const initial = JSON.stringify(records), nodes = new Map(), overlayHandlers = {}, refreshes = [];
+  let fields = [], blocks = new Map(), rows = new Map(), saved, removed = false, fail = false, writes = 0;
+  const decode = (value) => String(value).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const attr = (source, key) => {
+    const match = source.match(new RegExp(`(?:^|\\s)${key}="([^"]*)"`));
+    return match ? decode(match[1]) : undefined;
+  };
+  const node = () => ({ value: '', disabled: false, hidden: true, events: {}, textContent: '',
+    addEventListener(event, callback) { this.events[event] = callback; }, focus() {} });
+  const content = node();
+  Object.defineProperty(content, 'innerHTML', {
+    set(html) {
+      fields = []; blocks = new Map(); rows = new Map();
+      let block, row;
+      const tags = html.match(/<section\b[^>]*>|<div\b[^>]*data-si="[^"]*"[^>]*>|<\/section>|<input\b[^>]*>|<select\b[^>]*>[\s\S]*?<\/select>/g) || [];
+      tags.forEach((tag) => {
+        if (tag.startsWith('<section')) {
+          block = { dataset: { ei: attr(tag, 'data-ei') } }; row = null;
+          blocks.set(Number(block.dataset.ei), block);
+        } else if (tag.startsWith('</section')) { block = null; row = null; }
+        else if (tag.startsWith('<div')) {
+          row = { dataset: { si: attr(tag, 'data-si') } };
+          rows.set(`${block.dataset.ei}:${row.dataset.si}`, row);
+        } else {
+          const field = node(), currentBlock = block, currentRow = row;
+          field.dataset = { field: attr(tag, 'data-field'), initial: attr(tag, 'data-initial'),
+            number: attr(tag, 'data-number'), optional: attr(tag, 'data-optional') };
+          if (tag.startsWith('<select')) {
+            const options = tag.match(/<option\b[^>]*>/g) || [];
+            field.value = attr(options.find((option) => /\sselected(?:\s|>)/.test(option)) || options[0] || '', 'value') ?? '';
+          } else field.value = attr(tag, 'value') ?? '';
+          field.entryIndex = currentBlock ? Number(currentBlock.dataset.ei) : null;
+          field.setIndex = currentRow ? Number(currentRow.dataset.si) : null;
+          field.closest = (selector) => selector === '[data-ei]' ? currentBlock : selector === '[data-si]' ? currentRow : null;
+          fields.push(field);
+        }
+      });
+    },
+  });
+  nodes.set('.history-editor-content', content);
+  const overlay = { addEventListener(event, callback) { overlayHandlers[event] = callback; }, remove() { removed = true; } };
+  const context = vm.createContext({
+    historyEditor, exercises: [], SEED_EXERCISES: [], healthSyncInFlight: new Set(), workouts: records,
+    document: { createElement: () => overlay, body: { appendChild() {} }, activeElement: { focus() {} } },
+    i18n: { text: (value) => value, exerciseName: (value) => value, translateDOM() {} },
+    formatDate: (value) => value, formatHMS: (seconds) => `${seconds}s`,
+    escapeAttr: (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'),
+    escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;'),
+    qs(selector) {
+      if (!nodes.has(selector)) nodes.set(selector, node());
+      return nodes.get(selector);
+    },
+    qsa(selector) {
+      if (selector === '[data-field]') return fields;
+      return [...nodes.values(), ...fields];
+    },
+    db: { getWorkouts: () => saved || records, saveWorkouts: (next) => {
+      writes++;
+      if (fail) throw new Error('Storage unavailable');
+      saved = next;
+    } },
+    renderHistoryTab() { refreshes.push('history'); }, renderDashboard() { refreshes.push('dashboard'); },
+    renderHomeTab() { refreshes.push('home'); }, trainingUI: { refresh() { refreshes.push('training'); } },
+    refreshHealthSummaries() { refreshes.push('health'); }, showToast() { refreshes.push('toast'); },
+  });
+  vm.runInContext(section('function openEditWorkoutModal(', '/* ---------------- share workout'), context);
+  context.openEditWorkoutModal(records[0]);
+  return {
+    context, records, initial, overlay, nodes, refreshes,
+    get saved() { return saved; }, get removed() { return removed; }, get writes() { return writes; },
+    set fail(value) { fail = value; },
+    field(field, entryIndex = null, setIndex = null) {
+      const found = fields.find((input) => input.dataset.field === field && input.entryIndex === entryIndex && input.setIndex === setIndex);
+      assert.ok(found, `Missing editor input ${entryIndex}:${setIndex}:${field}`);
+      return found;
+    },
+    click(selector) { return nodes.get(selector).events.click(); },
+    structural(selector, entryIndex, setIndex) {
+      overlayHandlers.click({ target: { closest(query) {
+        if (query === '[data-ei]') return blocks.get(entryIndex);
+        if (query === '[data-si]') return rows.get(`${entryIndex}:${setIndex}`);
+        return query === selector ? {} : null;
+      } } });
+    },
+  };
+}
+
+test('expanded history editor modal cancel and untouched save preserve all 11 records without a write', async () => {
+  const cancel = historyEditorDOMFixture();
+  cancel.field('durationSec').value = '20';
+  cancel.structural('.history-editor-remove-exercise', 0);
+  cancel.click('.btnCancelEditW');
+  assert.equal(cancel.removed, true);
+  assert.equal(cancel.writes, 0);
+  assert.equal(JSON.stringify(cancel.records), cancel.initial);
+  const noOp = historyEditorDOMFixture();
+  await noOp.click('.btnSaveEditW');
+  assert.equal(noOp.writes, 0);
+  assert.equal(noOp.context.workouts, noOp.records);
+  assert.equal(JSON.stringify(noOp.records), noOp.initial);
+  assert.equal(noOp.removed, true);
+});
+
+test('expanded history editor modal edits holds, notes, sets, cardio and duration and refreshes all existing views', async () => {
+  const fixture = historyEditorDOMFixture();
+  fixture.field('durationSec').value = historyEditor.historySecondsToMinutes(2000);
+  fixture.field('weightKg', 0, 1).value = '6.5';
+  fixture.field('reps', 0, 1).value = '52';
+  fixture.field('notes', 0, 1).value = 'Edited hold note';
+  fixture.field('difficulty', 0, 1).value = 'right';
+  fixture.structural('.btnDeleteEditSet', 0, 0);
+  fixture.structural('.history-editor-add-set', 0);
+  fixture.field('reps', 0, 1).value = '40';
+  fixture.field('notes', 0, 1).value = 'Added set note';
+  fixture.field('actualDurationSec', 2).value = historyEditor.historySecondsToMinutes(700);
+  fixture.field('difficulty', 2).value = 'hard';
+  fixture.field('speedKmh', 2).value = '0';
+  fixture.field('incline', 2).value = '0';
+  fixture.structural('.history-editor-remove-exercise', 3);
+  fixture.nodes.get('.history-editor-exercise-picker').value = 'library:walking';
+  fixture.click('.history-editor-add-exercise');
+  fixture.field('actualDurationSec', 4).value = '7';
+  fixture.field('incline', 4).value = '3';
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 1);
+  assert.equal(fixture.saved.length, 11);
+  assert.equal(fixture.saved[0].id, fixture.records[0].id);
+  assert.equal(fixture.saved[0].durationSec, 2000);
+  const entries = fixture.saved[0].entries;
+  assert.equal(entries[0].sets.length, 2);
+  assert.equal(entries[0].sets[0].customSet, 'second');
+  assert.equal(entries[0].sets[0].weightKg, 6.5);
+  assert.equal(entries[0].sets[0].reps, 52);
+  assert.equal(entries[0].sets[0].notes, 'Edited hold note');
+  assert.equal(entries[0].sets[0].difficulty, 'right');
+  assert.equal(entries[0].sets[1].notes, 'Added set note');
+  assert.equal(entries[1].exerciseId, 'warmup');
+  assert.equal(Object.hasOwn(entries[1], 'actualDurationSec'), false);
+  assert.equal(entries[2].durationSec, 600);
+  assert.equal(entries[2].actualDurationSec, 700);
+  assert.equal(entries[2].cardioDurationSource, 'manual');
+  assert.equal(entries[2].difficulty, 'hard');
+  assert.equal(entries[2].speedKmh, 0);
+  assert.equal(entries[2].incline, 0);
+  assert.equal(entries[2].cardioMachineId, 'Device A');
+  assert.equal(entries[3].exerciseId, 'interval-custom');
+  assert.equal(entries[4].exerciseId, 'library:walking');
+  assert.equal(entries[4].actualDurationSec, 420);
+  assert.equal(entries[4].plannedDurationSec, 600);
+  assert.equal(Object.hasOwn(entries[4], 'cardioMachineId'), false);
+  assert.equal(entries[4].inclineUnit, 'level');
+  assert.doesNotMatch(section('function openEditWorkoutModal(', '/* ---------------- share workout'), /textField\('cardioMachineId'/);
+  assert.deepEqual(fixture.refreshes, ['history', 'dashboard', 'home', 'training', 'health', 'toast']);
+  assert.equal(fixture.removed, true);
+  assert.equal(JSON.stringify(fixture.records), fixture.initial);
+});
+
+test('expanded history editor modal failed save stays open, never publishes, and supports reverting or retrying', async () => {
+  const fixture = historyEditorDOMFixture();
+  fixture.field('durationSec').value = historyEditor.historySecondsToMinutes(2200);
+  fixture.field('actualDurationSec', 1).value = '10';
+  fixture.fail = true;
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.removed, false);
+  assert.equal(fixture.saved, undefined);
+  assert.equal(fixture.context.workouts, fixture.records);
+  assert.equal(fixture.refreshes.length, 0);
+  assert.equal(fixture.nodes.get('.history-editor-error').hidden, false);
+  fixture.field('durationSec').value = '30';
+  fixture.field('actualDurationSec', 1).value = '';
+  fixture.fail = false;
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 1);
+  assert.equal(fixture.saved, undefined);
+  assert.equal(fixture.removed, true);
+  assert.equal(JSON.stringify(fixture.records), fixture.initial);
+  const retry = historyEditorDOMFixture();
+  retry.field('durationSec').value = historyEditor.historySecondsToMinutes(2200);
+  retry.fail = true;
+  await retry.click('.btnSaveEditW');
+  retry.fail = false;
+  await retry.click('.btnSaveEditW');
+  assert.equal(retry.saved[0].durationSec, 2200);
+  assert.equal(retry.removed, true);
+});
+
+test('expanded history editor modal validation blocks invalid numbers and can clear ratings or explicitly change target/unit', async () => {
+  const fixture = historyEditorDOMFixture();
+  fixture.field('reps', 0, 0).value = '-1';
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 0);
+  assert.equal(fixture.removed, false);
+  fixture.field('reps', 0, 0).value = '30';
+  fixture.field('difficulty', 0, 0).value = '';
+  fixture.field('plannedDurationSec', 2).value = '15';
+  fixture.field('inclineUnit', 2).value = 'percent';
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.saved[0].entries[0].sets[0].difficulty, undefined);
+  assert.equal(fixture.saved[0].entries[2].durationSec, 900);
+  assert.equal(fixture.saved[0].entries[2].plannedDurationSec, 900);
+  assert.equal(fixture.saved[0].entries[2].actualDurationSec, 570);
+  assert.equal(fixture.saved[0].entries[2].cardioDurationSource, 'timer');
+  assert.equal(fixture.saved[0].entries[2].incline, 2);
+  assert.equal(fixture.saved[0].entries[2].inclineUnit, 'percent');
+});
+
+test('expanded history editor adds catalog jogging and generic interval cardio without inventing measured data', () => {
+  const records = historyEditorRecords(), state = historyEditor.createHistoryDraft(records[0]);
+  historyEditor.removeHistoryExercise(state, 2);
+  const jogging = library.LIBRARY_EXERCISES.find((exercise) => exercise.id === 'library:jogging');
+  const run = historyEditor.addHistoryExercise(state, jogging);
+  assert.equal(run.cardioActivity, 'run');
+  assert.equal(run.inclineUnit, 'level');
+  assert.equal(Object.hasOwn(run, 'actualDurationSec'), false);
+  assert.equal(Object.hasOwn(run, 'cardioDurationSource'), false);
+  const generic = historyEditor.addHistoryExercise(state, {
+    id: 'existing:intervals', name: 'Existing interval exercise', inputType: 'cardio', catalogId: 'jumpRope',
+    durationMinutes: 2, intervals: { rounds: 4, workSeconds: 20, recoverySeconds: 10 },
+    pace: 'Level 5, not a measured speed', notes: 'Original library notes',
+  });
+  assert.equal(Object.hasOwn(generic, 'cardioActivity'), false);
+  assert.equal(Object.hasOwn(generic, 'speedKmh'), false);
+  assert.equal(Object.hasOwn(generic, 'incline'), false);
+  assert.equal(generic.durationSec, 120);
+  assert.equal(generic.plannedDurationSec, 120);
+  assert.equal(generic.intervals.rounds, 4);
+  assert.equal(generic.exerciseSnapshot.notes, 'Original library notes');
+  assert.equal(historyEditor.validateHistoryDraft(state), true);
+});
+
+test('expanded history editor explicit legacy actual time records manual source and retains its target; clearing removes only measurement', async () => {
+  const fixture = historyEditorDOMFixture();
+  fixture.field('actualDurationSec', 1).value = '0';
+  fixture.field('actualDurationSec', 2).value = '';
+  fixture.field('speedKmh', 2).value = '';
+  fixture.field('incline', 2).value = '';
+  await fixture.click('.btnSaveEditW');
+  const legacy = fixture.saved[0].entries[1], run = fixture.saved[0].entries[2];
+  assert.equal(legacy.actualDurationSec, 0);
+  assert.equal(legacy.cardioDurationSource, 'manual');
+  assert.equal(legacy.durationSec, 300);
+  assert.equal(legacy.plannedDurationSec, 300);
+  assert.equal(run.actualDurationSec, undefined);
+  assert.equal(run.cardioDurationSource, undefined);
+  assert.equal(run.speedKmh, undefined);
+  assert.equal(run.incline, undefined);
+  assert.equal(run.durationSec, 600);
+  assert.equal(run.plannedDurationSec, 600);
+  assert.equal(run.inclineUnit, 'level');
+  assert.equal(run.notes, 'Running note');
+});
+
+test('expanded history editor no-op detection ignores property order after reverting cleared metadata', async () => {
+  const fixture = historyEditorDOMFixture();
+  fixture.field('difficulty', 0, 0).value = '';
+  fixture.field('notes', 0, 0).value = 'x'.repeat(501);
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 0);
+  assert.equal(fixture.removed, false);
+  fixture.field('difficulty', 0, 0).value = 'hard';
+  fixture.field('notes', 0, 0).value = 'First note';
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 0);
+  assert.equal(fixture.removed, true);
+  assert.equal(JSON.stringify(fixture.records), fixture.initial);
+});
+
+test('expanded history editor minute conversion supports 1800 to 30 and 1.5 to 90 without second drift', () => {
+  assert.equal(historyEditor.historySecondsToMinutes(1800), '30');
+  assert.equal(historyEditor.historyMinutesToSeconds('30'), 1800);
+  assert.equal(historyEditor.historySecondsToMinutes(90), '1.5');
+  assert.equal(historyEditor.historyMinutesToSeconds('1.5'), 90);
+  for (const seconds of [0, 1, 7, 59, 90, 1800, 1801, 3599, 86399]) {
+    assert.equal(historyEditor.historyMinutesToSeconds(historyEditor.historySecondsToMinutes(seconds)), seconds);
+  }
+  for (const invalid of ['-1', '1.001', 'Infinity', 'not a number', '']) {
+    assert.throws(() => historyEditor.historyMinutesToSeconds(invalid), /history-number/);
+  }
+  assert.equal(historyEditor.historyMinutesToSeconds('', { optional: true }), undefined);
+});
+
+test('expanded history editor modal uses minutes for total and cardio while retaining seconds for holds', async () => {
+  const fixture = historyEditorDOMFixture();
+  assert.equal(fixture.field('durationSec').value, '30');
+  assert.equal(fixture.field('plannedDurationSec', 2).value, '10');
+  assert.equal(fixture.field('actualDurationSec', 2).value, '9.5');
+  assert.equal(fixture.field('reps', 0, 0).value, '30');
+  fixture.field('durationSec').value = '1.5';
+  fixture.field('plannedDurationSec', 2).value = '1.5';
+  fixture.field('actualDurationSec', 2).value = '1.5';
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.saved[0].durationSec, 90);
+  assert.equal(fixture.saved[0].entries[2].durationSec, 90);
+  assert.equal(fixture.saved[0].entries[2].plannedDurationSec, 90);
+  assert.equal(fixture.saved[0].entries[2].actualDurationSec, 90);
+  assert.equal(fixture.saved[0].entries[0].sets[0].reps, 30);
+});
+
+test('expanded history editor modal minute no-op/cancel preserve odd original seconds and invalid minute fractions cannot save', async () => {
+  const records = historyEditorRecords();
+  records[0].durationSec = 1801;
+  records[0].entries[2].plannedDurationSec = 601;
+  records[0].entries[2].durationSec = 601;
+  records[0].entries[2].actualDurationSec = 571;
+  const fixture = historyEditorDOMFixture(records);
+  await fixture.click('.btnSaveEditW');
+  assert.equal(fixture.writes, 0);
+  assert.equal(JSON.stringify(records), fixture.initial);
+  const cancelled = historyEditorDOMFixture(records);
+  cancelled.field('durationSec').value = '1.5';
+  cancelled.field('actualDurationSec', 2).value = '2.5';
+  cancelled.click('.btnCancelEditW');
+  assert.equal(cancelled.writes, 0);
+  assert.equal(JSON.stringify(records), cancelled.initial);
+  for (const field of ['durationSec', 'plannedDurationSec', 'actualDurationSec']) {
+    for (const invalid of ['-1', '1.001']) {
+      const rejected = historyEditorDOMFixture();
+      rejected.field(field, field === 'durationSec' ? null : 2).value = invalid;
+      await rejected.click('.btnSaveEditW');
+      assert.equal(rejected.writes, 0);
+      assert.equal(rejected.removed, false);
+      assert.equal(JSON.stringify(rejected.records), rejected.initial);
+    }
+  }
 });

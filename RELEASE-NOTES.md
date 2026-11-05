@@ -1,5 +1,55 @@
 # AutoFit release notes
 
+## 1.0 (48) - approved cardio and saved-history update (2026-11-05)
+
+Fresh approval at **2026-11-05 11:16:21 UTC**:
+**"תשחרר גרסה לאייפון ואני אבדוק שם. ככה אני לא מצליח לבדוק כלום"**.
+This authorizes one internal TestFlight release after validation, not an external
+beta, App Store submission or main merge. Build 48 has not yet been uploaded.
+
+Walking/running, warmup and cooldown support inline target duration, activity,
+speed and incline, with **machine level** as the default incline unit. Existing
+Start/Stop, Reset and Mark done controls remain. Inline changes save directly
+without restarting measured time; reset retains the edited target. Completion
+records actual elapsed time separately from the target and offers the same
+Easy/Right/Hard feedback and five-second dismissal as strength work. Explicit
+untimed Mark done is labeled manual reporting, not automatic measurement.
+
+At the user's subsequent request, remove machine identification and the obsolete
+walking/running location/pace row, update button and explanatory hint. Retain
+previous saved metadata without silently rewriting history. Generic timed
+activities retain their existing notes/location controls. Structured incline
+levels are never converted into percentages or equated across unknown machines.
+
+Exercises can be added explicitly to the current workout without modifying My
+workout, resetting timers, losing existing sets or changing current focus.
+Existing library membership remains a separate permanent action.
+
+Extend the existing History pencil editor, without redesigning the cards or
+removing count, selection, sharing or deletion: add/remove exercises and sets,
+edit repetitions, hold times, weights, notes, difficulty, cardio measurements
+and total duration. Draft cancellation and failed/conflicting saves preserve
+the original record. Successful saves replace only the same record ID and
+preserve other records, snapshots and unknown metadata. No migrations, history
+reset, synthetic records or automatic external Health sends are shipped.
+
+Statistics and optional personal goals include cardio, warmup and cooldown.
+Actual/manual and legacy-undifferentiated time remain distinct. Recommendations
+use comparable activity/context, measured values and difficulty conservatively;
+there is no automatic increase, invented increment, AI service or medical claim.
+Hebrew/English and offline caching include all three new modules. Native audio
+source and the music/microphone policy remain unchanged.
+
+Local validation: **761/761 JS regressions passed**. An isolated real-app browser
+with 11 synthetic records verified preserved history actions, draft cancellation,
+same-ID history editing, 30-minute/1800-second round-tripping, unchanged other
+records/current workout, current-only additions with retained progress and focus,
+edited timer targets/reset, manual completion and difficulty, removed legacy
+controls, library defaults, English labels and no horizontal overflow.
+Stored times remain seconds; workout/cardio duration editing and cardio charts
+use minutes. Hold durations remain seconds. Synthetic preview data is not shipped.
+Offline cache is `autofit-v114`.
+
 ## 1.0 (47) - verified internal TestFlight release (2026-11-05)
 
 **Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 10:35:17 UTC.**

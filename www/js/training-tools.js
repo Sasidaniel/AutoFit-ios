@@ -146,7 +146,8 @@ export function planningCatalog(catalog) {
 
 export function planExercise(exercise) {
   return Object.fromEntries(['id', 'catalogId', 'name', 'category', 'inputType', 'defaultSets', 'defaultReps',
-    'targetReps', 'targetWeightKg', 'autoLoadBaseline', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace', 'intervals', 'superset']
+    'targetReps', 'targetWeightKg', 'autoLoadBaseline', 'restSeconds', 'holdSeconds', 'durationMinutes', 'loadKind', 'location', 'pace',
+    'cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId', 'intervals', 'superset']
     .filter((key) => exercise[key] !== undefined).map((key) => [key, ['intervals', 'superset'].includes(key) ? copy(exercise[key]) : exercise[key]]));
 }
 
