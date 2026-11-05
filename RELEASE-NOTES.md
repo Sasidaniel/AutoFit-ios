@@ -1,11 +1,23 @@
 # AutoFit release notes
 
-## 1.0 (48) - approved cardio and saved-history update (2026-11-05)
+## 1.0 (48) - verified internal TestFlight release (2026-11-05)
 
 Fresh approval at **2026-11-05 11:16:21 UTC**:
 **"תשחרר גרסה לאייפון ואני אבדוק שם. ככה אני לא מצליח לבדוק כלום"**.
 This authorizes one internal TestFlight release after validation, not an external
-beta, App Store submission or main merge. Build 48 has not yet been uploaded.
+beta, App Store submission or main merge.
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 11:58:14 UTC.**
+Uploaded once at 11:55:38 UTC, from source
+`68883558189d66c5b13d93f4087afa444161e5af`.
+Apple build ID: `85a86023-7dea-4823-8ff9-981265dccdf9`.
+[Release run 42020550748](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42020550748)
+passed 761 JS regressions, all four Swift suites, both native-to-JavaScript
+counting contracts, all 144 real SwiftUI layouts, signed app/widget archive and
+IPA export. Maximum Lock Screen height: 157/160; island body: 129/138.
+One release dispatch and one binary upload. External state remains
+READY_FOR_BETA_SUBMISSION; no external distribution or main merge.
+Approval is consumed; a subsequent release requires fresh approval.
 
 Walking/running, warmup and cooldown support inline target duration, activity,
 speed and incline, with **machine level** as the default incline unit. Existing
