@@ -1,6 +1,14 @@
 # AutoFit release notes
 
-## Candidate 1.0 (46) - Hebrew pronunciation and natural announcements (2026-11-05)
+## 1.0 (46) - verified internal TestFlight release (2026-11-05)
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 09:55:42 UTC.**
+Uploaded once at 09:53:32 UTC.
+Uploaded source: `cc768a6dac188336e148c5979fbab3a70aeac238`.
+Apple build ID: `c09f02ef-f119-4824-ac89-cae30186ee98`.
+[Release run 42003932646](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42003932646)
+passed all gates, signing/archive/export, one upload and actual Apple internal
+availability verification. One release dispatch and one binary upload.
 
 The owner clarified that the incorrect vowel is in **שֵׁנִי (second)**, not
 in the word for set. Point only the second-set ordinal for native speech,
@@ -17,14 +25,18 @@ Do not change stored prescriptions or repeat unchanged targets between sets.
 
 Local validation: **715/715 JS regressions passed**, including bilingual
 foreground/background completion parity, natural duration/range phrasing and
-unchanged source data. All 20 web modules parsed. Swift pronunciation regression
-cases were updated but **native compilation and physical iPhone listening remain
-unverified for this follow-up**.
+unchanged source data. All 20 web modules parsed. The release repeated **715 JS
+regressions**, all four Swift suites including pronunciation cases, both real
+native-to-JavaScript transcript contracts and **144 real SwiftUI layouts**.
+Maximum Lock Screen height **157/160**, island body **129/138**.
+The signed app/widget archive and IPA export passed on macOS with Xcode 26.3.
+**Physical iPhone listening and the quality of voices installed on that device
+remain unverified**; native text tests do not prove subjective audio quality.
 Fresh explicit owner approval at **2026-11-05 09:36:30 UTC**: **"תשחרר גרסה"**.
-This authorizes one internal TestFlight build **46** after regression/native/layout
-gates, with source and receipt backup on the work branch. No main merge or external
-distribution. Preparing the gated release; build 45 remains the delivered binary
-until actual Apple availability for 46 is confirmed.
+This authorized one internal TestFlight build **46** after regression/native/layout
+gates, with source and receipt backup on the work branch. External state remains
+READY_FOR_BETA_SUBMISSION; no main merge, external beta or App Store submission.
+This approval is consumed; another release requires fresh approval.
 
 ## 1.0 (45) - verified internal TestFlight release (2026-11-03)
 
