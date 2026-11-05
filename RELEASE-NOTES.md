@@ -1,12 +1,23 @@
 # AutoFit release notes
 
-## 1.0 (49) - approved internal TestFlight release (pending)
+## 1.0 (49) - verified internal TestFlight release (2026-11-05)
 
 Fresh approval at **2026-11-05 12:43:01 UTC**:
 **"תוציא גרסה אני אבדוק"**.
 This authorizes one internal TestFlight build with the saved-plan cardio fix,
-not an external beta, App Store submission or main merge. Upload and Apple
-availability are pending; the build is not yet reported as released.
+not an external beta, App Store submission or main merge.
+
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-05 13:02:02 UTC.**
+Uploaded once at 13:00:10 UTC from source
+`78ef7bfa6c8b0596825cf5fdb82580c1c8cdb998`.
+Apple build ID: `aa611c13-be5e-427e-adc2-01e122e78f93`.
+[Release run 42029666117](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42029666117)
+passed 765 JS regressions, all four Swift suites, both native-to-JavaScript
+counting contracts, all 144 real SwiftUI layouts, signed app/widget archive and
+IPA export. Maximum Lock Screen height: 157/160; island body: 129/138.
+One release dispatch and one binary upload. External state remains
+READY_FOR_BETA_SUBMISSION; no external distribution or main merge.
+Approval is consumed; a subsequent release requires fresh approval.
 
 Saved-plan editing and generated-plan previews now reuse the Workout fields for
 walking/running, including existing warmup/cooldown: activity, target minutes,
