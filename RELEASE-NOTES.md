@@ -1,5 +1,28 @@
 # AutoFit release notes
 
+## 1.0 (49) - approved internal TestFlight release (pending)
+
+Fresh approval at **2026-11-05 12:43:01 UTC**:
+**"תוציא גרסה אני אבדוק"**.
+This authorizes one internal TestFlight build with the saved-plan cardio fix,
+not an external beta, App Store submission or main merge. Upload and Apple
+availability are pending; the build is not yet reported as released.
+
+Saved-plan editing and generated-plan previews now reuse the Workout fields for
+walking/running, including existing warmup/cooldown: activity, target minutes,
+speed, incline and incline unit. Adding a library walk/run exposes these fields
+immediately. Saved previews display the stored measurements, and activation
+carries the plan's own targets instead of inheriting unrelated library defaults.
+Optional measurements can be cleared; legacy names and metadata remain intact.
+Saving a plan does not alter the current workout or history.
+
+All 765 JS regressions pass and all 23 web modules parse. A real-app browser
+round trip verified legacy warmup/cooldown, adding walking/running, saving,
+previewing and explicit selection into Workout with the same measurements and
+existing Start/Reset/Mark done controls. Eleven synthetic history records remained
+unchanged; no real iPhone records were accessed. These changes are not included
+in the previously uploaded build 48. Web cache: `autofit-v115`.
+
 ## 1.0 (48) - verified internal TestFlight release (2026-11-05)
 
 Fresh approval at **2026-11-05 11:16:21 UTC**:

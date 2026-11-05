@@ -9,6 +9,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('www/js/app.js');
 const bridge = read('www/js/native-bridge.js').replace(/^export /gm, '');
 function loadPhaseOneModule(file, exports, values = {}) {
+  if (file.endsWith('training-tools.js') || file.endsWith('training-ui.js')) values = {
+    cardioTools: loadPhaseOneModule('www/js/cardio-tools.js', ['walkingActivity', 'validateCardioMeasurements', 'measurementFieldsHTML']), ...values };
   const context = nodeVM.createContext({ ...(file.endsWith('workout-insights.js')
     ? { EXERCISE_GUIDES: library.EXERCISE_GUIDES, UNSPECIFIED_VARIANTS: library.UNSPECIFIED_VARIANTS } : {}), ...values });
   nodeVM.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);

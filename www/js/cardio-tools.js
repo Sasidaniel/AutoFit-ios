@@ -114,16 +114,17 @@ export function appendWorkoutExercise(session, entry, order = session.entries.ma
     activityControlRevision: (session.activityControlRevision || 0) + 1 };
 }
 
-export function measurementFieldsHTML(entry, escape, exercise = {}) {
+export function measurementFieldsHTML(entry, escape, exercise = {}, { programFields = false } = {}) {
   const activity = walkingActivity(entry, exercise);
-  const duration = `<label class="training-field"><span>זמן יעד (דקות)</span><input class="input cardioMinutes" type="number" min="0.5" max="1440" step="any" ${entry.intervals ? 'readonly' : ''} value="${escape(entry.durationSec / 60)}"></label>`;
+  const field = (key) => programFields ? `data-plan-field="${key}"` : '';
+  const duration = `<label class="training-field"><span>זמן יעד (דקות)</span><input class="input cardioMinutes${programFields ? ' plan-duration' : ''}" ${field('durationMinutes')} type="number" min="0.5" max="1440" step="any" ${entry.intervals ? 'readonly' : ''} value="${escape(entry.durationSec / 60)}"></label>`;
   const actual = entry.completed ? `<label class="training-field"><span>זמן בפועל (דקות)</span><input class="input cardioActualMinutes" type="number" min="0" max="1440" step="any" value="${escape(entry.actualDurationSec == null ? '' : entry.actualDurationSec / 60)}"></label>` : '';
   if (!activity) return `<div class="cardio-measurement-fields">${duration}${actual}</div>`;
   return `<div class="cardio-measurement-fields">
-    <label class="training-field"><span>פעילות</span><select class="select cardioActivity"><option value="walk" ${activity === 'walk' ? 'selected' : ''}>הליכה</option><option value="run" ${activity === 'run' ? 'selected' : ''}>ריצה</option></select></label>
+    <label class="training-field"><span>פעילות</span><select class="select cardioActivity" ${field('cardioActivity')}><option value="walk" ${activity === 'walk' ? 'selected' : ''}>הליכה</option><option value="run" ${activity === 'run' ? 'selected' : ''}>ריצה</option></select></label>
     ${duration}${actual}
-    <label class="training-field"><span>מהירות (קמ״ש)</span><input class="input cardioSpeed" type="number" min="0" max="100" step="any" value="${escape(entry.speedKmh ?? '')}"></label>
-    <label class="training-field cardioInclineField"><span>שיפוע</span><input class="input cardioIncline" type="number" min="-100" max="100" step="any" value="${escape(entry.incline ?? '')}"></label>
-    <label class="training-field cardioInclineField"><span>יחידת השיפוע</span><select class="select cardioInclineUnit"><option value="level" ${entry.inclineUnit !== 'percent' ? 'selected' : ''}>דרגה במכשיר</option><option value="percent" ${entry.inclineUnit === 'percent' ? 'selected' : ''}>אחוזים (%)</option></select></label>
+    <label class="training-field"><span>מהירות (קמ״ש)</span><input class="input cardioSpeed" ${field('speedKmh')} type="number" min="0" max="100" step="any" value="${escape(entry.speedKmh ?? '')}"></label>
+    <label class="training-field cardioInclineField"><span>שיפוע</span><input class="input cardioIncline" ${field('incline')} type="number" min="-100" max="100" step="any" value="${escape(entry.incline ?? '')}"></label>
+    <label class="training-field cardioInclineField"><span>יחידת השיפוע</span><select class="select cardioInclineUnit" ${field('inclineUnit')}><option value="level" ${entry.inclineUnit !== 'percent' ? 'selected' : ''}>דרגה במכשיר</option><option value="percent" ${entry.inclineUnit === 'percent' ? 'selected' : ''}>אחוזים (%)</option></select></label>
     </div>`;
 }

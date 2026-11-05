@@ -2,6 +2,7 @@ import * as tools from './training-tools.js';
 import { progressRecommendation, statisticsOverview } from './workout-insights.js';
 import * as i18n from './i18n.js';
 import { mountCardioGoals } from './cardio-insights.js';
+import * as cardioTools from './cardio-tools.js';
 
 // Keep authored Hebrew in DOM templates so the shared translator can reverse a language switch.
 const t = (value) => value;
@@ -12,6 +13,31 @@ const button = (id, label, primary = false) => `<button type="button" id="${id}"
 const field = (label, content) => `<label class="training-field"><span>${t(label)}</span>${content}</label>`;
 const options = (items, selected) => items.map(([value, label]) => `<option value="${esc(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${t(label)}</option>`).join('');
 const note = (text) => `<p class="field-hint">${t(text)}</p>`;
+export function cardioPlanFields(exercise) {
+  const entry = { ...exercise, exerciseId: exercise.id, durationSec: (exercise.durationMinutes ?? 5) * 60,
+    exerciseSnapshot: exercise };
+  return cardioTools.measurementFieldsHTML(entry, esc, exercise, { programFields: true })
+    + (cardioTools.walkingActivity(entry, exercise) ? '' : field('קצב',
+      `<input class="input" data-plan-field="pace" maxlength="80" data-no-translate value="${esc(exercise.pace || '')}">`));
+}
+
+export function readPlanExerciseFields(row, exercise) {
+  const changes = {};
+  row.querySelectorAll('[data-plan-field]').forEach((control) => {
+    const key = control.dataset.planField;
+    if (control.value !== String(exercise[key] ?? '')) changes[key] = control.value;
+  });
+  return tools.editSavedPlanExercise(exercise, changes);
+}
+
+export function cardioPlanSummary(exercise) {
+  const parts = [`${exercise.durationMinutes ?? 5} ${i18n.text('דקות')}`];
+  const activity = cardioTools.walkingActivity({ exerciseId: exercise.id }, exercise);
+  if (activity) parts.push(i18n.text(activity === 'run' ? 'ריצה' : 'הליכה'));
+  if (exercise.speedKmh != null) parts.push(`${i18n.text('מהירות (קמ״ש)')}: ${exercise.speedKmh}`);
+  if (exercise.incline != null) parts.push(`${i18n.text('שיפוע')}: ${exercise.incline} ${i18n.text(exercise.inclineUnit === 'percent' ? 'אחוזים (%)' : 'דרגה במכשיר')}`);
+  return esc(parts.join(' · '));
+}
 export function durationEstimateText(estimate) {
   const totalMinutes = Math.max(0, Math.round((estimate.lowSeconds + estimate.highSeconds) / 120));
   const hours = Math.floor(totalMinutes / 60);
@@ -506,7 +532,7 @@ export function createTrainingUI(api) {
             .filter((candidate) => !plan.options.muscles?.length || tools.trainingMetadata(candidate)?.primary === tools.trainingMetadata(exercise)?.primary).map((candidate) =>
             `<option value="${esc(candidate.id)}" ${candidate.id === exercise.id ? 'selected' : ''}>${name(candidate)}</option>`).join('')}</select></label>
           ${exercise.intervals ? `<p data-no-translate>${exercise.intervals.rounds} ${i18n.text('סבבים')} · ${exercise.intervals.workSeconds} ${i18n.text('שניות קפיצה')} / ${exercise.intervals.recoverySeconds} ${i18n.text('שניות התאוששות')}</p>` :
-            exercise.inputType === 'cardio' ? field('דקות', `<input class="input plan-duration" type="number" min="1" max="60" value="${exercise.durationMinutes}">`) :
+            exercise.inputType === 'cardio' ? `<div class="plan-cardio-fields">${cardioPlanFields(exercise)}</div>` :
             field('סטים', `<input class="input plan-sets" type="number" min="1" max="5" value="${exercise.defaultSets}">`) +
             field('יעד חזרות', `<input class="input plan-reps" type="number" min="1" max="30" value="${exercise.targetReps}">`)}
           <button class="btn btn-secondary btn-small plan-guide" type="button">${t('הדרכה')}</button></div>`).join('')}
@@ -544,8 +570,19 @@ export function createTrainingUI(api) {
           ? i18n.text('כדי לשמור על כל קבוצות השרירים שנבחרו, ההצעה ארוכה מהזמן שבחרת. אפשר לבחור זמן נוסף או פחות קבוצות; הסטים והמנוחות לא קוצרו.') : '';
       });
     }
-    dialog.querySelectorAll('.training-plan-row input, .training-plan-row select').forEach((input) =>
-      ['input', 'change'].forEach((event) => input.addEventListener(event, updateEstimates)));
+    dialog.querySelectorAll('.training-plan-row').forEach((row) => {
+      row.addEventListener('input', updateEstimates);
+      row.addEventListener('change', (event) => {
+        if (event.target.matches('.plan-exercise')) {
+          const section = row.closest('[data-day]');
+          const original = plan.sessions[Number(section.dataset.day)].exercises[Number(row.dataset.row)];
+          const selected = available.find((exercise) => exercise.id === event.target.value);
+          const fields = row.querySelector('.plan-cardio-fields');
+          if (fields && selected) fields.innerHTML = cardioPlanFields(selected.id === original.id ? original : selected);
+        }
+        updateEstimates();
+      });
+    });
     updateEstimates();
     function readEdits() {
       dialog.querySelectorAll('[data-day]').forEach((section) => {
@@ -555,7 +592,8 @@ export function createTrainingUI(api) {
           const existing = day.exercises[index];
           const selected = available.find((exercise) => exercise.id === row.querySelector('select').value);
           if (!selected) throw new Error('Exercise unavailable');
-          day.exercises[index] = { ...tools.planExercise(selected), restSeconds: existing.restSeconds,
+          day.exercises[index] = { ...tools.planExercise(selected),
+            ...(selected.id === existing.id ? existing : {}), restSeconds: existing.restSeconds,
             defaultSets: existing.defaultSets, defaultReps: existing.defaultReps, targetReps: existing.targetReps };
           const next = day.exercises[index];
           if (existing.intervals) {
@@ -563,10 +601,9 @@ export function createTrainingUI(api) {
             next.durationMinutes = existing.durationMinutes;
             next.location = existing.location || plan.options.location;
           } else if (next.inputType === 'cardio') {
-            const duration = Number(row.querySelector('.plan-duration').value);
-            if (!Number.isInteger(duration) || duration < 1 || duration > 60) throw new RangeError('Invalid duration');
-            next.durationMinutes = duration;
-            next.location = existing.location || (plan.options.location === 'gym' ? 'treadmill' : plan.options.location);
+            day.exercises[index] = readPlanExerciseFields(row, next);
+            day.exercises[index].location = (selected.id === existing.id ? existing.location : selected.location)
+              || (plan.options.location === 'gym' ? 'treadmill' : plan.options.location);
           } else {
             const sets = Number(row.querySelector('.plan-sets').value);
             const reps = Number(row.querySelector('.plan-reps').value);
@@ -628,12 +665,7 @@ export function createTrainingUI(api) {
         const day = next.sessions[Number(section.dataset.savedDay)];
         section.querySelectorAll('[data-saved-row]').forEach((row) => {
           const index = Number(row.dataset.savedRow);
-          const changes = {};
-          row.querySelectorAll('[data-plan-field]').forEach((control) => {
-            const key = control.dataset.planField;
-            if (control.value !== String(day.exercises[index][key] ?? '')) changes[key] = control.value;
-          });
-          day.exercises[index] = tools.editSavedPlanExercise(day.exercises[index], changes);
+          day.exercises[index] = readPlanExerciseFields(row, day.exercises[index]);
         });
       });
       return next;
@@ -646,7 +678,7 @@ export function createTrainingUI(api) {
           <h3><span>${t('אימון')}</span> <span data-no-translate>${dayIndex + 1}${day.label ? ` (${esc(day.label)})` : ''}</span></h3>
           ${day.exercises.map((exercise, index) => `<section class="saved-plan-exercise" data-saved-row="${index}">
             <h4 data-no-translate>${name(exercise)}</h4><div class="saved-plan-fields">
-            ${exercise.inputType === 'cardio' ? exercise.intervals ? '' : input(exercise, 'durationMinutes', 'דקות', true) + input(exercise, 'pace', 'קצב') :
+            ${exercise.inputType === 'cardio' ? exercise.intervals ? '' : cardioPlanFields(exercise) :
               input(exercise, 'defaultSets', 'סטים', true) + input(exercise, 'restSeconds', 'מנוחה בשניות', true) +
               (exercise.inputType === 'hold' ? input(exercise, 'holdSeconds', 'שניות החזקה', true) :
                 input(exercise, 'defaultReps', 'חזרות או טווח חזרות') + input(exercise, 'targetReps', 'יעד חזרות לספירה קולית', true)) +
@@ -742,7 +774,7 @@ export function createTrainingUI(api) {
     const day = plan.sessions[0];
     const estimate = tools.estimateWorkoutDuration(tools.durationSession(day.exercises), [], api.durationState().settings.restSeconds, { remaining: false });
     const dialog = api.dialog(workoutTitle(plan), `<ul data-no-translate>${day.exercises.map((exercise) =>
-      `<li>${name(exercise)} · ${exercise.inputType === 'cardio' ? `${exercise.durationMinutes} ${i18n.text('דקות')}` :
+      `<li>${name(exercise)} · ${exercise.inputType === 'cardio' ? cardioPlanSummary(exercise) :
         `${exercise.defaultSets} ${i18n.text('סטים')} · ${exercise.inputType === 'hold' ? `${exercise.holdSeconds || 15} ${i18n.text('שניות')}` : esc(exercise.targetReps || exercise.defaultReps || '—')}`}</li>`).join('')}</ul>
       <p data-no-translate>${i18n.text('זמן האימון המשוער')}: ${durationEstimateText(estimate)}</p>
       ${note('הבחירה והיעדים נשמרו. שמות אישיים ותמונות נלקחים מהספרייה הנוכחית; ההיסטוריה אינה משתנה.')}

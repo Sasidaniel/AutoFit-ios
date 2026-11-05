@@ -1,4 +1,5 @@
 import { LIBRARY_EXERCISES, PLANNING_EXERCISES, exerciseGuide } from './exercise-library.js';
+import * as cardioTools from './cardio-tools.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export const SUPERSET_RECIPES = [
@@ -303,10 +304,22 @@ export function workoutMuscleProgress(session, catalog) {
 
 export function editSavedPlanExercise(original, changes) {
   const next = copy(original);
+  const cardioKeys = ['cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId'];
+  const cardioChanges = Object.keys(changes).filter((key) => cardioKeys.includes(key));
+  if (cardioChanges.length) {
+    if (original.inputType !== 'cardio' || original.intervals) throw new Error('Unsupported saved exercise change');
+    const measurements = cardioTools.validateCardioMeasurements({ ...original,
+      cardioActivity: cardioTools.walkingActivity({ exerciseId: original.id }, original), ...changes });
+    for (const key of cardioChanges) {
+      if (measurements[key] === null || measurements[key] === '') delete next[key];
+      else next[key] = measurements[key];
+    }
+  }
   const limits = { defaultSets: [1, 100, true], targetReps: [1, 10000, true],
     restSeconds: [1, 3600, true], holdSeconds: [1, 86400, false],
     durationMinutes: [0.01, 1440, false], targetWeightKg: [0, 5000, false] };
   for (const [key, value] of Object.entries(changes)) {
+    if (cardioKeys.includes(key)) continue;
     if (key === 'defaultReps' || key === 'pace') {
       const text = String(value).trim();
       if (text.length > 80 || key === 'defaultReps' && !text) throw new RangeError('Invalid saved exercise target');
@@ -1095,7 +1108,9 @@ export function activatePlanExercises(catalog, proposed) {
     autoLoadBaseline: item.autoLoadBaseline,
     superset: item.superset ? copy(item.superset) : null,
     ...Object.fromEntries(['targetWeightKg', 'holdSeconds', 'pace'].filter((key) => Object.hasOwn(item, key)).map((key) => [key, item[key]])),
-    ...(item.inputType === 'cardio' ? { intervals: item.intervals ? copy(item.intervals) : null } : {}),
+    ...(item.inputType === 'cardio' ? { intervals: item.intervals ? copy(item.intervals) : null,
+      ...Object.fromEntries(['cardioActivity', 'speedKmh', 'incline', 'inclineUnit', 'cardioMachineId']
+        .map((key) => [key, item[key]])) } : {}),
     restSeconds: item.restSeconds, ...(item.inputType === 'cardio' ? { durationMinutes: item.durationMinutes,
       ...(item.location ? { location: item.location } : {}) } : {}) })),
   ...catalog.filter((exercise) => !selected.has(exercise.id)).map((exercise) => ({ ...copy(exercise), active: false }))];

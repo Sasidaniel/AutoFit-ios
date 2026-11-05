@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 function load(file, names, values = {}) {
+  if (file.endsWith('training-tools.js') || file.endsWith('training-ui.js')) values = {
+    cardioTools: load('www/js/cardio-tools.js', ['walkingActivity', 'validateCardioMeasurements', 'measurementFieldsHTML']), ...values };
   const context = vm.createContext({ ...values });
   vm.runInContext(read(file).replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
   return vm.runInContext(`({${names.join(',')}})`, context);
@@ -25,6 +27,105 @@ const cardioTools = load('www/js/cardio-tools.js', ['walkingActivity', 'validate
   'cardioHistorySnapshot', 'appendWorkoutExercise', 'measurementFieldsHTML']);
 const catalog = plain(library.LIBRARY_EXERCISES);
 const find = (id) => plain(catalog.find((exercise) => exercise.catalogId === id));
+
+test('saved cardio plan edits use validated structured targets and preserve old names and unparsed notes', () => {
+  const original = { id: 'warmup', name: 'החימום שלי', inputType: 'cardio', durationMinutes: 5,
+    pace: 'קצב קודם 6', custom: { keep: true } };
+  const edited = tools.editSavedPlanExercise(original, { durationMinutes: '20', cardioActivity: 'run',
+    speedKmh: '5.5', incline: '8', inclineUnit: 'level' });
+  assert.equal(edited.durationMinutes, 20);
+  assert.equal(edited.cardioActivity, 'run');
+  assert.equal(edited.speedKmh, 5.5);
+  assert.equal(edited.incline, 8);
+  assert.equal(edited.inclineUnit, 'level');
+  assert.equal(edited.name, original.name);
+  assert.equal(edited.pace, original.pace);
+  assert.deepEqual(plain(edited.custom), original.custom);
+  assert.equal(Object.hasOwn(original, 'speedKmh'), false);
+  const cleared = tools.editSavedPlanExercise(edited, { speedKmh: '', incline: '' });
+  assert.equal(Object.hasOwn(cleared, 'speedKmh'), false);
+  assert.equal(Object.hasOwn(cleared, 'incline'), false);
+  for (const changes of [{ speedKmh: '-1' }, { incline: 'bad' }, { inclineUnit: 'degrees' }, { cardioActivity: 'sprint' }]) {
+    assert.throws(() => tools.editSavedPlanExercise(edited, changes));
+  }
+  assert.throws(() => tools.editSavedPlanExercise(find('chest'), { speedKmh: 5 }));
+});
+
+test('saved plan activation uses its cardio targets rather than newer global defaults, including explicit unknowns', () => {
+  const exercise = { ...find('walk'), speedKmh: 9, incline: 3, inclineUnit: 'percent', cardioActivity: 'run' };
+  const proposed = tools.editSavedPlanExercise(tools.planExercise(exercise),
+    { durationMinutes: '20', speedKmh: '5.5', incline: '8', inclineUnit: 'level', cardioActivity: 'walk' });
+  const active = tools.activatePlanExercises([exercise], [proposed])[0];
+  assert.equal(active.speedKmh, 5.5);
+  assert.equal(active.incline, 8);
+  assert.equal(active.inclineUnit, 'level');
+  assert.equal(active.cardioActivity, 'walk');
+  assert.equal(active.durationMinutes, 20);
+  assert.equal(exercise.speedKmh, 9);
+  const legacy = { ...tools.planExercise(find('walk')), durationMinutes: 12, pace: 'legacy' };
+  const oldActive = tools.activatePlanExercises([exercise], [legacy])[0];
+  assert.equal(oldActive.speedKmh, undefined);
+  assert.equal(oldActive.incline, undefined);
+  assert.equal(oldActive.cardioActivity, undefined);
+  assert.equal(oldActive.durationMinutes, 12);
+  assert.equal(oldActive.pace, 'legacy');
+});
+
+test('saved cardio plan forms share Workout fields, save numeric targets, and exclude removed controls and performance ratings', () => {
+  const ui = load('www/js/training-ui.js', ['cardioPlanFields', 'readPlanExerciseFields', 'cardioPlanSummary'],
+    { tools, i18n: { text: String } });
+  for (const exercise of [{ id: 'warmup', inputType: 'cardio', durationMinutes: 5 },
+    { id: 'cooldown', inputType: 'cardio', durationMinutes: 5 }, find('walk'), find('jog')]) {
+    const html = ui.cardioPlanFields(exercise);
+    for (const key of ['durationMinutes', 'cardioActivity', 'speedKmh', 'incline', 'inclineUnit']) {
+      assert.match(html, new RegExp(`data-plan-field="${key}"`), exercise.id);
+    }
+    assert.doesNotMatch(html, /cardioMachine|cardioLocation|data-plan-field="pace"|difficulty|btnSaveCardioFields/);
+    assert.match(html, /דרגה במכשיר/);
+  }
+  const original = find('walk');
+  const controls = { durationMinutes: '20', cardioActivity: 'walk', speedKmh: '5.5', incline: '8', inclineUnit: 'level' };
+  const row = { querySelectorAll: () => Object.entries(controls).map(([planField, value]) => ({ dataset: { planField }, value })) };
+  const edited = ui.readPlanExerciseFields(row, original);
+  assert.equal(edited.durationMinutes, 20);
+  assert.equal(edited.speedKmh, 5.5);
+  assert.equal(edited.incline, 8);
+  const summary = ui.cardioPlanSummary(edited);
+  assert.match(summary, /20.*5.5.*8.*דרגה במכשיר/);
+  assert.equal(Object.hasOwn(original, 'speedKmh'), false);
+});
+
+test('saved cardio targets reach the real Workout draft builder for legacy boundaries and library walk/run entries', () => {
+  const warmup = { id: 'warmup', name: 'החימום האישי שלי', inputType: 'cardio', durationMinutes: 5, active: true };
+  const cooldown = { id: 'cooldown', name: 'השחרור האישי שלי', inputType: 'cardio', durationMinutes: 5, active: true };
+  const originals = [warmup, find('walk'), find('jog'), cooldown];
+  const targets = originals.map((exercise, index) => tools.editSavedPlanExercise(tools.planExercise(exercise),
+    { durationMinutes: String(10 + index), cardioActivity: index === 2 ? 'run' : 'walk',
+      speedKmh: String(5.5 + index), incline: String(index), inclineUnit: 'level' }));
+  const exercises = tools.activatePlanExercises(originals, targets);
+  const context = vm.createContext({ exercises, cardioTools, settings: {}, db: { uid: () => 'saved-cardio-draft' },
+    DEFAULT_WARMUP_NAME: 'warmup', DEFAULT_COOLDOWN_NAME: 'cooldown', DEFAULT_CARDIO_PACE: 'legacy',
+    getLastCompletedValuesByExercise: () => ({}) });
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function buildDraftSession()'), source.indexOf('function applyProgramWeekToActiveSession(')), context);
+  const draft = context.buildDraftSession();
+  for (const [index, target] of targets.entries()) {
+    const entry = draft.entries.find((item) => item.exerciseId === target.id);
+    assert.equal(entry.durationSec, (10 + index) * 60);
+    assert.equal(entry.plannedDurationSec, entry.durationSec);
+    assert.equal(entry.cardioActivity, target.cardioActivity);
+    assert.equal(entry.speedKmh, target.speedKmh);
+    assert.equal(entry.incline, target.incline);
+    assert.equal(entry.inclineUnit, 'level');
+    assert.equal(entry.exerciseSnapshot.speedKmh, target.speedKmh);
+    assert.equal(entry.exerciseName, originals[index].name);
+    assert.equal(entry.startedAt, null);
+    assert.equal(entry.completed, false);
+  }
+  assert.equal(draft.startedAt, null);
+  assert.equal(draft.running, false);
+  assert.equal(Object.hasOwn(warmup, 'speedKmh'), false);
+});
 
 test('every explicit variant uses the same primary muscle in planning and its authored guide', () => {
   const records = [...catalog, ...library.PLANNING_EXERCISES,
@@ -2084,7 +2185,8 @@ test('cardio completion replaces only its own card and keeps unrelated focused i
 test('actual plan-preview controller estimates inactive library choices and immediately reflects edited doses', () => {
   const source = read('www/js/training-ui.js');
   const start = source.indexOf('function updateEstimates()');
-  const end = source.indexOf("dialog.querySelectorAll('.training-plan-row input", start);
+  const end = source.indexOf("dialog.querySelectorAll('.training-plan-row')", start);
+  assert.ok(start >= 0 && end > start);
   const ui = load('www/js/training-ui.js', ['durationEstimateText'], { tools, i18n: { text: (text) => text } });
   for (const exercise of [find('chest'), find('walk')]) {
     const inputs = { select: { value: exercise.id }, '.plan-sets': { value: '3' },
