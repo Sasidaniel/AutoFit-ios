@@ -91,23 +91,26 @@ export function cardioHistorySnapshot(entry) {
       ? JSON.parse(JSON.stringify(entry[key])) : entry[key]]));
 }
 
-export function appendWorkoutExercise(session, entry, order = session.entries.map((item) => item.exerciseId)) {
+export function appendWorkoutExercise(session, entry, order = session.entries.map((item) => item.exerciseId), afterExerciseId) {
   const existing = [...session.entries, ...(session.removedExercises || []).map((item) => item.entry),
     ...(session.timeBudget?.deferred || []), ...(session.substitutions || []).map((item) => item.original)];
   if (existing.some((item) => item.exerciseId === entry.exerciseId)) throw new Error('התרגיל כבר נמצא באימון או ברשימת השחזור');
+  const insertionIndex = (ids) => {
+    const anchor = ids.indexOf(afterExerciseId);
+    const cooldown = ids.indexOf('cooldown');
+    return anchor >= 0 && afterExerciseId !== 'cooldown' ? anchor + 1
+      : cooldown < 0 ? ids.length : cooldown;
+  };
   const entries = [...session.entries];
-  const cooldown = entries.findIndex((item) => item.exerciseId === 'cooldown');
-  entries.splice(cooldown < 0 ? entries.length : cooldown, 0, entry);
-  const workoutOrder = order.filter((id) => entries.some((item) => item.exerciseId === id));
-  const tail = workoutOrder.indexOf('cooldown');
-  workoutOrder.splice(tail < 0 ? workoutOrder.length : tail, 0, entry.exerciseId);
+  entries.splice(insertionIndex(entries.map((item) => item.exerciseId)), 0, entry);
   const includeInRestoreOrder = (ids) => {
     const updated = [...ids];
-    const tail = updated.indexOf('cooldown');
-    updated.splice(tail < 0 ? updated.length : tail, 0, entry.exerciseId);
+    updated.splice(insertionIndex(updated), 0, entry.exerciseId);
     return updated;
   };
-  return { ...session, entries, workoutOrder, programPinned: true,
+  return { ...session, entries, programPinned: true,
+    ...(Array.isArray(session.workoutOrder) ? { workoutOrder: includeInRestoreOrder(
+      order.filter((id) => entries.some((item) => item.exerciseId === id))) } : {}),
     ...(session.timeBudget ? { timeBudget: { ...session.timeBudget, order: includeInRestoreOrder(session.timeBudget.order) } } : {}),
     ...(session.removedExercises ? { removedExercises: session.removedExercises.map((item) =>
       ({ ...item, ...(item.order ? { order: includeInRestoreOrder(item.order) } : {}) })) } : {}),

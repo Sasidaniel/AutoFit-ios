@@ -223,21 +223,23 @@ export function supportsPlanMuscles(muscles, exercise) {
     || exercise.superset?.id === 'leg-press-calves' && primary === 'שוקיים' && muscles.includes('רגליים');
 }
 
+function workoutEntryGroup(entry, catalog) {
+  const exercise = { name: entry.exerciseName, category: entry.category,
+    ...catalog.find((item) => item.id === entry.exerciseId), ...entry.exerciseSnapshot };
+  const muscle = entry.type === 'cardio' ? null : exerciseGuide(exercise)?.muscles[0]
+    || [...PLAN_MUSCLES, 'גב תחתון', 'אמות', 'טרפז'].find((name) => name === exercise.category);
+  const label = muscle || (entry.type === 'cardio'
+    ? entry.exerciseId === 'warmup' ? 'חימום' : entry.exerciseId === 'cooldown' ? 'שחרור' : 'אירובי'
+    : 'תרגילים נוספים');
+  return { muscle, label, key: `${muscle ? 'muscle' : 'activity'}:${label}`,
+    superset: exercise.superset?.id, supersetOrder: exercise.superset?.order || 0 };
+}
+
 export function workoutMuscleProgress(session, catalog) {
   const entries = session.entries;
   const done = (entry) => entry.type === 'cardio' ? entry.completed === true
     : !!entry.sets?.length && entry.sets.every((set) => set.completed);
-  const records = entries.map((entry, index) => {
-    const exercise = { name: entry.exerciseName, category: entry.category,
-      ...catalog.find((item) => item.id === entry.exerciseId), ...entry.exerciseSnapshot };
-    const muscle = entry.type === 'cardio' ? null : exerciseGuide(exercise)?.muscles[0]
-      || [...PLAN_MUSCLES, 'גב תחתון', 'אמות', 'טרפז'].find((name) => name === exercise.category);
-    const label = muscle || (entry.type === 'cardio'
-      ? entry.exerciseId === 'warmup' ? 'חימום' : entry.exerciseId === 'cooldown' ? 'שחרור' : 'אירובי'
-      : 'תרגילים נוספים');
-    return { entry, index, muscle, label, key: `${muscle ? 'muscle' : 'activity'}:${label}`,
-      superset: exercise.superset?.id, supersetOrder: exercise.superset?.order || 0 };
-  });
+  const records = entries.map((entry, index) => ({ entry, index, ...workoutEntryGroup(entry, catalog) }));
   const groups = [...new Set(records.map((record) => record.key))].map((key) => {
     const own = records.filter((record) => record.key === key);
     const members = records.filter((record) => own.includes(record)
@@ -300,6 +302,18 @@ export function workoutMuscleProgress(session, catalog) {
       complete: selected.every((group) => group.complete) });
   }
   return { groups, sections, order };
+}
+
+export function workoutAdditionPlacement(session, entry, catalog) {
+  const records = workoutMuscleProgress(session, catalog).order.map((index) => ({
+    entry: session.entries[index], ...workoutEntryGroup(session.entries[index], catalog),
+  }));
+  const group = workoutEntryGroup(entry, catalog);
+  let anchor = records.findLast((record) => record.key === group.key
+    && !['warmup', 'cooldown'].includes(record.entry.exerciseId));
+  const pair = group.superset || anchor?.superset;
+  if (pair) anchor = records.findLast((record) => record.superset === pair) || anchor;
+  return { order: records.map((record) => record.entry.exerciseId), afterExerciseId: anchor?.entry.exerciseId };
 }
 
 export function editSavedPlanExercise(original, changes) {

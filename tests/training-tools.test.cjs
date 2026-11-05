@@ -13,7 +13,7 @@ function load(file, names, values = {}) {
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
-const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
+const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'workoutAdditionPlacement', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'workoutSetLabel', 'moveWorkoutExercise', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
@@ -234,6 +234,164 @@ test('workout muscle headings group matching exercises while preserving source d
   assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, true);
   current.entries[3].sets = [];
   assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, false);
+});
+
+test('workout additions join the existing canonical muscle group without touching recorded work or live state', () => {
+  const shoulder = { id: 'shoulder-one', catalogId: 'shoulder', name: 'My shoulders', category: 'כתפיים' };
+  const later = { ...shoulder, id: 'shoulder-two' };
+  const back = { id: 'back', catalogId: 'row', name: 'Row' };
+  const extra = { id: 'shoulder-new', catalogId: 'lateral', name: 'Lateral raise', category: 'גב' };
+  const snapshotEntry = (exercise, sets) => ({ ...entry(exercise, sets), exerciseSnapshot: exercise });
+  const current = { ...session([
+    { exerciseId: 'warmup', type: 'cardio', completed: true },
+    snapshotEntry(shoulder, [set(20, 12, true, { notes: 'Keep', difficulty: 'right' })]),
+    snapshotEntry(back),
+    snapshotEntry(later, [set(15, 7, false)]),
+    { exerciseId: 'cooldown', type: 'cardio', completed: false },
+  ]), running: true, currentExerciseId: 'back', accumulatedSec: 123,
+  rest: { remaining: 40 }, planSnapshot: { id: 'original-plan', name: 'Original' } };
+  const added = snapshotEntry(extra);
+  const before = plain(current);
+  const placement = tools.workoutAdditionPlacement(current, added, []);
+  assert.equal(placement.afterExerciseId, later.id, 'Use the same primary-muscle mapping as the headings, not a conflicting category label');
+  const next = cardioTools.appendWorkoutExercise(current, added, placement.order, placement.afterExerciseId);
+  assert.deepEqual(plain(current), before);
+  assert.deepEqual(plain(next.entries.filter((item) => item !== added)), plain(current.entries));
+  for (const original of current.entries) assert.equal(next.entries.find((item) => item.exerciseId === original.exerciseId), original);
+  assert.equal(next.rest, current.rest);
+  assert.equal(next.planSnapshot, current.planSnapshot);
+  assert.equal(next.currentExerciseId, 'back');
+  assert.equal(next.running, true);
+  assert.equal(next.accumulatedSec, 123);
+  assert.equal(next.workoutOrder, undefined, 'Do not replace natural muscle grouping with a manual order');
+  const model = tools.workoutMuscleProgress(next, []);
+  assert.equal(model.sections.filter((section) => section.label === 'כתפיים').length, 1);
+  assert.equal(model.groups.find((group) => group.label === 'כתפיים').total, 3);
+  assert.equal(model.groups.find((group) => group.label === 'כתפיים').done, 1);
+  assert.deepEqual(plain(model.order.map((index) => next.entries[index].exerciseId)),
+    ['warmup', shoulder.id, later.id, extra.id, back.id, 'cooldown']);
+});
+
+test('workout additions preserve a manually chosen order and join the last existing matching section', () => {
+  const snap = (id, category) => ({ ...entry({ id, name: id }), exerciseSnapshot: { id, name: id, category } });
+  const current = session([
+    { exerciseId: 'warmup', type: 'cardio' }, snap('first-shoulder', 'כתפיים'), snap('back', 'גב'),
+    snap('last-shoulder', 'כתפיים'), snap('core', 'בטן'), { exerciseId: 'cooldown', type: 'cardio' },
+  ]);
+  current.workoutOrder = ['warmup', 'core', 'first-shoulder', 'back', 'last-shoulder', 'cooldown'];
+  const added = snap('new-shoulder', 'כתפיים');
+  const placement = tools.workoutAdditionPlacement(current, added, []);
+  const next = cardioTools.appendWorkoutExercise(current, added, placement.order, placement.afterExerciseId);
+  assert.deepEqual(plain(next.workoutOrder),
+    ['warmup', 'core', 'first-shoulder', 'back', 'last-shoulder', 'new-shoulder', 'cooldown']);
+  assert.deepEqual(plain(next.workoutOrder.filter((id) => id !== added.exerciseId)), current.workoutOrder);
+  assert.equal(tools.workoutMuscleProgress(next, []).sections.filter((section) => section.label === 'כתפיים').length, 2,
+    'Keep deliberate existing split sections, but do not add another one');
+});
+
+test('workout additions handle new groups, empty workouts and cardio without using warmup or cooldown as a matching group', () => {
+  const warmup = { exerciseId: 'warmup', type: 'cardio' }, cooldown = { exerciseId: 'cooldown', type: 'cardio' };
+  const walk = { exerciseId: 'walk', type: 'cardio', durationSec: 600 };
+  const run = { exerciseId: 'run', type: 'cardio', durationSec: 600 };
+  const shoulder = { ...entry({ id: 'shoulder', name: 'Shoulder' }), category: 'כתפיים' };
+  for (const current of [session([]), session([shoulder]), session([warmup, shoulder, cooldown])]) {
+    const placement = tools.workoutAdditionPlacement(current, walk, []);
+    assert.equal(placement.afterExerciseId, undefined);
+    const next = cardioTools.appendWorkoutExercise(current, walk, placement.order, placement.afterExerciseId);
+    assert.equal(next.entries.includes(walk), true);
+    if (current.entries.includes(cooldown)) assert.equal(next.entries.at(-1), cooldown);
+  }
+  const current = session([warmup, walk, shoulder, cooldown]);
+  current.workoutOrder = current.entries.map((item) => item.exerciseId);
+  const placement = tools.workoutAdditionPlacement(current, run, []);
+  assert.equal(placement.afterExerciseId, 'walk');
+  const next = cardioTools.appendWorkoutExercise(current, run, placement.order, placement.afterExerciseId);
+  assert.deepEqual(plain(next.workoutOrder), ['warmup', 'walk', 'run', 'shoulder', 'cooldown']);
+  assert.equal(tools.workoutMuscleProgress(next, []).sections.filter((section) => section.label === 'אירובי').length, 1);
+});
+
+test('workout additions never split an existing superset or break its combined muscle heading', () => {
+  const pair = tools.supersetExercises('chest-row', [], 1);
+  const current = session([
+    { exerciseId: 'warmup', type: 'cardio' },
+    ...pair.map((exercise) => ({ ...entry(exercise), exerciseSnapshot: exercise })),
+    { exerciseId: 'core', sets: [set()], category: 'בטן' },
+    { exerciseId: 'cooldown', type: 'cardio' },
+  ]);
+  const exercise = { id: 'another-chest', catalogId: 'chest', name: 'Chest' };
+  const added = { ...entry(exercise), exerciseSnapshot: exercise };
+  for (const pinned of [false, true]) {
+    const source = { ...current, ...(pinned ? { workoutOrder: current.entries.map((item) => item.exerciseId) } : {}) };
+    const placement = tools.workoutAdditionPlacement(source, added, []);
+    assert.equal(placement.afterExerciseId, pair[1].id);
+    const next = cardioTools.appendWorkoutExercise(source, added, placement.order, placement.afterExerciseId);
+    const order = tools.workoutMuscleProgress(next, []).order.map((index) => next.entries[index].exerciseId);
+    assert.equal(order.indexOf(pair[1].id), order.indexOf(pair[0].id) + 1);
+    assert.equal(order.indexOf(added.exerciseId), order.indexOf(pair[1].id) + 1);
+    if (!pinned) assert.equal(tools.workoutMuscleProgress(next, []).sections.filter((section) => section.label === 'חזה + גב').length, 1);
+  }
+});
+
+test('workout group placement survives time-budget and removed-exercise restoration without dropping the addition', () => {
+  const snap = (id, category) => ({ ...entry({ id, name: id }), exerciseSnapshot: { id, name: id, category } });
+  const shoulder = snap('shoulder', 'כתפיים'), deferred = snap('deferred', 'כתפיים'), removed = snap('removed', 'גב');
+  const order = ['warmup', 'shoulder', 'deferred', 'removed', 'cooldown'];
+  const current = { ...session([{ exerciseId: 'warmup', type: 'cardio' }, shoulder,
+    { exerciseId: 'cooldown', type: 'cardio' }]), workoutOrder: ['warmup', 'shoulder', 'cooldown'],
+  timeBudget: { minutes: 30, order, deferred: [deferred] }, removedExercises: [{ entry: removed, order }] };
+  const added = snap('new-shoulder', 'כתפיים');
+  const placement = tools.workoutAdditionPlacement(current, added, []);
+  const next = cardioTools.appendWorkoutExercise(current, added, placement.order, placement.afterExerciseId);
+  assert.equal(next.timeBudget.deferred, current.timeBudget.deferred);
+  assert.equal(next.removedExercises[0].entry, removed);
+  assert.deepEqual(plain(next.timeBudget.order), ['warmup', 'shoulder', 'new-shoulder', 'deferred', 'removed', 'cooldown']);
+  assert.deepEqual(plain(next.removedExercises[0].order), plain(next.timeBudget.order));
+  const restored = tools.restoreWorkoutExercise(tools.restoreTimeBudget(next), 'removed');
+  assert.equal(restored.entries.length, 6);
+  assert.equal(restored.entries.filter((item) => item.exerciseId === added.exerciseId).length, 1);
+  assert.equal(tools.workoutMuscleProgress(restored, []).sections.filter((section) => section.label === 'כתפיים').length, 1);
+});
+
+test('actual current-workout addition joins a group and updates counting indices without changing focus, program or undo references', () => {
+  const shoulder = { id: 'shoulder', category: 'כתפיים', name: 'Original shoulder' };
+  const back = { id: 'back', category: 'גב', name: 'Current back' };
+  const addedExercise = { id: 'new-shoulder', category: 'כתפיים', name: 'Another shoulder', active: false };
+  const shoulderEntry = { ...entry(shoulder), exerciseSnapshot: shoulder };
+  const backEntry = { ...entry(back, [set(30, 7)]), exerciseSnapshot: back };
+  const added = { ...entry(addedExercise), exerciseSnapshot: addedExercise };
+  const current = { ...session([{ exerciseId: 'warmup', type: 'cardio' }, shoulderEntry, backEntry,
+    { exerciseId: 'cooldown', type: 'cardio' }]), running: true, currentExerciseId: 'back', rest: { remaining: 40 } };
+  current.workoutOrder = current.entries.map((item) => item.exerciseId);
+  const catalog = [shoulder, back, addedExercise], before = plain(catalog);
+  const counting = { entry: backEntry, set: backEntry.sets[0], entryIndex: 2 };
+  const action = { session: current, entry: backEntry, set: backEntry.sets[0] };
+  let saved, fail = true;
+  const context = vm.createContext({ activeSession: current, trainingTools: tools, cardioTools, exercises: catalog,
+    finishingWorkout: false, privacyErasing: false, lastVoiceAction: action, lastVoiceReport: null,
+    lastAutoCountCompletion: null, voiceCountingState: counting, console: { error() {} },
+    buildProgramDraft: () => ({ entries: [added] }),
+    db: { saveActiveSession(next) { if (fail) throw new Error('Storage full'); saved = next; } },
+    showToast() {}, renderWorkoutTab() {}, renderExercisesTab() {}, syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {} });
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function addExerciseToCurrentWorkout('), source.indexOf('function wireExercisesTab()')), context);
+  assert.equal(context.addExerciseToCurrentWorkout(addedExercise), false);
+  assert.equal(context.activeSession, current);
+  assert.equal(counting.entryIndex, 2);
+  assert.equal(action.session, current);
+  fail = false;
+  assert.equal(context.addExerciseToCurrentWorkout(addedExercise), true);
+  assert.equal(context.activeSession, saved);
+  assert.equal(saved.entries[2], added);
+  assert.equal(saved.entries[3], backEntry);
+  assert.equal(counting.entryIndex, 3);
+  assert.equal(counting.entry, backEntry);
+  assert.equal(counting.set, backEntry.sets[0]);
+  assert.equal(action.session, saved);
+  assert.equal(action.entry, backEntry);
+  assert.equal(saved.currentExerciseId, 'back');
+  assert.equal(saved.rest, current.rest);
+  assert.deepEqual(plain(catalog), before);
+  assert.equal(tools.workoutMuscleProgress(saved, catalog).sections.filter((section) => section.label === 'כתפיים').length, 1);
 });
 
 test('mixed-muscle supersets share a heading and completion waits for both parts and later matching work', () => {

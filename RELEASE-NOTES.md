@@ -1,5 +1,35 @@
 # AutoFit release notes
 
+## 1.0 (50) - approved internal TestFlight release (pending)
+
+Fresh user approval on **2026-11-05**, observed at **13:47:19 UTC**:
+**"לאחר התיקון תוציא בבקשה גרסה 50"**.
+One internal TestFlight release is authorized after validation, including
+current-workout grouping and the cardio-arrow correction. Upload and actual
+Apple availability are pending; no main merge or external distribution.
+
+Exercises added from the library to the current workout join the existing
+primary-muscle group instead of creating another heading at the end. Placement
+uses the same canonical classification as workout headings. Preserve existing
+relative order, deliberately split manual sections, completed sets, timers,
+focus and voice/undo references. Superset pairs remain together; a new group
+still goes before cooldown. Time-budget and removed-exercise restoration retain
+the addition. No changes to My workout, saved plans or history.
+
+Use the same separate header action column for cardio as for strength cards.
+Walking/running reorder arrows no longer appear inside the exercise title
+column; removal, guide and photo controls share the existing action column.
+No workout data, ordering rules or timer behavior changes. Web cache:
+`autofit-v117`. These fixes are not included in build 49.
+
+Local validation: 772/772 JS regressions and all 23 web modules parsed. A real-app
+browser test added a second shoulder exercise through the library during a
+running workout: one shoulder heading with two exercises, unchanged start time
+and existing entries, and all 11 synthetic history records, program defaults and
+saved plans unchanged. Cardio header layout was checked collapsed/expanded,
+RTL/LTR and at 320, 375 and 430 CSS-pixel widths. Physical-iPhone review remains
+the user's follow-up after the approved build becomes available.
+
 ## 1.0 (49) - verified internal TestFlight release (2026-11-05)
 
 Fresh approval at **2026-11-05 12:43:01 UTC**:

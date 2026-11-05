@@ -2229,12 +2229,12 @@ function renderCardioCard(entry, number) {
         <div>
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(entry.exerciseName)}">${escapeHtml(i18n.exerciseName(entry.exerciseName))}</div>
           <div class="exercise-meta">${activityOnly ? 'תרגול לפי זמן' : walkingActivity === 'run' ? 'ריצה' : walkingActivity === 'walk' ? 'הליכה' : 'אירובי'} ${minutes} דקות</div>
-          <div class="exercise-head-right">
-            <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
-            ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
-            ${hasGuide || mediaExercise.images?.length ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
-          </div>
         </div>
+      </div>
+      <div class="exercise-head-right">
+        <button class="btn-photo btnRemoveWorkoutExercise">הסר תרגיל</button>
+        ${hasGuide ? '<button class="btn-photo btnExerciseGuide">הדרכה</button>' : ''}
+        ${hasGuide || mediaExercise.images?.length ? '<button class="btn-photo btnShowPhoto">📷 תמונה</button>' : ''}
       </div>
     </div>
     <div class="cardio-body">
@@ -4989,8 +4989,8 @@ function addExerciseToCurrentWorkout(exercise) {
   try {
     const previous = activeSession || buildProgramDraft(exercises);
     const entry = buildProgramDraft([{ ...exercise, active: true }]).entries[0];
-    const order = trainingTools.workoutMuscleProgress(previous, exercises).order.map((index) => previous.entries[index].exerciseId);
-    const next = cardioTools.appendWorkoutExercise(previous, entry, order);
+    const { order, afterExerciseId } = trainingTools.workoutAdditionPlacement(previous, entry, exercises);
+    const next = cardioTools.appendWorkoutExercise(previous, entry, order, afterExerciseId);
     db.saveActiveSession(next);
     activeSession = next;
     for (const action of [lastVoiceAction, lastVoiceReport, lastAutoCountCompletion]) {

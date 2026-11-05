@@ -122,7 +122,7 @@ test('adding an exercise during a workout keeps all existing object identities a
   assert.throws(() => cardio.appendWorkoutExercise({ ...session, substitutions: [{ original: added }] }, added), /כבר/);
 });
 
-test('real library addition controller consumes muscle-progress indices and preserves live references on success and storage failure', () => {
+test('real library addition controller consumes group placement and preserves live references on success and storage failure', () => {
   const source = read('www/js/app.js');
   const entry = { exerciseId: 'lift', sets: [{ reps: 12, completed: true }] };
   const session = { id: 'active', entries: [{ exerciseId: 'warmup', completed: true }, entry, { exerciseId: 'cooldown' }],
@@ -136,7 +136,9 @@ test('real library addition controller consumes muscle-progress indices and pres
     voiceCountingState: counting, console: { error() {} }, showToast() {}, syncWorkoutActivity() {}, syncNativeAnnouncementPlan() {},
     renderWorkoutTab: () => rendered++, renderExercisesTab() {},
     buildProgramDraft: (program) => ({ entries: [{ exerciseId: program[0].id, sets: [{ completed: false }] }] }),
-    trainingTools: { workoutMuscleProgress: () => ({ order: [0, 1, 2] }) },
+    trainingTools: { workoutAdditionPlacement: () => ({
+      order: ['warmup', 'lift', 'cooldown'], afterExerciseId: 'lift',
+    }) },
     db: { saveActiveSession: (next) => { if (fail) throw new Error('full'); saved = next; } } });
   vm.runInContext(source.slice(source.indexOf('function addExerciseToCurrentWorkout('), source.indexOf('function wireExercisesTab()')), context);
   fail = true;

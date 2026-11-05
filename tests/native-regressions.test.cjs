@@ -1394,6 +1394,37 @@ test('cardio workout cards open the same media without starting or changing a ti
   assert.equal(JSON.stringify(entry), before);
 });
 
+test('cardio workout actions use a separate header column like strength cards, not the exercise title column', () => {
+  const exercises = library.LIBRARY_EXERCISES.filter((exercise) => exercise.inputType === 'cardio');
+  exercises.push({ id: 'warmup', name: 'Warmup', inputType: 'cardio' },
+    { id: 'cooldown', name: 'Cooldown', inputType: 'cardio' },
+    { id: 'personal:cardio', name: 'Personal timed activity', inputType: 'cardio' });
+  const fixture = mediaController(exercises);
+  for (const exercise of exercises) {
+    const entry = { exerciseId: exercise.id, exerciseName: exercise.name, type: 'cardio',
+      durationSec: 1200, elapsedSec: 37, startedAt: null };
+    const before = JSON.stringify(entry);
+    const card = fixture.context.renderCardioCard(entry, 1);
+    const parents = [];
+    let actions = 0;
+    for (const [tag] of card.innerHTML.matchAll(/<\/?div\b[^>]*>/g)) {
+      if (tag.startsWith('</')) { parents.pop(); continue; }
+      const classes = tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) || [];
+      if (classes.includes('exercise-head-right')) {
+        assert.ok(parents.at(-1)?.includes('exercise-card-head'), exercise.id);
+        actions++;
+      }
+      parents.push(classes);
+    }
+    assert.equal(actions, 1, exercise.id);
+    for (const button of ['btnRemoveWorkoutExercise', 'btnCardioStart', 'btnCardioReset', 'btnCardioDone']) {
+      assert.match(card.innerHTML, new RegExp(button), exercise.id);
+      assert.equal(typeof fixture.qs(`.${button}`, card).listeners.click, 'function', exercise.id);
+    }
+    assert.equal(JSON.stringify(entry), before);
+  }
+});
+
 test('Yoga and Pilates workout cards describe timed practice rather than aerobic speed or treadmill training', () => {
   for (const catalogId of ['yogaPractice', 'pilatesPractice']) {
     const exercise = library.LIBRARY_EXERCISES.find((item) => item.catalogId === catalogId);
