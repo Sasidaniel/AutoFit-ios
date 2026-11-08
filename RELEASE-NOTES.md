@@ -1,5 +1,18 @@
 # AutoFit release notes
 
+## 1.0 (52) - initial workout collapse; internal release authorized (2026-11-08)
+
+Fresh user approval: **"תעלה גרסה"**.
+One internal TestFlight upload is authorized. Apple availability is pending;
+no main merge or external distribution. Local validation: 789 JS regressions.
+
+Entering the workout tab before any activity starts keeps every exercise
+collapsed, including warmup and cooldown. Automatic card expansion now uses
+the shared started-workout predicate. Start still opens the current warmup;
+normal completion opens cooldown when reached. Preserve current-card recovery
+for started/paused sessions and explicit manual collapse across tab navigation.
+Opening a card does not start its individual measurement.
+
 ## 1.0 (51) - verified internal TestFlight release (2026-11-08)
 
 Fresh user approval on **2026-11-08**:

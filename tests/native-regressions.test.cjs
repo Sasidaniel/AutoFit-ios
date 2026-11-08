@@ -4647,6 +4647,38 @@ function greetingContext() {
   return { context, advance, spoken, pending };
 }
 
+test('opening the workout tab keeps every card collapsed until Start, with or without warmup and cooldown', () => {
+  for (const ids of [['warmup', 'lift', 'cooldown'], ['lift', 'cooldown'], ['cooldown'], ['lift']]) {
+    const { context } = greetingContext();
+    const entries = ids.map((exerciseId) => exerciseId === 'lift'
+      ? { exerciseId, sets: [{ completed: false }] }
+      : { exerciseId, type: 'cardio', completed: false, durationSec: 300 });
+    Object.assign(context, { activeSession: { id: 'initial-cards', running: false, entries },
+      workoutCardSessionId: null, completedWorkoutExercises: new Set(),
+      rememberWorkoutViewport() {}, restoreWorkoutViewport() {}, workoutViewport: null });
+    vm.runInContext(section('function syncCompletedWorkoutCards(', 'function configureWorkoutCard('), context);
+    vm.runInContext(section('function renderWorkoutTab()', "  el('workoutName').textContent") + '\n}', context);
+    const before = JSON.stringify(context.activeSession);
+    context.renderWorkoutTab();
+    context.renderWorkoutTab();
+    assert.equal(context.expandedWorkoutExercises.size, 0, 'Tab navigation is not workout Start');
+    assert.equal(JSON.stringify(context.activeSession), before, 'Navigation must not start or change any activity');
+    context.ensureWorkoutStarted();
+    assert.deepEqual([...context.expandedWorkoutExercises], [ids[0]]);
+    assert.equal(entries.some((entry) => entry.startedAt), false, 'Opening a card must not start its measurement');
+    context.expandedWorkoutExercises.delete(ids[0]);
+    context.renderWorkoutTab();
+    assert.equal(context.expandedWorkoutExercises.size, 0, 'Navigation preserves manual collapse during a workout');
+    for (const paused of [false, true]) {
+      context.activeSession.running = !paused;
+      context.activeSession.paused = paused;
+      context.workoutCardSessionId = null;
+      context.renderWorkoutTab();
+      assert.deepEqual([...context.expandedWorkoutExercises], [ids[0]], 'Restore preserves the current workout phase');
+    }
+  }
+});
+
 test('starting opens warmup and completion opens cooldown using normal card transitions without overriding manual collapse', () => {
   const { context } = greetingContext();
   const warmup = { exerciseId: 'warmup', type: 'cardio', completed: false, durationSec: 300 };

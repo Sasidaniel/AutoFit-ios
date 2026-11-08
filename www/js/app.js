@@ -1946,6 +1946,7 @@ function syncCompletedWorkoutCards() {
 }
 
 function expandNextWorkoutCard(entry) {
+  if (!trainingTools.workoutHasStarted(activeSession)) return;
   const next = trainingTools.currentWorkoutEntry(activeSession, exercises);
   if (next && next !== entry && !next.equipmentBusy) expandedWorkoutExercises.add(next.exerciseId);
 }
