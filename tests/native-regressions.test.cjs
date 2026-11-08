@@ -23,9 +23,10 @@ const insights = loadPhaseOneModule('www/js/workout-insights.js', [
   'DIFFICULTY_LABELS', 'completedEntrySnapshot', 'workoutSummary', 'statisticsHistory', 'statisticsOverview', 'exerciseProgress',
 ]);
 const voiceReports = loadPhaseOneModule('www/js/voice-reports.js', ['parseWorkoutVoice', 'voiceReportHints']);
+const { announcementSpeechText } = loadPhaseOneModule('www/js/native-bridge.js', ['announcementSpeechText']);
 const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
   ['upgradeSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest', 'SUPERSET_RECIPES', 'supersetExercises',
-    'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'moveWorkoutExercise', 'setEquipmentBusy', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress'], library);
+    'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutHasStarted', 'currentWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'moveWorkoutExercise', 'setEquipmentBusy', 'rememberMissingWorkoutLoads', 'workoutMuscleProgress', 'workoutExerciseGroup'], library);
 
 function musicControlsFixture({ platform = true, authorization = 'authorized', state = 'paused' } = {}) {
   const calls = [], toasts = [];
@@ -969,10 +970,10 @@ const vm = {
     const i18n = localizationContext();
     const cardioTools = loadPhaseOneModule('www/js/cardio-tools.js', ['walkingActivity', 'measurementFieldsHTML',
       'elapsedCardioSeconds', 'editCardioEntry', 'completeCardioEntry', 'resetCardioEntry', 'cardioHistorySnapshot', 'appendWorkoutExercise']);
-    return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, cardioTools, qsa: () => [], voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
+    return nodeVM.createContext({ i18n, library, insights, voiceReports, trainingTools, cardioTools, announcementSpeechText, qsa: () => [], voiceCountingState: null, voiceReportInProgress: false, restDoneMessage: '',
       lastAutoCountCompletion: null, privacyUI: null, commerceUI: null, privacyErasing: false, refreshVoiceSelection: () => {}, resetVoiceRepTarget: () => {},
       finishingWorkout: false, pendingWorkoutAutoFinish: null,
-      expandedWorkoutExercises: new Set(), refreshWorkoutCardCompletion() {}, completeWorkoutFeedback() {},
+      expandedWorkoutExercises: new Set(), refreshWorkoutCardCompletion() {}, completeWorkoutFeedback() {}, expandNextWorkoutCard() {},
       nextWorkoutEntry: () => null,
       workoutMuscleCompletionCue: () => '', refreshWorkoutMuscleHeadings: () => {},
       isEntryDone: (entry) => entry.type === 'cardio' ? !!entry.completed : entry.sets.length > 0 && entry.sets.every((set) => set.completed),
@@ -1953,6 +1954,46 @@ test('English rep counting, named exercise selection and set completion use the 
   for (const [phrase, number] of [['zero', 0], ['one two twelve', 12], ['thirty nine', 39], ['ninety-nine', 99]]) {
     assert.equal(context.parseSpokenNumber(phrase), number, phrase);
   }
+});
+
+test('belly pronunciation is speech-only, word-bounded, idempotent and shared by native foreground and scheduled announcements', async () => {
+  const source = 'חתירה צרה לבטן. בטן';
+  const expected = 'חתירה צרה לַבֵּטֶן. בֵּטֶן';
+  assert.equal(announcementSpeechText(source), expected);
+  assert.equal(announcementSpeechText(expected), expected);
+  assert.equal(announcementSpeechText('מילהלבטן לבטןextra'), 'מילהלבטן לבטןextra');
+  assert.equal(announcementSpeechText(source, 'en-US'), source);
+  const immediate = [], scheduled = [];
+  const bridge = bridgeContext({ BackgroundAnnouncer: {
+    speakNow: async (item) => immediate.push(item),
+    scheduleAnnouncements: async (items) => scheduled.push(items),
+  } });
+  await bridge.announce(source, 'rest:original', 'he-IL');
+  const item = { text: source, language: 'he-IL', announcementID: 'rest:original', fireAtMillis: 12345 };
+  await bridge.bgScheduleAnnouncements([item]);
+  assert.equal(immediate[0].text, expected);
+  assert.equal(immediate[0].announcementID, 'rest:original');
+  assert.equal(scheduled[0].items[0].text, expected);
+  assert.equal(scheduled[0].items[0].fireAtMillis, 12345);
+  assert.equal(item.text, source);
+  const localized = localizationContext();
+  assert.equal(localized.exerciseName('חתירה צרה לבטן'), 'חתירה צרה לבטן');
+});
+
+test('browser speech uses the same belly pronunciation while English text and visible names remain unchanged', () => {
+  const utterances = [];
+  const context = vm.createContext({ isNative: () => false,
+    window: { speechSynthesis: { cancel() {}, speak: (value) => utterances.push(value) } },
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
+  });
+  vm.runInContext(read('www/js/timer.js').replace(/^import .*$/gm, '').replace(/^export /gm, ''), context);
+  context.speak('חתירה צרה לבטן');
+  assert.equal(utterances[0].text, 'חתירה צרה לַבֵּטֶן');
+  assert.equal(utterances[0].lang, 'he-IL');
+  context.i18n.setLanguage('en');
+  context.speak('חתירה צרה לבטן');
+  assert.equal(utterances[1].text, 'Seated cable row');
+  assert.equal(utterances[1].lang, 'en-US');
 });
 
 test('English speech and recognition forward the selected locale through native bridges', async () => {
@@ -4606,6 +4647,44 @@ function greetingContext() {
   return { context, advance, spoken, pending };
 }
 
+test('starting opens warmup and completion opens cooldown using normal card transitions without overriding manual collapse', () => {
+  const { context } = greetingContext();
+  const warmup = { exerciseId: 'warmup', type: 'cardio', completed: false, durationSec: 300 };
+  const lift = { exerciseId: 'lift', sets: [{ completed: false }] };
+  const cooldown = { exerciseId: 'cooldown', type: 'cardio', completed: false, durationSec: 300 };
+  Object.assign(context, { activeSession: { id: 'boundaries', running: false, entries: [warmup, lift, cooldown] },
+    completedWorkoutExercises: new Set(), rememberWorkoutViewport() {}, restoreWorkoutViewport() {}, workoutViewport: null });
+  vm.runInContext(section('function syncCompletedWorkoutCards(', 'function configureWorkoutCard('), context);
+  context.ensureWorkoutStarted();
+  assert.equal(context.expandedWorkoutExercises.has('warmup'), true);
+  assert.equal(context.expandedWorkoutExercises.has('cooldown'), false);
+  warmup.completed = true;
+  context.syncCompletedWorkoutCards();
+  assert.equal(context.expandedWorkoutExercises.has('lift'), true);
+  lift.sets[0].completed = true;
+  context.syncCompletedWorkoutCards();
+  assert.equal(context.expandedWorkoutExercises.has('cooldown'), true);
+  context.expandedWorkoutExercises.delete('cooldown');
+  context.refreshWorkoutCardCompletion();
+  assert.equal(context.expandedWorkoutExercises.has('cooldown'), false, 'A later render must honor explicit minimization');
+});
+
+test('canonical authored workout subregions translate reversibly when a card first renders in English', () => {
+  const localized = localizationContext();
+  localized.setLanguage('en');
+  const node = { nodeType: 3, nodeValue: 'גב תחתון', parentElement: { closest: () => null } };
+  localized.translateDOM(node);
+  assert.equal(node.nodeValue, 'Lower back');
+  localized.setLanguage('he');
+  localized.translateDOM(node);
+  assert.equal(node.nodeValue, 'גב תחתון');
+  localized.setLanguage('en');
+  localized.translateDOM(node);
+  assert.equal(node.nodeValue, 'Lower back');
+  const render = section('function renderWorkoutTab()', 'function syncCompletedWorkoutCards(');
+  assert.match(render, /exercise-region-line[^`]+escapeHtml\(workoutGroup\.detail\)/);
+});
+
 test('opening workout sentence waits a full second before any speech and never starts twice', () => {
   const { context, advance, spoken } = greetingContext();
   context.ensureWorkoutStarted();
@@ -5896,7 +5975,7 @@ test('offline installation reloads every shell asset including legal and commerc
 
 test('reviewed home-plan activation adds only chosen catalog entries and restores the program without touching populated work', () => {
   const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
-    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity'], { ...library, ...insights });
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity', 'currentWorkoutEntry'], { ...library, ...insights });
   const originals = [
     { id: 'native:bench', catalogId: 'bench', name: 'My personal bench', active: true, defaultSets: 3,
       defaultReps: '8', restSeconds: 120, images: ['personal-photo'], notes: 'keep this' },
@@ -5993,7 +6072,7 @@ test('saved-plan list and preview expose selection without automatic-start or al
 
 test('saved-plan selection navigates without starting, protects logged work and stays unchanged on storage failure', () => {
   const trainingTools = loadPhaseOneModule('www/js/training-tools.js',
-    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity'], { ...library, ...insights });
+    ['planningCatalog', 'activatePlanExercises', 'entryHasActivity', 'planIdentity', 'currentWorkoutEntry'], { ...library, ...insights });
   for (const failure of [false, true]) {
     let starts = 0, persisted, failSelection = failure;
     const navigation = [];

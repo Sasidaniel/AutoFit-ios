@@ -13,7 +13,7 @@ function load(file, names, values = {}) {
   return vm.runInContext(`({${names.join(',')}})`, context);
 }
 const library = load('www/js/exercise-library.js', ['LIBRARY_EXERCISES', 'PLANNING_EXERCISES', 'EXERCISE_GUIDES', 'UNSPECIFIED_VARIANTS', 'LIBRARY_TRANSLATIONS', 'exerciseGuide', 'exerciseIllustration', 'catalogStats']);
-const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'workoutAdditionPlacement', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
+const tools = load('www/js/training-tools.js', ['trainingMetadata', 'workoutMuscleProgress', 'workoutExerciseGroup', 'workoutAdditionPlacement', 'alternatives', 'entryHasActivity', 'workoutHasStarted', 'currentWorkoutEntry', 'estimateEntrySeconds',
   'SUPERSET_RECIPES', 'supersetExercises', 'upgradeSavedASuperset', 'restoreSavedASuperset', 'supersetNextEntry', 'supersetNeedsRest',
   'durationSession', 'estimateEntryDuration', 'estimateWorkoutDuration', 'nextAvailableWorkoutEntry', 'deferredWorkoutEntry', 'workoutEntryAnnouncement', 'workoutRestAnnouncement', 'workoutSetLabel', 'moveWorkoutExercise', 'setEquipmentBusy',
   'timeBudgetProposal', 'applyTimeBudget', 'restoreTimeBudget', 'swapExercise', 'restoreSubstitution',
@@ -234,6 +234,42 @@ test('workout muscle headings group matching exercises while preserving source d
   assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, true);
   current.entries[3].sets = [];
   assert.equal(tools.workoutMuscleProgress(current, []).groups.find((group) => group.label === 'גב').complete, false);
+});
+
+test('workout parent categories merge authored subregions without rewriting catalog or inventing anatomical detail', () => {
+  const samples = [
+    ['גב עליון', 'גב'], ['גב אמצעי', 'גב'], ['גב תחתון', 'גב'],
+    ['חזה עליון', 'חזה'], ['כתפיים אחוריות', 'כתפיים'], ['רגליים אחוריות', 'רגליים'],
+    ['בטן תחתונה', 'בטן'], ['יד קדמית — חלק נוסף', 'יד קדמית'], ['שוקיים', 'רגליים'],
+    ['ישבן', 'רגליים'], ['ישבן צדדי', 'רגליים'], ['שוקיים פנימיות', 'רגליים'],
+    ['מפרקי כף יד', 'אמות'], ['אמות קדמיות', 'אמות'],
+  ];
+  for (const [category, parent] of samples) {
+    const exercise = { id: `custom:${category}`, name: 'My unchanged exercise', category, custom: { keep: true } };
+    const before = plain(exercise);
+    assert.deepEqual(plain(tools.workoutExerciseGroup(exercise)), { category: parent, detail: category });
+    assert.deepEqual(exercise, before);
+  }
+  assert.deepEqual(plain(tools.workoutExerciseGroup({ name: 'Unknown' })), { category: null, detail: '' });
+  assert.deepEqual(plain(tools.workoutExerciseGroup({ category: 'גבול לא ידוע' })), { category: null, detail: '' });
+  assert.deepEqual(plain(tools.workoutExerciseGroup({ category: 'גב' })), { category: 'גב', detail: '' });
+});
+
+test('lower, middle and upper back share one workout heading and new back additions join it', () => {
+  const exercises = ['גב עליון', 'גב אמצעי', 'גב תחתון'].map((category, index) => ({
+    id: `back:${index}`, name: `Back ${index}`, category,
+  }));
+  const current = session(exercises.map((exercise) => ({ ...entry(exercise), exerciseSnapshot: exercise })));
+  const addedExercise = { id: 'floor-back', catalogId: 'back', name: 'My lower back', category: 'גב תחתון' };
+  const added = { ...entry(addedExercise), exerciseSnapshot: addedExercise };
+  const placement = tools.workoutAdditionPlacement(current, added, []);
+  assert.equal(placement.afterExerciseId, 'back:2');
+  const next = cardioTools.appendWorkoutExercise(current, added, placement.order, placement.afterExerciseId);
+  const model = tools.workoutMuscleProgress(next, []);
+  assert.deepEqual(plain(model.sections.map((section) => section.label)), ['גב']);
+  assert.equal(model.groups[0].total, 4);
+  assert.equal(tools.workoutExerciseGroup(addedExercise).detail, 'גב תחתון');
+  for (const original of current.entries) assert.equal(next.entries.find((item) => item.exerciseId === original.exerciseId), original);
 });
 
 test('workout additions join the existing canonical muscle group without touching recorded work or live state', () => {
@@ -1086,7 +1122,7 @@ test('removing all exercises has zero active targets and multiple undos recover 
   for (const id of [ids[1], ids[0], ids[2]]) current = tools.restoreWorkoutExercise(current, id);
   assert.deepEqual(plain(current.entries), original.entries);
   assert.throws(() => tools.restoreWorkoutExercise(current, ids[0]), /changed/);
-  assert.throws(() => tools.removeWorkoutExercise({ ...current, running: true }, ids[0]), /Pause/);
+  assert.equal(tools.removeWorkoutExercise({ ...current, running: true }, ids[0]).running, true);
 });
 
 test('time-budget restoration cannot resurrect a removed exercise, and undo remains safe after full restoration', () => {
@@ -1165,9 +1201,13 @@ test('paused hold measurements and rope interval recipes survive removal, reload
   current = tools.restoreWorkoutExercise(current, 'rope');
   current = tools.restoreWorkoutExercise(current, 'hold');
   assert.deepEqual(plain(current.entries), original.entries);
-  assert.throws(() => tools.removeWorkoutExercise(session([{ ...rope, startedAt: 123 }]), 'rope'), /Pause/);
-  assert.throws(() => tools.removeWorkoutExercise(session([{ ...hold,
-    sets: [{ ...hold.sets[0], holdStartedAt: 123 }] }]), 'hold'), /Pause/);
+  const stoppedRope = tools.removeWorkoutExercise(session([{ ...rope, startedAt: 1000 }]), 'rope', 6000);
+  assert.equal(stoppedRope.removedExercises[0].entry.elapsedSec, 78);
+  assert.equal(stoppedRope.removedExercises[0].entry.startedAt, null);
+  const stoppedHold = tools.removeWorkoutExercise(session([{ ...hold,
+    sets: [{ ...hold.sets[0], holdStartedAt: 1000 }] }]), 'hold', 6000);
+  assert.equal(stoppedHold.removedExercises[0].entry.sets[0].holdElapsedSec, 5);
+  assert.equal(stoppedHold.removedExercises[0].entry.sets[0].holdStartedAt, undefined);
 });
 
 test('77 additional exercises and activities have distinct trusted movement and real-equipment metadata', () => {
@@ -1522,6 +1562,7 @@ function pauseController(savedSession) {
   const context = vm.createContext({ ...timers, activeSession, formatHMS, privacyErasing: false,
     qsa: () => [], voiceReportInProgress: false,
     finishingWorkout: false, pendingWorkoutAutoFinish: null,
+    expandedWorkoutExercises: new Set(), expandNextWorkoutCard() {}, refreshWorkoutCardCompletion() {},
     settings: { voiceAnnouncements: false, voiceCommandsEnabled: true }, workouts: [],
     exercises: [{ id: 'native:chest', name: 'Chest', inputType: 'reps', restSeconds: 90 },
       { id: 'native:hold', name: 'Hold', inputType: 'hold', holdSeconds: 30, restSeconds: 90 }],
@@ -2863,7 +2904,7 @@ function controllerContext(initial = {}) {
   return { context, api: context.trainingAPI(), writes, notices };
 }
 
-test('real removal controller pauses and freezes clocks, preserves archived completions and leaves programs unchanged', () => {
+test('real removal controller keeps the workout and unrelated timers running while preserving archived completions and programs', () => {
   const { context, el } = pauseController();
   const originalExercises = plain(context.exercises), source = read('www/js/app.js');
   context.openTrainingDialog = () => {};
@@ -2874,15 +2915,17 @@ test('real removal controller pauses and freezes clocks, preserves archived comp
   assert.equal(typeof context.openWorkoutRemovalDialog, 'function', 'Removal dialog must be available to every workout card');
   const api = context.trainingAPI();
   api.changeWorkoutRemoval('native:chest');
-  assert.equal(context.activeSession.paused, true);
+  assert.equal(context.activeSession.running, true);
+  assert.notEqual(context.activeSession.paused, true);
   assert.equal(context.activeSession.entries.length, 2);
-  assert.equal(context.activeSession.entries[0].sets[0].holdElapsedSec, 10);
-  assert.equal(context.activeSession.entries[1].elapsedSec, 60);
+  assert.equal(context.activeSession.entries[0].sets[0].holdStartedAt, context.Date.now() - 10000);
+  assert.equal(context.activeSession.entries[1].elapsedSec, 40);
+  assert.equal(context.activeSession.entries[1].startedAt, context.Date.now() - 20000);
   assert.equal(context.voiceCountingState, null);
-  assert.equal(context.holdTimers.size, 0);
+  assert.equal(context.holdTimers.size, 1);
   assert.equal(context.activeSession.pausedVoiceCount, undefined);
   assert.deepEqual(plain(context.exercises), originalExercises);
-  assert.equal(el('btnStartWorkout').textContent, 'המשך אימון');
+  assert.notEqual(el('btnStartWorkout').textContent, 'המשך אימון');
   context.finishWorkout();
   assert.equal(context.workouts.length, 1, 'Finishing saves completed removed sets even with no visible completions');
   const recorded = context.workouts[0].entries.find((item) => item.exerciseId === 'native:chest');
@@ -2891,6 +2934,167 @@ test('real removal controller pauses and freezes clocks, preserves archived comp
   assert.equal(recorded.sets[0].weightKg, 20);
   assert.equal(recorded.sets[0].notes, 'keep');
   assert.equal(recorded.sets[0].difficulty, 'right');
+});
+
+function liveRemovalController() {
+  const fixture = pauseController();
+  fixture.calls.length = 0;
+  fixture.context.openTrainingDialog = () => {};
+  fixture.context.openExerciseGuide = () => {};
+  fixture.context.renderHomeTab = () => {};
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function trainingAPI()'), source.indexOf('function persistRestTimerState(')), fixture.context);
+  fixture.api = fixture.context.trainingAPI();
+  return fixture;
+}
+
+test('removing and restoring a measured hold stops only that hold and retains unrelated counting, rest, clock and undo identities', () => {
+  const { context, api, advance, calls } = liveRemovalController();
+  const previous = context.activeSession, count = context.voiceCountingState, restEnd = context.restTimer.endAt;
+  const hold = previous.entries[1], cardio = previous.entries[2], startedAt = previous.startedAt;
+  const undo = { session: previous, entry: previous.entries[0], set: count.set };
+  context.lastVoiceAction = undo;
+  api.changeWorkoutRemoval(hold.exerciseId);
+  const archived = context.activeSession.removedExercises[0].entry;
+  assert.equal(archived.sets[0].holdElapsedSec, 10);
+  assert.equal(archived.sets[0].holdStartedAt, undefined);
+  assert.equal(archived.sets[0].resumeAfterPause, undefined);
+  assert.equal(context.activeSession.entries[1], cardio);
+  assert.equal(context.voiceCountingState, count);
+  assert.equal(count.entry, previous.entries[0]);
+  assert.equal(count.set, previous.entries[0].sets[1]);
+  assert.equal(count.entryIndex, 0);
+  assert.equal(context.lastVoiceAction, undo);
+  assert.equal(undo.session, context.activeSession);
+  assert.equal(context.restTimer.endAt, restEnd);
+  assert.equal(context.holdTimers.size, 0);
+  assert.equal(context.activeSession.startedAt, startedAt);
+  advance(5000);
+  assert.equal(context.stopwatch.getElapsed(), 125);
+  api.changeWorkoutRemoval(hold.exerciseId, true);
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.activeSession.entries[1], archived);
+  assert.equal(context.holdTimers.size, 0);
+  assert.equal(context.voiceCountingState, count);
+  assert.equal(calls.includes('stopBackground'), false);
+  assert.equal(calls.includes('stopListening'), false);
+});
+
+test('removing measured cardio banks elapsed time and restoration stays stopped without pausing other work', () => {
+  const { context, api, advance } = liveRemovalController();
+  const previous = context.activeSession, holdState = context.holdTimers.get('native:hold:0');
+  const cardio = previous.entries[2];
+  api.changeWorkoutRemoval(cardio.exerciseId);
+  const archived = context.activeSession.removedExercises[0].entry;
+  assert.equal(archived.elapsedSec, 60);
+  assert.equal(archived.startedAt, null);
+  assert.equal(context.holdTimers.get('native:hold:0'), holdState);
+  advance(15000);
+  api.changeWorkoutRemoval(cardio.exerciseId, true);
+  assert.equal(context.activeSession.entries[2].elapsedSec, 60);
+  assert.equal(context.activeSession.entries[2].startedAt, null);
+  assert.equal(context.activeSession.entries[2].resumeAfterPause, undefined);
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.stopwatch.getElapsed(), 135);
+});
+
+test('failed running removal leaves every live reference, timer, focus and stored state untouched', () => {
+  const { context, api, calls, intervals } = liveRemovalController();
+  const previous = context.activeSession, before = plain(previous), count = context.voiceCountingState;
+  const timer = context.holdTimers.get('native:hold:0'), intervalCount = intervals.size, restEnd = context.restTimer.endAt;
+  const cancelled = [];
+  context.cancelSpeech = (prefix) => cancelled.push(prefix);
+  context.db.saveActiveSession = () => { throw new Error('Storage full'); };
+  assert.throws(() => api.changeWorkoutRemoval('native:hold'), /Storage full/);
+  assert.equal(context.activeSession, previous);
+  assert.deepEqual(plain(previous), before);
+  assert.equal(context.voiceCountingState, count);
+  assert.equal(context.holdTimers.get('native:hold:0'), timer);
+  assert.equal(intervals.size, intervalCount);
+  assert.equal(context.restTimer.endAt, restEnd);
+  assert.equal(cancelled.length, 0);
+  assert.equal(calls.includes('runningPlan'), false);
+});
+
+test('explicit Start on a restored hold resumes banked measurement rather than discarding it', () => {
+  const { context, api, el } = liveRemovalController();
+  api.changeWorkoutRemoval('native:hold');
+  api.changeWorkoutRemoval('native:hold', true);
+  const restored = context.activeSession.entries[1], holdSet = restored.sets[0];
+  const button = el('hold-button'), display = el('hold-display');
+  let start;
+  button.addEventListener = (name, callback) => { if (name === 'click') start = callback; };
+  context.qs = (selector) => selector === '.hold-timer-display' ? display : button;
+  context.startHoldTicking = () => 1234;
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function renderHoldCell('), source.indexOf('function isEntryDone(')), context);
+  context.renderHoldCell({ innerHTML: '' }, context.exercises[1], restored, holdSet, 0, () => {});
+  assert.equal(context.holdTimers.size, 0);
+  assert.equal(holdSet.holdElapsedSec, 10);
+  start();
+  assert.equal(holdSet.holdStartedAt, context.Date.now() - 10000);
+  assert.equal(holdSet.holdElapsedSec, undefined);
+  assert.equal(holdSet.resumeAfterPause, undefined);
+  assert.equal(context.holdTimers.get('native:hold:0').startedAt, holdSet.holdStartedAt);
+  assert.equal(context.activeSession.running, true);
+});
+
+test('removal updates rest continuation and removing every remaining exercise neither pauses nor finishes the workout', () => {
+  const { context, api, advance, calls } = liveRemovalController();
+  const restEnd = context.restTimer.endAt;
+  context.activeSession.restCueExerciseId = 'native:chest';
+  context.activeSession.rest.doneMessage = 'Chest';
+  api.changeWorkoutRemoval('native:chest');
+  assert.match(context.activeSession.rest.doneMessage, /Hold/);
+  assert.doesNotMatch(context.restDoneMessage, /Chest/);
+  assert.equal(context.restTimer.endAt, restEnd);
+  api.changeWorkoutRemoval('native:hold');
+  api.changeWorkoutRemoval('native:cardio');
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.activeSession.entries.length, 0);
+  assert.equal(context.activeSession.removedExercises.length, 3);
+  assert.equal(context.activeSession.removedExercises[0].entry.sets[0].completed, true);
+  assert.equal(context.holdTimers.size, 0);
+  assert.equal(context.restTimer.endAt, restEnd);
+  advance(5000);
+  assert.equal(context.stopwatch.getElapsed(), 125);
+  assert.equal(calls.includes('stoppedPlan'), false);
+  for (const id of ['native:cardio', 'native:chest', 'native:hold']) api.changeWorkoutRemoval(id, true);
+  assert.deepEqual(plain(context.activeSession.entries.map((entry) => entry.exerciseId)),
+    ['native:chest', 'native:hold', 'native:cardio']);
+  assert.equal(context.activeSession.running, true);
+  assert.equal(context.holdTimers.size, 0);
+});
+
+test('removing the last unfinished exercise cannot trigger automatic finish, including after reload; real completion still can', () => {
+  const fixture = autoCompletionController(), { context } = fixture;
+  context.activeSession.entries[0].sets[1].completed = true;
+  context.activeSession.entries[1].sets[0].completed = true;
+  delete context.activeSession.entries[1].sets[0].holdStartedAt;
+  context.voiceCountingState = null;
+  context.openTrainingDialog = () => {};
+  context.openExerciseGuide = () => {};
+  context.renderHomeTab = () => {};
+  const source = read('www/js/app.js');
+  vm.runInContext(source.slice(source.indexOf('function trainingAPI()'), source.indexOf('function persistRestTimerState(')), context);
+  context.trainingAPI().changeWorkoutRemoval('native:cardio');
+  assert.equal(context.activeSession.autoFinishBlockedByRemoval, true);
+  context.scheduleWorkoutAutoFinish();
+  fixture.flush();
+  assert.equal(context.activeSession.running, true);
+  assert.equal(fixture.records.length, 0);
+  const reloaded = autoCompletionController(plain(context.activeSession));
+  reloaded.context.scheduleWorkoutAutoFinish();
+  reloaded.flush();
+  assert.equal(reloaded.context.activeSession.running, true);
+  assert.equal(reloaded.records.length, 0);
+  context.activeSession.entries[0].sets[1].completed = false;
+  context.scheduleWorkoutAutoFinish();
+  assert.equal(context.activeSession.autoFinishBlockedByRemoval, undefined);
+  context.activeSession.entries[0].sets[1].completed = true;
+  context.scheduleWorkoutAutoFinish();
+  fixture.flush();
+  assert.equal(fixture.records.length, 1);
 });
 
 test('real saved-plan editor persistence merges latest settings, preserves three plans and logged work, and survives reload', () => {

@@ -495,7 +495,7 @@ export const EN = {
   'הסרת תרגיל מהאימון הנוכחי': 'Remove exercise from this workout',
   'השינוי חל רק על האימון הנוכחי. התוכנית הקבועה, התוכניות השמורות וההיסטוריה הקיימת אינן משתנות.': 'This changes only the current workout. Your permanent program, saved plans and existing history are unchanged.',
   'תרגיל שהוסר אינו נכלל ביעדים ובאחוזים. סטים שהושלמו יישמרו בהיסטוריה; שאר הנתונים נשמרים לביטול ההסרה במהלך האימון.': 'A removed exercise is excluded from targets and percentages. Completed sets will be kept in history; other entered data is retained for undo during this workout.',
-  'האימון יושהה לפני השינוי כדי לשמור ספירה וטיימרים. אפשר להמשיך אותו לאחר מכן.': 'The workout will pause before the change to preserve counting and timers. You can resume afterward.',
+  'שעון האימון והתרגילים האחרים ממשיכים. מדידה פעילה של התרגיל שהוסר נעצרת ונשמרת; שחזור אינו מפעיל אותה מחדש אוטומטית.': 'The workout clock and other exercises continue. The removed exercise’s active measurement is stopped and preserved; restoring it does not automatically restart it.',
   'אישור ביטול ההסרה': 'Confirm undo removal',
   'אישור הסרה מהאימון הנוכחי': 'Confirm removal from this workout',
   'התרגיל השתנה. פתח שוב את הפעולה.': 'The exercise changed. Reopen the action.',

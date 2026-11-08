@@ -835,7 +835,7 @@ function wireWorkoutControls() {
   }
   const focusEntry = (event) => {
     const card = event.target.closest('.exercise-card');
-    if (!card || event.target.closest('.btnShowPhoto, .workout-card-toggle, .workout-order-actions, .training-equipment-actions, .set-feedback')) return;
+    if (!card || event.target.closest('.btnShowPhoto, .btnExerciseGuide, .btnRemoveWorkoutExercise, .workout-card-toggle, .workout-order-actions, .training-equipment-actions, .set-feedback')) return;
     selectVoiceExercise(Number(card.dataset.entryIndex), false);
   };
   ['click', 'input', 'change'].forEach((type) => el('exerciseList').addEventListener(type, focusEntry, true));
@@ -848,7 +848,13 @@ function wireWorkoutControls() {
   el('btnStartWorkout').addEventListener('click', () => {
     primeSpeech();
     if (activeSession.paused) resumeWorkout();
-    else ensureWorkoutStarted();
+    else {
+      if (!activeSession.running) {
+        const current = trainingTools.currentWorkoutEntry(activeSession, exercises);
+        if (current) activeSession.currentExerciseId = current.exerciseId;
+      }
+      ensureWorkoutStarted();
+    }
   });
   el('btnPauseWorkout').addEventListener('click', pauseWorkout);
 
@@ -873,6 +879,7 @@ function wireWorkoutControls() {
 function ensureWorkoutStarted() {
   if (activeSession.paused) return;
   if (activeSession.running) return;
+  const openingEntry = trainingTools.currentWorkoutEntry(activeSession, exercises);
   activeSession.running = true;
   activeSession.startedAt = activeSession.startedAt || new Date().toISOString();
   persistActiveSession();
@@ -881,6 +888,8 @@ function ensureWorkoutStarted() {
   el('btnStartWorkout').classList.add('hidden');
   el('btnFinishWorkout').classList.remove('hidden');
   el('btnPauseWorkout').disabled = false;
+  if (openingEntry) expandedWorkoutExercises.add(openingEntry.exerciseId);
+  refreshWorkoutCardCompletion();
   const sessionID = activeSession.id;
   cancelWorkoutGreeting();
   if (settings.voiceAnnouncements) {
@@ -1334,9 +1343,46 @@ function trainingAPI() {
       applyProgram(next, settings);
     },
     changeWorkoutRemoval(exerciseId, restore = false) {
-      if (activeSession.running) pauseWorkout();
+      const previous = activeSession;
+      const current = trainingTools.currentWorkoutEntry(previous, exercises);
       const transform = restore ? trainingTools.restoreWorkoutExercise : trainingTools.removeWorkoutExercise;
-      this.saveSession(transform(activeSession, exerciseId));
+      const next = restore ? transform(previous, exerciseId) : transform(previous, exerciseId, Date.now());
+      if (!restore && next.entries.length && next.entries.every(isEntryDone)) next.autoFinishBlockedByRemoval = true;
+      const removedFocus = !restore && (current?.exerciseId === exerciseId
+        || previous.currentExerciseId === exerciseId || voiceCountingState?.entry.exerciseId === exerciseId);
+      if (removedFocus || restore && !current) {
+        const focus = trainingTools.currentWorkoutEntry(next, exercises);
+        if (focus) next.currentExerciseId = focus.exerciseId;
+      }
+      const continuation = next.restCueExerciseId ? workoutRestContinuation(next) : null;
+      if (continuation !== null && next.rest) next.rest = { ...next.rest, doneMessage: continuation };
+      if (continuation !== null && next.pausedRest) next.pausedRest = { ...next.pausedRest, doneMessage: continuation };
+      db.saveActiveSession(next);
+      activeSession = next;
+      if (continuation !== null) restDoneMessage = continuation;
+      if (!restore) {
+        for (const [key, timer] of holdTimers) {
+          if (key.slice(0, key.lastIndexOf(':')) !== exerciseId) continue;
+          clearInterval(timer.intervalId);
+          holdTimers.delete(key);
+        }
+        if (voiceCountingState?.entry.exerciseId === exerciseId) voiceCountingState = null;
+        for (const prefix of ['hold', 'cardio', 'rope']) cancelSpeech(`${prefix}:${exerciseId}:`);
+        expandedWorkoutExercises.delete(exerciseId);
+      }
+      if (!restore && lastVoiceAction?.entry?.exerciseId === exerciseId) lastVoiceAction = null;
+      if (!restore && lastVoiceReport?.entry?.exerciseId === exerciseId) lastVoiceReport = null;
+      if (!restore && lastAutoCountCompletion?.entry?.exerciseId === exerciseId) lastAutoCountCompletion = null;
+      for (const action of [lastVoiceAction, lastVoiceReport, lastAutoCountCompletion]) {
+        if (action?.session === previous) action.session = next;
+      }
+      if (voiceCountingState) voiceCountingState.entryIndex = next.entries.indexOf(voiceCountingState.entry);
+      if (removedFocus) activityReadyEnabled = false;
+      if (next.currentExerciseId && (removedFocus || restore && !current)) expandedWorkoutExercises.add(next.currentExerciseId);
+      updateVoiceBadgeForListeningState();
+      renderWorkoutTab();
+      syncNativeAnnouncementPlan();
+      syncWorkoutActivity();
       renderHomeTab();
     },
     saveEditedPlan(original, draft) {
@@ -1648,6 +1694,7 @@ function renderWorkoutTab() {
     workoutCardSessionId = activeSession.id;
     expandedWorkoutExercises.clear();
     completedWorkoutExercises.clear();
+    expandNextWorkoutCard(null);
   }
   syncCompletedWorkoutCards();
   el('workoutName').textContent = trainingTools.sessionWorkoutTitle(activeSession, i18n.text);
@@ -1697,6 +1744,7 @@ function renderWorkoutTab() {
       : exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) return;
     exerciseNumber += 1;
+    const workoutGroup = trainingTools.workoutExerciseGroup(ex);
 
     const card = document.createElement('div');
     card.className = 'exercise-card' + (isEntryDone(entry) ? ' done' : '');
@@ -1708,8 +1756,8 @@ function renderWorkoutTab() {
       <div style="display:flex;gap:8px;align-items:flex-start;">
         <span class="exercise-num">${exerciseNumber}</span>
         <div>
+          ${workoutGroup.detail ? `<div class="exercise-muscle-line exercise-region-line">${escapeHtml(workoutGroup.detail)}</div>` : ''}
           <div class="exercise-name" data-no-translate data-exercise-name="${escapeAttr(ex.name)}">${escapeHtml(i18n.exerciseName(ex.name))}</div>
-          <div class="exercise-muscle-line">${escapeHtml(ex.category)}</div>
           <div class="exercise-meta">${ex.inputType === 'hold' ? `החזקה: ${ex.holdSeconds || 15} שניות` : ''}${ex.inputType === 'hold' && ex.notes ? ' &middot; ' : ''}<span data-no-translate data-exercise-notes="${escapeAttr(ex.notes || '')}">${escapeHtml(i18n.exerciseNotes(ex.notes || ''))}</span></div>
           ${ex.superset ? `<p class="field-hint"><strong>${escapeHtml(i18n.text(ex.superset.name))}</strong><br>${i18n.text('חלק')} ${ex.superset.order + 1} / 2 · ${i18n.text('חזרות')}: ${escapeHtml(String(entry.targetReps || ex.defaultReps))}<br>${i18n.text(activeSession.entries.filter((item) => item.exerciseSnapshot?.superset?.id === ex.superset.id).length === 2
             ? 'משקל נפרד לכל תרגיל. מנוחה אחרי שני החלקים; אפשר לנוח לפי הצורך.'
@@ -2023,7 +2071,7 @@ function openWorkoutRemovalDialog(exerciseId, restore = false) {
     <p data-no-translate>${escapeHtml(i18n.exerciseName(entry.exerciseName))}</p>
     <p>השינוי חל רק על האימון הנוכחי. התוכנית הקבועה, התוכניות השמורות וההיסטוריה הקיימת אינן משתנות.</p>
     <p>תרגיל שהוסר אינו נכלל ביעדים ובאחוזים. סטים שהושלמו יישמרו בהיסטוריה; שאר הנתונים נשמרים לביטול ההסרה במהלך האימון.</p>
-    ${activeSession.running ? '<p>האימון יושהה לפני השינוי כדי לשמור ספירה וטיימרים. אפשר להמשיך אותו לאחר מכן.</p>' : ''}
+    <p>שעון האימון והתרגילים האחרים ממשיכים. מדידה פעילה של התרגיל שהוסר נעצרת ונשמרת; שחזור אינו מפעיל אותה מחדש אוטומטית.</p>
     <button class="btn btn-primary btnConfirmWorkoutRemoval">${restore ? 'אישור ביטול ההסרה' : 'אישור הסרה מהאימון הנוכחי'}</button>`);
   qs('.btnConfirmWorkoutRemoval', dialog).addEventListener('click', () => {
     try {
@@ -2120,6 +2168,10 @@ function cardioCompletionMessage(entry) {
 
 function scheduleWorkoutAutoFinish() {
   const session = activeSession;
+  if (session.autoFinishBlockedByRemoval) {
+    if (session.entries.some((entry) => !isEntryDone(entry))) delete session.autoFinishBlockedByRemoval;
+    else return;
+  }
   const complete = () => (session.running || session.paused) && session.entries.length > 0
     && session.entries.every(isEntryDone) && !session.entries.some((entry) => entry.completionFeedbackPending);
   if (!complete() || pendingWorkoutAutoFinish === session || finishingWorkout) return;
@@ -2485,7 +2537,9 @@ function renderHoldCell(td, ex, entry, set, idx, onAutoComplete) {
       ensureWorkoutStarted();
       restTimer.stop();
       el('restOverlay').classList.add('hidden');
-      const startedAt = Date.now();
+      const startedAt = Date.now() - (set.holdElapsedSec || 0) * 1000;
+      delete set.holdElapsedSec;
+      delete set.resumeAfterPause;
       const state = { intervalId: null, startedAt, announced: false };
       state.intervalId = startHoldTicking(display, state, target, set, key);
       holdTimers.set(key, state);
@@ -4914,7 +4968,7 @@ function exerciseLibraryCount(count) {
 
 function exerciseLibraryGroup(ex) {
   if (ex.inputType === 'cardio' || ex.id === 'warmup' || ex.id === 'cooldown') return 'warmup';
-  const category = String(library.exerciseBrowseInfo(ex)?.muscles[0] || ex.category || '').trim();
+  const category = trainingTools.workoutExerciseGroup(ex).category || '';
   if (category.startsWith('רגליים') || ['ישבן', 'שוקיים'].includes(category)) return 'legs';
   if (category.startsWith('כתפיים')) return 'shoulders';
   if (category.startsWith('גב')) return 'back';

@@ -181,10 +181,16 @@ export async function bgStartKeepAlive() {
   }
 }
 
+export function announcementSpeechText(text, language = 'he-IL') {
+  if (!language.startsWith('he')) return text;
+  return text.replace(/(^|[^\p{L}\p{M}])(ל?)בטן(?=$|[^\p{L}\p{M}])/gu,
+    (_, boundary, prefix) => `${boundary}${prefix ? 'לַ' : ''}בֵּטֶן`);
+}
+
 export async function announce(text, announcementID, language = 'he-IL') {
   const announcer = plugin('BackgroundAnnouncer');
   if (!announcer) throw new Error(unavailableReason('BackgroundAnnouncer'));
-  await announcer.speakNow({ text, announcementID, language });
+  await announcer.speakNow({ text: announcementSpeechText(text, language), announcementID, language });
 }
 
 export async function beep() {
@@ -214,7 +220,9 @@ export async function bgStopKeepAlive() {
 export async function bgScheduleAnnouncements(items) {
   const B = plugin('BackgroundAnnouncer');
   if (!B || !items) return false;
-  try { await B.scheduleAnnouncements({ items }); return true; } catch (e) {
+  try { await B.scheduleAnnouncements({ items: items.map((item) => ({
+    ...item, text: announcementSpeechText(item.text, item.language || 'he-IL'),
+  })) }); return true; } catch (e) {
     console.error('Background announcement scheduling failed', e);
     return false;
   }

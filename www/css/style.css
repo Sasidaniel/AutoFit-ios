@@ -454,6 +454,7 @@ html[dir="ltr"] .card-hint { text-align: left; }
 .exercise-card.is-collapsed .btnRemoveWorkoutExercise,
 .exercise-card.is-collapsed .btnExerciseGuide,
 .exercise-card.is-collapsed .btnShowPhoto { display: none; }
+.exercise-card.is-collapsed .exercise-region-line { display: block; }
 .btnRemoveWorkoutExercise { min-height: 44px; color: var(--danger); }
 .workout-removed-exercises h3 { font-size: 16px; margin: 0 0 8px; }
 .workout-removed-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block: 10px; }

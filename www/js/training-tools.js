@@ -223,11 +223,26 @@ export function supportsPlanMuscles(muscles, exercise) {
     || exercise.superset?.id === 'leg-press-calves' && primary === 'שוקיים' && muscles.includes('רגליים');
 }
 
+export function workoutExerciseGroup(exercise) {
+  const parent = (value) => {
+    const name = String(value || '').trim();
+    if (/^(ישבן|שוקיים)(?:$|[\s/–—-])/u.test(name)) return 'רגליים';
+    if (/^(אמות|מפרקי כף יד)(?:$|[\s/–—-])/u.test(name)) return 'אמות';
+    if (name === 'טרפז') return name;
+    return name.match(/^(גב|חזה|רגליים|כתפיים|יד קדמית|יד אחורית|בטן)(?:$|[\s/–—-])/u)?.[1] || null;
+  };
+  const primary = exerciseGuide(exercise)?.muscles[0];
+  const category = parent(primary) || parent(exercise.category);
+  const authored = String(exercise.category || '').trim();
+  const detail = category && authored !== category && parent(authored) === category ? authored
+    : category && primary !== category && parent(primary) === category ? primary : '';
+  return { category, detail };
+}
+
 function workoutEntryGroup(entry, catalog) {
   const exercise = { name: entry.exerciseName, category: entry.category,
     ...catalog.find((item) => item.id === entry.exerciseId), ...entry.exerciseSnapshot };
-  const muscle = entry.type === 'cardio' ? null : exerciseGuide(exercise)?.muscles[0]
-    || [...PLAN_MUSCLES, 'גב תחתון', 'אמות', 'טרפז'].find((name) => name === exercise.category);
+  const muscle = entry.type === 'cardio' ? null : workoutExerciseGroup(exercise).category;
   const label = muscle || (entry.type === 'cardio'
     ? entry.exerciseId === 'warmup' ? 'חימום' : entry.exerciseId === 'cooldown' ? 'שחרור' : 'אירובי'
     : 'תרגילים נוספים');
@@ -429,21 +444,32 @@ export function entryHasActivity(entry) {
       || !entry.exerciseSnapshot && (set.weightKg !== '' || set.reps !== ''));
 }
 
-export function removeWorkoutExercise(session, exerciseId) {
-  if (session.running) throw new Error('Pause the workout before changing removed exercises');
-  const result = copy(session);
+export function removeWorkoutExercise(session, exerciseId, now = Date.now()) {
+  const result = { ...session, entries: [...session.entries], removedExercises: [...(session.removedExercises || [])] };
   const index = result.entries.findIndex((entry) => entry.exerciseId === exerciseId);
   if (index < 0 || result.removedExercises?.some((item) => item.entry.exerciseId === exerciseId)) {
     throw new Error('The workout exercise changed; reopen the action');
   }
-  const entry = result.entries[index];
-  if (entry.startedAt || entry.sets?.some((set) => set.holdStartedAt)) {
-    throw new Error('Pause the workout before changing removed exercises');
+  let entry = result.entries[index];
+  if (entry.type === 'cardio' && entry.startedAt && !entry.completed) {
+    entry = { ...entry, elapsedSec: Math.min(entry.durationSec,
+      (entry.elapsedSec || 0) + Math.max(0, (now - entry.startedAt) / 1000)), startedAt: null };
+    delete entry.resumeAfterPause;
   }
-  result.removedExercises ||= [];
+  if (entry.sets?.some((set) => set.holdStartedAt && !set.completed)) {
+    entry = { ...entry, sets: entry.sets.map((set) => {
+      if (!set.holdStartedAt || set.completed) return set;
+      const stopped = { ...set, holdElapsedSec: Math.max(0, (now - set.holdStartedAt) / 1000) };
+      delete stopped.holdStartedAt;
+      delete stopped.resumeAfterPause;
+      return stopped;
+    }) };
+  }
   const order = result.timeBudget?.order || result.removedExercises[0]?.order;
-  result.removedExercises.push({ entry, order: order?.includes(exerciseId) ? order : result.entries.map((item) => item.exerciseId) });
+  result.removedExercises.push({ entry, order: order?.includes(exerciseId) ? order
+    : Array.isArray(session.workoutOrder) ? [...session.workoutOrder] : result.entries.map((item) => item.exerciseId) });
   result.entries.splice(index, 1);
+  if (Array.isArray(result.workoutOrder)) result.workoutOrder = result.workoutOrder.filter((id) => id !== exerciseId);
   if (result.currentExerciseId === exerciseId) delete result.currentExerciseId;
   if (result.lastCompletedSet?.exerciseId === exerciseId) delete result.lastCompletedSet;
   if (result.pausedVoiceCount?.exerciseId === exerciseId) delete result.pausedVoiceCount;
@@ -453,8 +479,7 @@ export function removeWorkoutExercise(session, exerciseId) {
 }
 
 export function restoreWorkoutExercise(session, exerciseId) {
-  if (session.running) throw new Error('Pause the workout before changing removed exercises');
-  const result = copy(session);
+  const result = { ...session, entries: [...session.entries], removedExercises: [...(session.removedExercises || [])] };
   const removed = result.removedExercises?.find((item) => item.entry.exerciseId === exerciseId);
   if (!removed || result.entries.some((entry) => entry.exerciseId === exerciseId)) {
     throw new Error('The workout exercise changed; reopen the action');
@@ -465,7 +490,13 @@ export function restoreWorkoutExercise(session, exerciseId) {
   const index = next ? result.entries.findIndex((entry) => entry.exerciseId === next)
     : previous ? result.entries.findIndex((entry) => entry.exerciseId === previous) + 1 : Math.min(originalIndex, result.entries.length);
   result.entries.splice(index, 0, removed.entry);
-  if (result.workoutOrder) result.workoutOrder = result.entries.map((entry) => entry.exerciseId);
+  if (Array.isArray(result.workoutOrder)) {
+    const order = [...result.workoutOrder];
+    const after = next ? order.indexOf(next) : -1;
+    const before = previous ? order.indexOf(previous) : -1;
+    order.splice(after >= 0 ? after : before >= 0 ? before + 1 : Math.min(originalIndex, order.length), 0, exerciseId);
+    result.workoutOrder = order;
+  }
   result.removedExercises = result.removedExercises.filter((item) => item !== removed);
   if (!result.removedExercises.length) delete result.removedExercises;
   result.activityControlRevision = (result.activityControlRevision || 0) + 1;

@@ -1,5 +1,50 @@
 # AutoFit release notes
 
+## 1.0 (51) - workout follow-up; internal release authorized (2026-11-08)
+
+Fresh user approval on **2026-11-08**:
+**"לאחר שתסיים הכל. תשחרר גרסה."**
+One internal TestFlight release is authorized after completion and validation.
+Upload and Apple acceptance are pending. No main merge or external distribution.
+
+Open the current warmup on a fresh workout and Start, and open cooldown through
+the normal completion/optional-rating transition. Preserve manual collapse on
+ordinary refresh; a stale strength focus cannot replace warmup on global Start.
+Keep the existing cardio fields and Start/reset/complete controls.
+
+Share broad parent-category classification between workout sections, library
+browsing and current-workout addition. Back subregions share Back; chest,
+shoulder, leg and arm subregions similarly retain their broad parent. Display
+authored subregion detail above the exercise name, including collapsed cards.
+Do not rewrite canonical names, persisted anatomy, manual ordering, supersets,
+historical muscle-work metadata or recommendation comparisons.
+
+Removal no longer pauses the workout. Preserve unrelated clock/rest/hold/cardio
+timers, counting references and undo actions; stop and bank only the removed
+exercise's active measurement. Save before changing live runtime state, preserve
+completed sets for history, update rest continuation, and restore without an
+automatic timer restart. Explicit hold Start resumes banked elapsed time.
+Opening/canceling removal or an exercise guide does not select another exercise.
+Removing the last unfinished exercise must not trigger automatic finish,
+including after reload. Explicit Finish remains available, and normal completion
+after another unfinished activity still supports automatic finish.
+
+Prepare Hebrew speech-only belly pronunciation with Bet dagesh/tsere in a
+shared whole-word, idempotent helper for browser, immediate native and scheduled
+native speech. Do not alter visible/stored names, recognition vocabulary,
+English text or native music policy. Physical Apple voice pronunciation remains
+an iPhone listening check, not a claimed audible validation.
+Web cache: `autofit-v118`. These changes are not included in build 50.
+
+Real-browser checks cover fresh warmup/Start, lower-back insertion under the
+existing Back heading, live cancellation/removal, banked cardio restoration,
+explicit restart, cooldown expansion and manual-collapse preservation. All 11
+synthetic history records, permanent program and saved plans remain unchanged.
+Local validation: 784/784 JS regressions and all 23 web modules parsed.
+All 12 subregion layout cases passed: 320/375/430 CSS pixels, Hebrew RTL/English
+LTR and collapsed/expanded cards. Canonical detail survives English-to-Hebrew
+switches. The isolated browser's original five data stores were fully restored.
+
 ## 1.0 (50) - verified internal TestFlight release (2026-11-05)
 
 Fresh user approval on **2026-11-05**, observed at **13:47:19 UTC**:
