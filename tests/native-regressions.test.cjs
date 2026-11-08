@@ -4674,11 +4674,13 @@ test('release resolves Swift packages before archiving, reuses their checkout an
   const resolve = workflow.slice(workflow.indexOf('- name: Resolve Swift package dependencies'), workflow.indexOf('- name: Test speech utterance boundaries'));
   assert.match(resolve, /xcodebuild -resolvePackageDependencies/);
   assert.match(resolve, /-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages"/);
+  assert.match(resolve, /-disablePackageRepositoryCache/);
   assert.equal((resolve.match(/"\$\{RESOLVE\[@\]\}"/g) || []).length, 2);
   assert.match(resolve, /if ! "\$\{RESOLVE\[@\]\}"; then/);
   assert.doesNotMatch(resolve, /while|until|rm\s|altool|upload-app/);
   const archive = workflow.slice(workflow.indexOf('- name: Archive app'), workflow.indexOf('- name: Export .ipa'));
   assert.match(archive, /-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages"/);
+  assert.match(archive, /-disablePackageRepositoryCache/);
   assert.ok(workflow.indexOf('- name: Resolve Swift package dependencies') < workflow.indexOf('- name: Archive app'));
   assert.ok(workflow.indexOf('- name: Archive app') < workflow.indexOf('- name: Upload to TestFlight'));
 });

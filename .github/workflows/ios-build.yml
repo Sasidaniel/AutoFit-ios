@@ -42,9 +42,10 @@ jobs:
           RESOLVE=(xcodebuild -resolvePackageDependencies
             -project ios/App/App.xcodeproj
             -scheme App
+            -disablePackageRepositoryCache
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages")
           if ! "${RESOLVE[@]}"; then
-            echo "::warning::Swift package resolution failed; retrying once with the retained artifact cache."
+            echo "::warning::Swift package resolution failed; retrying once with retained job-local packages and shared caching disabled."
             sleep 5
             "${RESOLVE[@]}"
           fi
@@ -120,6 +121,7 @@ jobs:
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
+            -disablePackageRepositoryCache \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \

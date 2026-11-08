@@ -48,12 +48,16 @@ switches. The isolated browser's original five data stores were fully restored.
 Run 42464983441 attempts 1 and 2 passed the application checks but failed before
 archive/export/upload with SwiftPM exit 74: the Capacitor/Cordova binary artifact
 cache entry already existed. Neither attempt uploaded to Apple.
-Resolve dependencies explicitly before archiving, retry resolution at most once
-against the retained warm cache, and reuse the same job-local package checkout
-for archive. Resolution failure still stops the job; no caches are deleted and
-no upload operation is retried. The resolver Bash syntax and regression contract
-were validated locally. This mitigation follows the documented SwiftPM
-[binary artifact cache race](https://github.com/swiftlang/swift-package-manager/issues/10138).
+Run 42467049075 showed that a separate resolution and warm-cache retry alone
+still hit the same shared-cache failure before archive or upload.
+Resolve dependencies explicitly before archiving with shared dependency caching
+disabled (`-disablePackageRepositoryCache`), retry resolution at most once, and
+reuse the same job-local package checkout for archive with the same cache flag.
+Resolution failure still stops the job; no caches are deleted and no upload
+operation is retried. The resolver Bash syntax and regression contract were
+validated locally. SwiftPM's
+[Workspace configuration](https://github.com/swiftlang/swift-package-manager/blob/swift-6.3.2-RELEASE/Sources/Workspace/Workspace.swift)
+disables the binary artifact cache together with shared dependency caching.
 
 ## 1.0 (50) - verified internal TestFlight release (2026-11-05)
 
