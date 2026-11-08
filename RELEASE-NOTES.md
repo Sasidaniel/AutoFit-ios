@@ -1,11 +1,22 @@
 # AutoFit release notes
 
-## 1.0 (51) - workout follow-up; internal release authorized (2026-11-08)
+## 1.0 (51) - verified internal TestFlight release (2026-11-08)
 
 Fresh user approval on **2026-11-08**:
 **"לאחר שתסיים הכל. תשחרר גרסה."**
-One internal TestFlight release is authorized after completion and validation.
-Upload and Apple acceptance are pending. No main merge or external distribution.
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-08 09:55:51 UTC.**
+Uploaded once, with upload success logged at **09:52:47 UTC**, from source
+`22e6ff04a59e2fbb8966c67b28e080c764509421`.
+Apple build ID: `1c2776bf-25c7-4f00-88af-cf65e2b9105f`.
+[Release run 42468044408](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42468044408)
+passed 788 JS regressions, all four Swift suites, both native-to-JavaScript
+streaming contracts, all 144 real SwiftUI layouts, signed app/widget archive
+and IPA export. Maximum Lock Screen height: 157/160; island body: 129/138.
+Four workflow dispatches and one rerun were needed for dependency-download
+recovery; all earlier attempts stopped before upload. Only one binary was
+uploaded. External state remains READY_FOR_BETA_SUBMISSION; no external
+submission or main merge. This approval is consumed; a subsequent release
+requires fresh approval.
 
 Open the current warmup on a fresh workout and Start, and open cooldown through
 the normal completion/optional-rating transition. Preserve manual collapse on
