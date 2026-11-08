@@ -1,10 +1,23 @@
 # AutoFit release notes
 
-## 1.0 (52) - initial workout collapse; internal release authorized (2026-11-08)
+## 1.0 (52) - verified internal TestFlight release (2026-11-08)
 
 Fresh user approval: **"תעלה גרסה"**.
-One internal TestFlight upload is authorized. Apple availability is pending;
-no main merge or external distribution. Local validation: 789 JS regressions.
+**Apple confirmed VALID / IN_BETA_TESTING at 2026-11-08 10:39:05 UTC.**
+Uploaded once, with upload success logged at **10:35:40 UTC**, from source
+`93bce49bf3f5aed3d9daf023d3ff31673e9f9035`.
+Apple build ID: `8848fbbb-477b-4fc0-b40a-94a5b61920f2`.
+[Build/upload run 42470815613](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42470815613)
+passed 789 JS regressions, all four Swift suites, both native-to-JavaScript
+streaming contracts, all 144 real SwiftUI layouts, signed archive, IPA export
+and upload. Maximum Lock Screen height: 157/160; island body: 129/138.
+The run subsequently failed during Apple verification (`fetch failed`) and
+diagnostic artifact upload (`ENOTFOUND`).
+[Verification-only run 42472312181](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42472312181)
+succeeded on a fresh runner and confirmed the existing uploaded build; it did
+not rebuild or upload a replacement. External state is READY_FOR_BETA_SUBMISSION;
+no external submission or main merge. This approval is consumed; another release
+requires fresh approval.
 
 Entering the workout tab before any activity starts keeps every exercise
 collapsed, including warmup and cooldown. Automatic card expansion now uses
