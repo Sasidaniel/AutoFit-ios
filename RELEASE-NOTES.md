@@ -40,7 +40,7 @@ Real-browser checks cover fresh warmup/Start, lower-back insertion under the
 existing Back heading, live cancellation/removal, banked cardio restoration,
 explicit restart, cooldown expansion and manual-collapse preservation. All 11
 synthetic history records, permanent program and saved plans remain unchanged.
-Local validation: 785/785 JS regressions and all 23 web modules parsed.
+Local validation: 788/788 JS regressions and all 23 web modules parsed.
 All 12 subregion layout cases passed: 320/375/430 CSS pixels, Hebrew RTL/English
 LTR and collapsed/expanded cards. Canonical detail survives English-to-Hebrew
 switches. The isolated browser's original five data stores were fully restored.
@@ -50,14 +50,18 @@ archive/export/upload with SwiftPM exit 74: the Capacitor/Cordova binary artifac
 cache entry already existed. Neither attempt uploaded to Apple.
 Run 42467049075 showed that a separate resolution and warm-cache retry alone
 still hit the same shared-cache failure before archive or upload.
-Resolve dependencies explicitly before archiving with shared dependency caching
-disabled (`-disablePackageRepositoryCache`), retry resolution at most once, and
-reuse the same job-local package checkout for archive with the same cache flag.
-Resolution failure still stops the job; no caches are deleted and no upload
-operation is retried. The resolver Bash syntax and regression contract were
-validated locally. SwiftPM's
-[Workspace configuration](https://github.com/swiftlang/swift-package-manager/blob/swift-6.3.2-RELEASE/Sources/Workspace/Workspace.swift)
-disables the binary artifact cache together with shared dependency caching.
+Run 42467377966 also failed before archive/upload with the shared cache disabled;
+the same error then named the job-local artifact path. The official assets were
+successfully downloaded through GitHub CLI and their SHA-256 hashes matched
+upstream release metadata.
+Prime a private SwiftPM artifact cache with those exact versioned official bytes.
+Verify both release version/URLs and both SHA-256 digests before writing either
+artifact; reject conflicting existing cache data. Use `-packageCachePath` and the
+same job-local checkout for resolution and archive. SwiftPM still verifies the
+pinned dependency manifest's own checksums. No package versions or upstream
+source are changed, and no caches are deleted. Resolution has at most one retry;
+upload has no automatic retry. Both Bash steps, failure/idempotency contracts
+and priming of the actual 8.5.3 binaries were validated locally.
 
 ## 1.0 (50) - verified internal TestFlight release (2026-11-05)
 

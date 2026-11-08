@@ -36,16 +36,33 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
+      - name: Prime verified Capacitor binary cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          CAPACITOR_VERSION="$(node -p "require('./node_modules/@capacitor/ios/package.json').version")"
+          DOWNLOAD_DIR="$RUNNER_TEMP/capacitor-binaries"
+          mkdir -p "$DOWNLOAD_DIR"
+          gh api "repos/ionic-team/capacitor-swift-pm/releases/tags/$CAPACITOR_VERSION" \
+            --jq '{tag_name,assets:[.assets[]|{name,browser_download_url,digest}]}' \
+            > "$DOWNLOAD_DIR/release.json"
+          gh release download "$CAPACITOR_VERSION" --repo ionic-team/capacitor-swift-pm \
+            --pattern Capacitor.xcframework.zip --pattern Cordova.xcframework.zip \
+            --dir "$DOWNLOAD_DIR"
+          node .github/scripts/prime-capacitor-cache.cjs "$CAPACITOR_VERSION" \
+            "$DOWNLOAD_DIR" "$RUNNER_TEMP/swift-package-cache/artifacts"
+
       - name: Resolve Swift package dependencies
         run: |
           set -e
           RESOLVE=(xcodebuild -resolvePackageDependencies
             -project ios/App/App.xcodeproj
             -scheme App
-            -disablePackageRepositoryCache
+            -packageCachePath "$RUNNER_TEMP/swift-package-cache"
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages")
           if ! "${RESOLVE[@]}"; then
-            echo "::warning::Swift package resolution failed; retrying once with retained job-local packages and shared caching disabled."
+            echo "::warning::Swift package resolution failed; retrying once with verified job-local artifacts."
             sleep 5
             "${RESOLVE[@]}"
           fi
@@ -121,7 +138,7 @@ jobs:
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
-            -disablePackageRepositoryCache \
+            -packageCachePath "$RUNNER_TEMP/swift-package-cache" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \

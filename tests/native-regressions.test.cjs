@@ -4669,18 +4669,85 @@ test('starting opens warmup and completion opens cooldown using normal card tran
   assert.equal(context.expandedWorkoutExercises.has('cooldown'), false, 'A later render must honor explicit minimization');
 });
 
-test('release resolves Swift packages before archiving, reuses their checkout and bounds cache-warming retries before upload', () => {
+function capacitorCacheFixture() {
+  const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'autofit-capacitor-cache-'));
+  const download = path.join(root, 'download'), cache = path.join(root, 'cache', 'artifacts');
+  fs.mkdirSync(download);
+  const release = { tag_name: '8.5.3', assets: ['Capacitor', 'Cordova'].map((name) => {
+    const filename = `${name}.xcframework.zip`, bytes = Buffer.from(`fixture:${name}`);
+    fs.writeFileSync(path.join(download, filename), bytes);
+    return { name: filename, browser_download_url: `https://github.com/ionic-team/capacitor-swift-pm/releases/download/8.5.3/${filename}`,
+      digest: `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}` };
+  }) };
+  const saveMetadata = () => fs.writeFileSync(path.join(download, 'release.json'), JSON.stringify(release));
+  saveMetadata();
+  return { fs, path, root, download, cache, release, saveMetadata,
+    cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+}
+
+test('release primes exact SwiftPM cache keys from verified official binary bytes and is idempotent', () => {
+  const { primeCapacitorCache } = require('../.github/scripts/prime-capacitor-cache.cjs');
+  const fixture = capacitorCacheFixture();
+  try {
+    assert.deepEqual(primeCapacitorCache('8.5.3', fixture.download, fixture.cache), ['Capacitor', 'Cordova']);
+    const prefix = 'https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_5_3_';
+    assert.deepEqual(fixture.fs.readdirSync(fixture.cache).sort(),
+      [`${prefix}Capacitor_xcframework_zip`, `${prefix}Cordova_xcframework_zip`]);
+    for (const name of ['Capacitor', 'Cordova']) {
+      assert.deepEqual(fixture.fs.readFileSync(fixture.path.join(fixture.cache, `${prefix}${name}_xcframework_zip`)),
+        fixture.fs.readFileSync(fixture.path.join(fixture.download, `${name}.xcframework.zip`)));
+    }
+    assert.deepEqual(primeCapacitorCache('8.5.3', fixture.download, fixture.cache), ['Capacitor', 'Cordova']);
+  } finally { fixture.cleanup(); }
+});
+
+test('release rejects tampered binaries, missing checksums, duplicate assets, wrong URLs and wrong versions before priming anything', () => {
+  const { primeCapacitorCache } = require('../.github/scripts/prime-capacitor-cache.cjs');
+  for (const failure of ['bytes', 'checksum', 'duplicate', 'url', 'version']) {
+    const fixture = capacitorCacheFixture();
+    try {
+      if (failure === 'bytes') fixture.fs.appendFileSync(fixture.path.join(fixture.download, 'Cordova.xcframework.zip'), 'tampered');
+      if (failure === 'checksum') delete fixture.release.assets[1].digest;
+      if (failure === 'duplicate') fixture.release.assets.push(fixture.release.assets[0]);
+      if (failure === 'url') fixture.release.assets[0].browser_download_url = 'https://example.invalid/binary.zip';
+      if (failure === 'version') fixture.release.tag_name = '8.5.4';
+      fixture.saveMetadata();
+      assert.throws(() => primeCapacitorCache('8.5.3', fixture.download, fixture.cache), /checksum|integrity|version/);
+      assert.equal(fixture.fs.existsSync(fixture.cache), false);
+    } finally { fixture.cleanup(); }
+  }
+});
+
+test('release rejects a conflicting existing artifact without overwriting it or copying another binary', () => {
+  const { primeCapacitorCache } = require('../.github/scripts/prime-capacitor-cache.cjs');
+  const fixture = capacitorCacheFixture();
+  try {
+    fixture.fs.mkdirSync(fixture.cache, { recursive: true });
+    const filename = 'https___github_com_ionic_team_capacitor_swift_pm_releases_download_8_5_3_Capacitor_xcframework_zip';
+    fixture.fs.writeFileSync(fixture.path.join(fixture.cache, filename), 'different');
+    assert.throws(() => primeCapacitorCache('8.5.3', fixture.download, fixture.cache), /existing cached artifact checksum mismatch/);
+    assert.equal(fixture.fs.readFileSync(fixture.path.join(fixture.cache, filename), 'utf8'), 'different');
+    assert.deepEqual(fixture.fs.readdirSync(fixture.cache), [filename]);
+  } finally { fixture.cleanup(); }
+});
+
+test('release resolves Swift packages before archiving, reuses their checkout and bounds job-local retries before upload', () => {
   const workflow = read('.github/workflows/ios-build.yml');
   const resolve = workflow.slice(workflow.indexOf('- name: Resolve Swift package dependencies'), workflow.indexOf('- name: Test speech utterance boundaries'));
   assert.match(resolve, /xcodebuild -resolvePackageDependencies/);
   assert.match(resolve, /-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages"/);
-  assert.match(resolve, /-disablePackageRepositoryCache/);
+  assert.match(resolve, /-packageCachePath "\$RUNNER_TEMP\/swift-package-cache"/);
   assert.equal((resolve.match(/"\$\{RESOLVE\[@\]\}"/g) || []).length, 2);
   assert.match(resolve, /if ! "\$\{RESOLVE\[@\]\}"; then/);
   assert.doesNotMatch(resolve, /while|until|rm\s|altool|upload-app/);
   const archive = workflow.slice(workflow.indexOf('- name: Archive app'), workflow.indexOf('- name: Export .ipa'));
   assert.match(archive, /-clonedSourcePackagesDirPath "\$RUNNER_TEMP\/source-packages"/);
-  assert.match(archive, /-disablePackageRepositoryCache/);
+  assert.match(archive, /-packageCachePath "\$RUNNER_TEMP\/swift-package-cache"/);
+  const prime = workflow.slice(workflow.indexOf('- name: Prime verified Capacitor binary cache'), workflow.indexOf('- name: Resolve Swift package dependencies'));
+  assert.match(prime, /gh release download "\$CAPACITOR_VERSION"/);
+  assert.match(prime, /node .github\/scripts\/prime-capacitor-cache\.cjs/);
+  assert.match(prime, /\$RUNNER_TEMP\/swift-package-cache\/artifacts/);
   assert.ok(workflow.indexOf('- name: Resolve Swift package dependencies') < workflow.indexOf('- name: Archive app'));
   assert.ok(workflow.indexOf('- name: Archive app') < workflow.indexOf('- name: Upload to TestFlight'));
 });
