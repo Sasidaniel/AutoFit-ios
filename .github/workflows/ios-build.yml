@@ -36,6 +36,19 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
+      - name: Resolve Swift package dependencies
+        run: |
+          set -e
+          RESOLVE=(xcodebuild -resolvePackageDependencies
+            -project ios/App/App.xcodeproj
+            -scheme App
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages")
+          if ! "${RESOLVE[@]}"; then
+            echo "::warning::Swift package resolution failed; retrying once with the retained artifact cache."
+            sleep 5
+            "${RESOLVE[@]}"
+          fi
+
       - name: Test speech utterance boundaries
         run: |
           swiftc ios/App/App/SpeechUtteranceBuffer.swift tests/SpeechUtteranceBufferTests.swift -o "$RUNNER_TEMP/speech-tests"
@@ -107,6 +120,7 @@ jobs:
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/source-packages" \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -destination "generic/platform=iOS" \

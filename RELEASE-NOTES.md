@@ -40,10 +40,20 @@ Real-browser checks cover fresh warmup/Start, lower-back insertion under the
 existing Back heading, live cancellation/removal, banked cardio restoration,
 explicit restart, cooldown expansion and manual-collapse preservation. All 11
 synthetic history records, permanent program and saved plans remain unchanged.
-Local validation: 784/784 JS regressions and all 23 web modules parsed.
+Local validation: 785/785 JS regressions and all 23 web modules parsed.
 All 12 subregion layout cases passed: 320/375/430 CSS pixels, Hebrew RTL/English
 LTR and collapsed/expanded cards. Canonical detail survives English-to-Hebrew
 switches. The isolated browser's original five data stores were fully restored.
+
+Run 42464983441 attempts 1 and 2 passed the application checks but failed before
+archive/export/upload with SwiftPM exit 74: the Capacitor/Cordova binary artifact
+cache entry already existed. Neither attempt uploaded to Apple.
+Resolve dependencies explicitly before archiving, retry resolution at most once
+against the retained warm cache, and reuse the same job-local package checkout
+for archive. Resolution failure still stops the job; no caches are deleted and
+no upload operation is retried. The resolver Bash syntax and regression contract
+were validated locally. This mitigation follows the documented SwiftPM
+[binary artifact cache race](https://github.com/swiftlang/swift-package-manager/issues/10138).
 
 ## 1.0 (50) - verified internal TestFlight release (2026-11-05)
 
