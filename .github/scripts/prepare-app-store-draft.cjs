@@ -31,18 +31,17 @@ async function prepareDraft(listing, request) {
   });
   const infoRoute = `/v1/appInfos/${info.id}/appInfoLocalizations?limit=50`;
   const versionRoute = `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations?limit=50`;
-  const infoLocales = (await request('GET', infoRoute)).data;
-  const versionLocales = (await request('GET', versionRoute)).data;
   for (const [language, locale] of [['he', 'he'], ['en', 'en-US']]) {
     const copy = listing.locales[language];
     for (const spec of [
-      { type: 'appInfoLocalizations', records: infoLocales, attributes: { name: copy.name, subtitle: copy.subtitle },
+      { type: 'appInfoLocalizations', route: infoRoute, attributes: { name: copy.name, subtitle: copy.subtitle },
         parentType: 'appInfos', parentID: info.id, relationship: 'appInfo' },
-      { type: 'appStoreVersionLocalizations', records: versionLocales,
+      { type: 'appStoreVersionLocalizations', route: versionRoute,
         attributes: { description: copy.description, promotionalText: copy.promotionalText, keywords: copy.keywords },
         parentType: 'appStoreVersions', parentID: version.id, relationship: 'appStoreVersion' },
     ]) {
-      const existing = spec.records.filter((item) => item.attributes.locale === locale);
+      const currentLocales = (await request('GET', spec.route)).data;
+      const existing = currentLocales.filter((item) => item.attributes.locale === locale);
       if (existing.length > 1) throw new Error('Ambiguous existing localization');
       if (existing.length) {
         await request('PATCH', `/v1/${spec.type}/${existing[0].id}`, {

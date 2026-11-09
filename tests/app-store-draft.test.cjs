@@ -37,7 +37,11 @@ function fixture(options = {}) {
         }
         if (method === 'POST') {
           const item = { id: `${type}-new`, attributes: body.data.attributes };
-          records.push(item); return { data: item };
+          records.push(item);
+          if (options.autoCreateVersionLocale && type === 'appInfoLocalizations') {
+            versionLocales.push({ id: 'auto-version-en', attributes: { locale: item.attributes.locale } });
+          }
+          return { data: item };
         }
       }
     }
@@ -71,4 +75,12 @@ test('draft preparation refuses missing approval and noneditable versions before
 test('a rejected app name or unsuccessful readback remains an explicit failure', async () => {
   await assert.rejects(prepareDraft(approved, fixture({ rejectName: true }).request), /duplicate app name/);
   await assert.rejects(prepareDraft(approved, fixture({ wrongDescription: true }).request), /did not confirm/);
+});
+
+test('refreshes version localizations after Apple automatically creates the matching locale', async () => {
+  const f = fixture({ autoCreateVersionLocale: true });
+  const result = await prepareDraft(approved, f.request);
+  assert.equal(result.metadataVerified, true);
+  assert.equal(f.calls.filter((call) => call.method === 'POST' && call.route === '/v1/appStoreVersionLocalizations').length, 0);
+  assert.ok(f.calls.find((call) => call.method === 'PATCH' && call.route === '/v1/appStoreVersionLocalizations/auto-version-en'));
 });
