@@ -56,8 +56,14 @@ function specification(catalog, asset) {
     && item.dimensions.minHeight === asset.height && item.dimensions.maxHeight === asset.height
     && item.fileExtensions.includes('.png') && item.mimeTypes.includes('image/png')
     && item.maxFileSize >= asset.bytes.length);
-  if (group?.platform !== 'IOS' || !type.acceptsAssetCategories.includes('APP_SCREENSHOTS_AND_PREVIEWS')
-    || !limit || limit.maxCount < 8 || !spec) throw new Error(`Apple does not confirm the intended ${asset.family} screenshot specification`);
+  const platform = asset.family === 'iphone' ? 'IPHONE_APP_STORE' : 'IPAD_APP_STORE';
+  if (group?.platform !== platform || !type.acceptsAssetCategories.includes('APP_SCREENSHOTS_AND_PREVIEWS')
+    || !limit || limit.maxCount < 8 || !spec) {
+    throw new Error(`Apple does not confirm the intended ${asset.family} screenshot specification: ${JSON.stringify({
+      groupID, platform: group?.platform, expectedPlatform: platform, capacity: limit?.maxCount,
+      specificationMatched: !!spec, width: asset.width, height: asset.height,
+    })}`);
+  }
   return { groupID, specID: spec.specId };
 }
 

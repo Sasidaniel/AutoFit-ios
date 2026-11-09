@@ -11,7 +11,8 @@ const assets = ['he', 'en'].flatMap((language) => ['iphone', 'ipad'].flatMap((fa
 const catalog = {
   features: [{ featureId: 'APP_STORE_VERSIONS', placementPolicies: [{ placementType: 'APP_SCREENSHOT',
     groupLimits: [{ groupIds: Object.values(groups), maxCount: 10 }] }] }],
-  placementProfileGroups: Object.values(groups).map((placementProfileGroupId) => ({ placementProfileGroupId, platform: 'IOS' })),
+  placementProfileGroups: Object.entries(groups).map(([family, placementProfileGroupId]) => ({
+    placementProfileGroupId, platform: family === 'iphone' ? 'IPHONE_APP_STORE' : 'IPAD_APP_STORE' })),
   placementTypes: [{ placementTypeId: 'APP_SCREENSHOT', acceptsAssetCategories: ['APP_SCREENSHOTS_AND_PREVIEWS'],
     specMappings: Object.entries(groups).map(([family, placementGroupId]) => ({ placementGroupId, specs: [family] })) }],
   imageSpecs: ['iphone', 'ipad'].map((family) => {

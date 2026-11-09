@@ -36,6 +36,7 @@ test('readiness reports missing records honestly and never emits review contact 
     '/v1/apps/app/appStoreVersions?filter[platform]=IOS&limit=50': list([record('version', { versionString: '1.0', appStoreState: 'PREPARE_FOR_SUBMISSION', releaseType: 'MANUAL' })]),
     '/v1/appStoreVersions/version/appStoreVersionLocalizations?limit=50': list([record('locale', { locale: 'en-US' })]),
     '/v1/appStoreVersionLocalizations/locale/appScreenshotSets?limit=200': list([]),
+    '/v1/appStoreVersionLocalizations/locale/placements?filter[placementType]=APP_SCREENSHOT&limit=200': list([]),
     '/v1/appStoreVersions/version/appStoreReviewDetail': {
       data: record('review', { contactEmail: 'not-for-report@example.test', contactFirstName: 'Private', contactLastName: 'Contact', contactPhone: 'not-for-report-phone' }),
     },
@@ -53,7 +54,13 @@ test('readiness reports missing records honestly and never emits review contact 
   assert.equal(report.versions[0].locales[0].supportURL, null);
   assert.deepEqual(report.versions[0].locales[0].screenshots, []);
   assert.doesNotMatch(JSON.stringify(report), /not-for-report|"Private"|"Contact"/);
-  assert.equal(paths.length, 8);
+  assert.equal(paths.length, 9);
+  routes['/v1/appStoreVersionLocalizations/locale/placements?filter[placementType]=APP_SCREENSHOT&limit=200']
+    = list([record('placement', { placementGroup: 'IPAD_13_PROFILE', state: 'PARENT_PREPARE_FOR_SUBMISSION' })]);
+  const modern = await collectReadiness(async (route) => routes[route]);
+  assert.deepEqual(modern.versions[0].locales[0].screenshots, [{
+    source: 'asset-library', displayType: 'IPAD_13_PROFILE', count: 1, states: ['PARENT_PREPARE_FOR_SUBMISSION'],
+  }]);
 });
 
 test('API failure is not interpreted as an empty successful inspection', async () => {

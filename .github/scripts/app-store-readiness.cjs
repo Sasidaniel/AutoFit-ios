@@ -58,6 +58,12 @@ async function collectReadiness(read) {
           states: images.map((image) => image.attributes.assetDeliveryState?.state || 'unknown'),
         });
       }
+      const placements = await many(`/v1/appStoreVersionLocalizations/${encodeURIComponent(locale.id)}/placements?filter[placementType]=APP_SCREENSHOT&limit=200`);
+      for (const group of new Set(placements.map((item) => item.attributes.placementGroup))) {
+        const matching = placements.filter((item) => item.attributes.placementGroup === group);
+        screenshots.push({ source: 'asset-library', displayType: group, count: matching.length,
+          states: matching.map((item) => item.attributes.state || 'unknown') });
+      }
       const a = locale.attributes;
       localeInformation.push({
         id: locale.id, locale: a.locale, descriptionCharacters: [...(a.description || '')].length,
