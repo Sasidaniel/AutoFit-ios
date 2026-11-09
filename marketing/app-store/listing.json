@@ -9,18 +9,19 @@
     "readiness": "Required facts, policies and final native screenshots must be completed before submission"
   },
   "appleInspection": {
-    "checkedAt": "2026-11-09T09:38:06.580Z",
+    "checkedAt": "2026-11-09",
     "appID": "6820408299",
     "version": "1.0",
     "state": "PREPARE_FOR_SUBMISSION",
     "currentReleaseType": "MANUAL",
     "buildSelected": false,
-    "reviewContactComplete": false,
+    "reviewContactComplete": true,
+    "demoAccountRequired": false,
     "privacyPolicyURLProvided": false,
     "supportURLProvided": false,
     "screenshotsUploaded": false,
     "approvedListingUploaded": true,
-    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594889209"
+    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42596732165"
   },
   "appleDraftVerification": {
     "checkedAt": "2026-11-09T09:38:04.866Z",
@@ -129,6 +130,7 @@
     "publicSupportAndPrivacyEmail": "autofitrainer@gmail.com",
     "operatorLegalName": "ששי דניאל / Sasi Daniel",
     "operatorEntityType": "individual",
+    "minorLaunchDecision": "Owner chose to retain ages 12–17 and complete privacy/consent review before public launch; no adult-only restriction was authorized.",
     "requestedTerritoryScope": "all available App Store countries and regions",
     "automaticallyIncludeFutureTerritories": false,
     "ownerDeclaredDSATraderStatus": "TRADER",
@@ -141,13 +143,13 @@
     "ageRating": null,
     "territories": null,
     "privacyLabel": "Not finalized. Do not select Data Not Collected without reviewing optional contact submissions, Apple speech services and third-party handling.",
-    "reviewerNotes": "Proposed submission: version 1.0, existing build 52, pending owner approval and readiness checks. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
+    "reviewerNotes": "Proposed submission: version 1.0, final binary pending policy completion and readiness checks. Build 52 is the current TestFlight reference, not a confirmed final store candidate. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
     "blockers": [
       { "id": "native", "he": "צילומי מכשיר סופיים: התמונות כאן צולמו מממשק הווב האמיתי ב־Chrome, לא מבנייה 52 באייפון. יש להחליף בצילומי iPhone וגם iPad לפני הגשה; הפרויקט תומך בשניהם.", "en": "Final device captures: these images show the real web UI in Chrome, not build 52 on an iPhone. Replace with iPhone and iPad captures before submission; the project supports both." },
       { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
       { "id": "urls", "he": "נדרשים כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה, ופרטי קשר אמיתיים לבדיקת Apple. לא הומצאו כתובות או פרטים.", "en": "Live public privacy and support URLs and real Apple review contact details are needed. No URLs or contact details have been invented." },
       { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
-      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. המשתמש ביקש הפצה עולמית והצהיר Trader; אימות DSA ופרטי הקשר הציבוריים דורשים השלמה ישירות אצל Apple. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. The owner requested worldwide distribution and declared Trader status; DSA verification and public contact details must be completed directly with Apple. No ratings or reviews are fabricated." }
+      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. המשתמש ביקש הפצה עולמית ואישר ש-Apple כבר אישרה את אימות ה-Trader; אישור זה נמסר על ידו ולא נבדק ב-API. לא נדרשת חזרה על האימות. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. The owner requested worldwide distribution and confirmed that Apple approved Trader verification; this is owner-reported, not independently API-verified. Repeating verification is not requested. No ratings or reviews are fabricated." }
     ]
   },
   "sources": [

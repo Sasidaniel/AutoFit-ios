@@ -79,6 +79,12 @@ function render() {
   byId('descriptionLead').textContent = copy.description.split('\n\n')[0];
   byId('description').textContent = copy.description.split('\n\n').slice(1).join('\n\n');
   byId('reviewerNotes').textContent = listing.review.reviewerNotes;
+  for (const [kind, he, en] of [['support', 'טיוטת עמוד התמיכה', 'Support page draft'],
+    ['privacy', 'טיוטת מדיניות הפרטיות', 'Privacy notice draft'], ['terms', 'טיוטת תנאי השימוש', 'Terms draft']]) {
+    const link = byId(`${kind}Preview`);
+    link.textContent = language === 'he' ? he : en;
+    link.href = `/${kind}${language === 'he' ? '' : '-en'}.html`;
+  }
   const inspection = listing.appleInspection;
   byId('appleStatus').textContent = inspection
     ? language === 'he'

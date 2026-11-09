@@ -197,15 +197,41 @@ async function main() {
     const receipt = await page.eval(`JSON.parse(localStorage.getItem('autofit-store-creative-review'))`);
     if (receipt.submissionAuthorized !== false || receipt.status !== 'creative-only') throw new Error('Creative approval oversteps submission boundary');
     await page.eval(`localStorage.removeItem('autofit-store-creative-review')`);
-    const blockedPaths = ['/PROJECT-NOTES.md', '/.git/config', '/capture.cjs', '/app/../PROJECT-NOTES.md', '/app/service-worker.js'];
+    const supportChecks = [];
+    for (const language of ['he', 'en']) {
+      for (const width of [390, 1024]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 500 });
+        for (const kind of ['support', 'privacy', 'terms']) {
+          const route = `/${kind}${language === 'he' ? '' : '-en'}.html`;
+          await page.send('Page.navigate', { url: base + route });
+          await page.wait(`document.querySelector('main footer a[href^="mailto:"]') !== null`);
+          const check = await page.eval(`({
+            language:document.documentElement.lang,direction:document.documentElement.dir,
+            overflow:document.documentElement.scrollWidth>innerWidth,
+            contact:document.querySelector('footer a[href^="mailto:"]').getAttribute('href'),
+            draft:!!document.querySelector('.review-note'),
+            translated:!!document.querySelector('nav a[lang="${language === 'he' ? 'en' : 'he'}"]')
+          })`);
+          if (check.language !== language || check.direction !== (language === 'he' ? 'rtl' : 'ltr')
+            || check.overflow || !check.draft || !check.translated
+            || check.contact !== `mailto:${listing.review.publicSupportAndPrivacyEmail}`) {
+            throw new Error(`Support/policy review failure: ${route} ${width} ${JSON.stringify(check)}`);
+          }
+          supportChecks.push({ language, width, kind, horizontalOverflow: false, publicContact: true, draftExplicit: true });
+        }
+      }
+    }
+    const blockedPaths = ['/PROJECT-NOTES.md', '/.git/config', '/capture.cjs', '/support-site.cjs',
+      '/native-controls.js', '/native-store-control.json', '/native-store-ready', '/native-store-error',
+      '/app/../PROJECT-NOTES.md', '/app/service-worker.js'];
     for (const url of blockedPaths) {
       const response = await fetch(base + url);
       if (response.status < 400) throw new Error(`Local server exposed a nonpublic path: ${url}`);
     }
     if (page.errors.length) throw new Error(`Review errors: ${JSON.stringify(page.errors)}`);
-    const report = { checkedAt: new Date().toISOString(), checks, localApprovalOnly: true, nonpublicPathsBlocked: blockedPaths.length };
+    const report = { checkedAt: new Date().toISOString(), checks, supportChecks, localApprovalOnly: true, nonpublicPathsBlocked: blockedPaths.length };
     fs.writeFileSync(path.join(assets, 'browser-checks.json'), JSON.stringify(report, null, 2));
-    console.log(`Verified ${checks.length} localized responsive layouts, enlargement/download identity, language toggle and local-only approval`);
+    console.log(`Verified ${checks.length} storefront layouts, ${supportChecks.length} support/policy layouts, image identity, language toggle and local-only approval`);
   } finally {
     if (browser) { try { await browser.send('Browser.close'); } catch (error) { console.error(`Chrome close: ${error.message}`); } browser.socket.close(); }
     if (page) page.socket.close();

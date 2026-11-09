@@ -1,8 +1,8 @@
 // Public configuration only. Never put provider secrets or signing keys here.
 export const COMMERCIAL_CONFIG = Object.freeze({
   operatorDisplayName: 'ששי דניאל / Sasi Daniel',
-  operatorLegalName: '',
-  privacyEmail: '',
+  operatorLegalName: 'Sasi Daniel',
+  privacyEmail: 'autofitrainer@gmail.com',
   businessAddress: '',
   businessRegistrationNumber: '',
   termsApproved: false,

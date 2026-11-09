@@ -15,6 +15,12 @@ const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); }
   catch { res.writeHead(400); res.end(); return; }
+  if (/^\/(?:support|privacy|terms)(?:-en)?\.html$/.test(url)) {
+    const body = require('./support-site.cjs').createSupportPages({ allowDraft: true })[url.slice(1)];
+    res.writeHead(200, { 'Content-Type': mime['.html'], 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
+    if (req.method === 'HEAD') res.end(); else res.end(body);
+    return;
+  }
   if (nativeCapture && url === '/') {
     const command = JSON.parse(fs.readFileSync(path.join(stateDirectory, 'control.json'), 'utf8'));
     if (!['he', 'en'].includes(command.language)) throw new Error('Invalid native fixture language');

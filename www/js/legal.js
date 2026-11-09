@@ -1,6 +1,6 @@
 import { COMMERCIAL_CONFIG } from './commercial-config.js';
 
-export const POLICY_VERSION = 'commercial-draft-2';
+export const POLICY_VERSION = 'commercial-draft-3';
 export const PERSONAL_DATA_KEYS = Object.freeze([
   'ft_exercises_v1', 'ft_workouts_v1', 'ft_settings_v1', 'ft_active_session_v1', 'ft_profile_v1',
 ]);
@@ -15,8 +15,8 @@ const PRIVACY = [
       'The review flow is intended for ages 12–120. Ages 12–17 require a parent or legal guardian to declare approval of use and processing of optional data. The declaration and age group are stored locally; identity and guardianship are not verified and no parent name or identity document is collected. Permissions and sharing remain separate choices. Distribution to minors requires legal review of valid consent, children’s rights and each territory’s requirements.'),
   ]],
   [pair('מי מפעיל את האפליקציה', 'Who operates the app'), [
-    pair('AutoFit נוצרה על ידי ששי דניאל. שם הישות המשפטית, כתובת העסק וכתובת פרטיות ייעודית טרם אושרו לפרסום מסחרי. אפשר לפנות כעת דרך ״יצירת קשר״ באפליקציה. אין להציג טיוטה זו כמדיניות מסחרית מאושרת.',
-      'AutoFit was created by Sasi Daniel. The legal entity, business address and dedicated privacy contact have not yet been confirmed for a commercial launch. You can currently use Contact in the app. This draft must not be represented as an approved commercial policy.'),
+    pair('AutoFit מופעלת על ידי ששי דניאל / Sasi Daniel, כמפעיל פרטי ולא כחברה. כתובת התמיכה והפרטיות שאושרה לפרסום היא autofitrainer@gmail.com. אפשר לפנות גם דרך ״יצירת קשר״ באפליקציה. פרטי המפעיל והאימייל אינם הופכים טיוטה זו למדיניות סופית או לאישור משפטי.',
+      'AutoFit is operated by Sasi Daniel as an individual, not a company. The confirmed public support and privacy contact is autofitrainer@gmail.com. You can also use Contact in the app. Confirming the operator and email does not make this draft a final policy or legal approval.'),
   ]],
   [pair('איזה מידע נשמר ולמה', 'What is stored and why'), [
     pair('שם או כינוי, גיל, גובה, משקל, היסטוריית משקל ותמונה נשמרים אם בוחרים להזין אותם ואינם חובה. שדה המין נדרש בהגדרה הראשונית ובשמירת הפרטים; אפשר לבחור כללי, זכר או נקבה. הבחירה משמשת להתאמת המלל בלבד, לא לשינוי תוכניות או יעדי אימון. תוכניות, בחירת ציוד, תרגילים אישיים, סטים, עומסים, חזרות, החזקות, הערות, דירוגי קושי, משך אימון, יעדים והיסטוריה משמשים לניהול האימון ולהצגת תיעוד והמלצות מקומיות. נתוני כושר ומדדים עשויים להיות מידע רגיש.',

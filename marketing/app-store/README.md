@@ -3,7 +3,9 @@
 Local creative proposal requested on 2026-11-09. **Not submitted or published.**
 The reference binary is **1.0 (52)**, source
 `93bce49bf3f5aed3d9daf023d3ff31673e9f9035`.
-Application runtime code, pricing, permissions and billing were not changed.
+During the approved copy upload, application runtime code, pricing, permissions
+and billing were not changed. Subsequent local policy-contact edits are recorded
+below and have not been uploaded in a new app binary.
 The approved store name and bilingual copy are now saved in Apple's draft;
 manual release is configured, with no review submission or public distribution.
 
@@ -74,6 +76,57 @@ The CI-only loopback transport override and control script are not shipped in
 the app or available from the default review server.
 Successful capture and provenance must be inspected before treating those files
 as final store assets; the browser images remain review-only in the meantime.
+
+## Support and policy page review
+
+The local review server now provides `/support.html`, `/privacy.html` and
+`/terms.html`, with `-en.html` counterparts. These are working bilingual review
+pages, not claimed public URLs. Policies render from the actual in-app legal
+source, not a divergent marketing policy. Confirmed public operator/contact
+details were added locally in `commercial-draft-3`; old consent is not silently
+upgraded, no records are erased, and billing remains disabled.
+Those source edits are **not included in TestFlight build 52**.
+
+To export the review pages:
+
+```
+node marketing/app-store/support-site.cjs --review-only --output <review-directory>
+```
+
+Omitting `--review-only` refuses publication while the actual policies are drafts
+or unapproved. Public hosting, approved final policies and a matching final app
+binary are still prerequisites for submission.
+
+## Confirmed review contact and minor-launch decision
+
+The owner saved Apple's private review contact directly in App Store Connect.
+Read-only inspection
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42596732165>
+verified `reviewContact.complete: true` and `demoAccountRequired: false`.
+No private contact fields are copied into this repository.
+
+The owner explicitly chose to retain ages **12–17** and complete the relevant
+privacy/consent review before launch, rather than restricting the release to
+adults. This does not constitute a completed compliance review. The current
+guardian declaration is local and is not identity or guardianship verification.
+Voice recognition requests on-device processing when the recognizer supports it,
+but can otherwise use Apple services. The optional contact form transmits entered
+contact information and message content to Formspree without a separate minor
+processing path.
+
+Apple guideline 5.1.4 distinguishes a parental gate from legally sufficient
+consent. European Commission guidance describes country-dependent parental
+consent thresholds from 13 to 16 and reasonable verification efforts. The FTC
+COPPA FAQ flags its April 2025 rule amendment; neither a checkbox nor a generic
+audio-command exception should be treated as blanket clearance for age 12.
+These are launch-review questions, not a legal certification. Final policy and
+parent/guardian handling must be resolved before claiming public-launch readiness.
+
+References:
+
+- <https://developer.apple.com/app-store/review/guidelines/#kids>
+- <https://commission.europa.eu/law/law-topic/data-protection/information-business-and-organisations/legal-grounds-processing-data/are-there-any-specific-safeguards-data-about-children_en>
+- <https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions>
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 

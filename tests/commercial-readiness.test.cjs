@@ -397,6 +397,23 @@ test('commercial launch remains blocked even with filled configuration while aut
   assert.equal(config.commercialReadiness().ready, false);
 });
 
+test('confirmed public operator and contact are available without inventing policy approval or retaining old draft consent', () => {
+  assert.equal(config.COMMERCIAL_CONFIG.operatorLegalName, 'Sasi Daniel');
+  assert.equal(config.COMMERCIAL_CONFIG.privacyEmail, 'autofitrainer@gmail.com');
+  assert.equal(config.COMMERCIAL_CONFIG.termsApproved, false);
+  assert.equal(config.COMMERCIAL_CONFIG.privacyApproved, false);
+  assert.equal(config.COMMERCIAL_CONFIG.commerceEnabled, false);
+  for (const language of ['he', 'en']) {
+    assert.match(legal.legalDocumentHTML('privacy', language), /autofitrainer@gmail\.com/);
+  }
+  const previous = confirmed();
+  previous.legalConsent.version = 'commercial-draft-2';
+  assert.equal(legal.hasCurrentConsent(previous), false);
+  const next = legal.acceptLegalConsent(previous, choices, 'en');
+  assert.equal(legal.hasCurrentConsent(next), true);
+  assert.equal(previous.legalConsent.version, 'commercial-draft-2');
+});
+
 test('consent is explicit, versioned, bilingual metadata and never inferred from an existing profile', () => {
   const before = { onboardingComplete: true, profile: { name: 'Existing' }, legalConsentHistory: [{ version: 'old' }] };
   assert.equal(legal.hasCurrentConsent(before), false);

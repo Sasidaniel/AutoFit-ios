@@ -102,7 +102,7 @@ jobs:
             ${{ runner.temp }}/widget-layout.log
           retention-days: 3
   store-screenshots:
-    if: github.event_name == 'workflow_dispatch' && inputs.store_screenshots
+    if: github.event_name == 'workflow_dispatch' && inputs.store_screenshots && !inputs.widget_only
     runs-on: macos-15-intel
     timeout-minutes: 30
     steps:
