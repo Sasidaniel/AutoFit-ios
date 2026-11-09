@@ -1,5 +1,10 @@
 # AutoFit App Store approval package
 
+**For the next submission or Apple's response, read
+[APP-STORE-RUNBOOK.md](APP-STORE-RUNBOOK.md) first.** It records the proven path,
+existing files and receipts, known failure fixes, public-site dependencies and
+approval boundaries. Do not restart the historical attempts below.
+
 **Submitted successfully on 2026-11-09 at 14:25:55.992Z; waiting for Apple review.**
 Fresh independent reads verified both the version and the reused review submission
 as `WAITING_FOR_REVIEW`. **Not approved or publicly released.**
