@@ -107,6 +107,13 @@
     }
   },
   "review": {
+    "publicSupportAndPrivacyEmail": "autofitrainer@gmail.com",
+    "operatorLegalName": "ששי דניאל / Sasi Daniel",
+    "operatorEntityType": "individual",
+    "requestedTerritoryScope": "all available App Store countries and regions",
+    "automaticallyIncludeFutureTerritories": false,
+    "ownerDeclaredDSATraderStatus": "TRADER",
+    "appleDSAVerificationConfirmed": false,
     "supportURL": null,
     "privacyURL": null,
     "marketingURL": null,
@@ -120,7 +127,7 @@
       { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
       { "id": "urls", "he": "נדרשים כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה, ופרטי קשר אמיתיים לבדיקת Apple. לא הומצאו כתובות או פרטים.", "en": "Live public privacy and support URLs and real Apple review contact details are needed. No URLs or contact details have been invented." },
       { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
-      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. No ratings or reviews are fabricated." }
+      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. המשתמש ביקש הפצה עולמית והצהיר Trader; אימות DSA ופרטי הקשר הציבוריים דורשים השלמה ישירות אצל Apple. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. The owner requested worldwide distribution and declared Trader status; DSA verification and public contact details must be completed directly with Apple. No ratings or reviews are fabricated." }
     ]
   },
   "sources": [

@@ -26,6 +26,19 @@ Apple record. Local metadata and creative approval are not an Apple receipt.
 Submission is blocked pending real owner-provided contact/policy facts,
 completed in-app policies and final native iPhone/iPad captures. Do not invent
 an email address, review phone, policy approval or privacy-label answer.
+The owner has now confirmed the public support/privacy email
+`autofitrainer@gmail.com` and the individual operator
+`ששי דניאל / Sasi Daniel`. The owner requested worldwide distribution across all currently available App Store
+countries/regions. Future territories are not automatically authorized.
+Remaining review and region-specific compliance details still need confirmation;
+these answers alone do not finalize the policies.
+The owner declared **Trader** status for DSA purposes. This is an owner
+declaration, not confirmation of Apple verification. Public address/P.O. Box,
+phone, email verification, supporting documents and any payment-account details
+required by Apple must be handled directly in App Store Connect, never committed
+to this public repository. Do not select Non-trader merely because launch is free.
+Official instructions:
+<https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements/>.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 
