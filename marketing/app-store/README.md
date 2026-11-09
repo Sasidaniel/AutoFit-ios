@@ -83,6 +83,18 @@ screenshot upload, not an App Review submission or public release**.
 Public support/privacy URLs and privacy/content-rights declarations remain
 unresolved. The developer agreement is no longer an outstanding blocker.
 
+The owner subsequently **declined preparing/uploading build 53**. Do not start
+a new binary release or TestFlight upload. Existing build 52 is still the only
+approved candidate; its policies, minor-consent flow and bundled assets cannot
+be changed retroactively. The owner said most artwork was generated during
+development, but this is not confirmation of rights to every legacy asset.
+The original bundled anatomical PNGs and gold-dumbbell icon predate this
+improvement phase, and no license evidence was found for them in the inspected
+repository records. Do not submit a blanket content-rights certification or
+claim an enforced adult-only app gate on that basis. This refusal concerns
+a new binary, not a withdrawal of authorization to submit the existing version
+after its outstanding mandatory fields and facts are genuinely complete.
+
 ## Live Apple inspection — 2026-11-09
 
 Read-only inspection succeeded in

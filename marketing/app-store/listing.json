@@ -8,9 +8,12 @@
     "pausedByOwner": false,
     "pauseReason": null,
     "ownerAuthorizedReviewSubmission": true,
+    "newBinaryUploadAuthorized": false,
+    "proposedBuild53DeclinedByOwner": true,
+    "existingBuildBoundary": "Owner declined preparing/uploading build 53. Existing build 52 remains the only approved candidate; its bundled media, draft policies and minor-consent behavior are unchanged. This does not revoke the earlier authorization to submit the existing version once its mandatory facts and fields are complete.",
     "renewedAuthorization": "Owner explicitly requested submitting now without waiting for further policy/consent approvals. This does not certify unresolved declarations or authorize automatic publication.",
     "releaseMode": "Manual",
-    "readiness": "Required facts, policies and final native screenshots must be completed before submission"
+    "readiness": "Native screenshots are uploaded and verified and the developer agreement is accepted. Public support/privacy URLs and factual privacy/content-rights declarations remain incomplete. No new binary is authorized, and existing build 52 media rights must not be certified without evidence."
   },
   "appleInspection": {
     "checkedAt": "2026-11-09",
