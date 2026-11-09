@@ -82,6 +82,7 @@ async function main() {
     const click = async (selector) => page.eval(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)throw new Error('Missing capture control: '+${JSON.stringify(selector)});node.click();})()`);
     const scrollCard = async (index) => page.eval(`window.scrollTo(0, document.querySelector('.exercise-card[data-entry-index="${index}"]').getBoundingClientRect().top + scrollY - 170)`);
     const nativeControlChecks = [];
+    const nativeCompositions = process.argv.includes('--native-compositions');
     if (process.argv.includes('--native-controls-check')) {
       const nativeSource = fs.readFileSync(path.join(__dirname, 'native-controls.js'), 'utf8');
       const source = nativeSource.slice(0, nativeSource.indexOf('\nrun().catch')).replace(/^import .*$/gm, '');
@@ -109,7 +110,50 @@ async function main() {
         }
       }
     }
-    if (!process.argv.includes('--review-only') && !process.argv.includes('--native-controls-check')) {
+    if (nativeCompositions) {
+      const provenance = JSON.parse(fs.readFileSync(path.join(assets, 'native', 'provenance.json'), 'utf8'));
+      if (provenance.actualCapacitorSimulatorApp !== true || !listing.nativePreview?.families.length) {
+        throw new Error('Verified native source images are required before composition');
+      }
+      for (const family of listing.nativePreview.families) {
+        if (!['iphone', 'ipad'].includes(family)) throw new Error('Invalid native composition family');
+        const [width, height, scale] = family === 'iphone' ? [440, 956, 3] : [1032, 1376, 2];
+        for (const language of ['he', 'en']) {
+          for (const screen of listing.locales[language].screens) {
+            const file = `${family}-${language}-${screen.id}.png`;
+            const original = provenance.records.find((record) => record.file === file);
+            const bytes = fs.readFileSync(path.join(assets, 'native', file));
+            if (!original || crypto.createHash('sha256').update(bytes).digest('hex') !== original.sha256) {
+              throw new Error(`Native source hash mismatch: ${file}`);
+            }
+            await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile: false });
+            await page.send('Page.navigate', { url: `${base}/capture.html?source=native&family=${family}&lang=${language}&screen=${screen.id}` });
+            await page.wait(`document.documentElement.dataset.ready==='true' && document.documentElement.dataset.nativeFamily===${JSON.stringify(family)} && document.getElementById('screen').getAttribute('src')===${JSON.stringify(`/assets/native/${file}`)} && document.getElementById('screen').complete && document.getElementById('screen').naturalWidth>0`);
+            const aligned = await page.eval(`(()=>{
+              const phone=document.querySelector('.phone').getBoundingClientRect();
+              const title=document.getElementById('title'), caption=document.getElementById('caption');
+              return scrollY===0 && phone.top===${family === 'iphone' ? 222 : 450}
+                && title.scrollWidth<=title.clientWidth && caption.scrollWidth<=caption.clientWidth
+                && caption.getBoundingClientRect().bottom<phone.top;
+            })()`);
+            if (!aligned) throw new Error(`Clipped native composition: ${family}/${language}/${screen.id}`);
+            const output = `native-${family}-${language}-${screen.id}.png`;
+            await capture(output);
+            const image = fs.readFileSync(path.join(assets, output));
+            if (image.readUInt32BE(16) !== width * scale || image.readUInt32BE(20) !== height * scale
+              || ![0, 2].includes(image[25])) throw new Error(`Native composition dimensions or opacity incorrect: ${output}`);
+            Object.assign(records.at(-1), { sourceFile: file, sourceSHA256: original.sha256 });
+          }
+          console.log(`Composed eight opaque native-source candidates: ${family}/${language}`);
+        }
+      }
+      fs.writeFileSync(path.join(assets, 'native-compositions.json'), JSON.stringify({
+        capturedAt: new Date().toISOString(), nativeDeviceSource: true, syntheticData: true,
+        compositor: version.Browser, sourceProvenance: 'native/provenance.json',
+        finalSubmissionAssets: false, records,
+      }, null, 2));
+    }
+    if (!process.argv.includes('--review-only') && !process.argv.includes('--native-controls-check') && !nativeCompositions) {
     for (const language of ['he', 'en']) {
       await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
       await page.send('Page.navigate', { url: `${base}/fixture.html?lang=${language}` });
@@ -219,6 +263,20 @@ async function main() {
         if (switched === language) throw new Error('Language toggle did not switch');
         await click('#languageToggle');
         checks.push({ language, width, horizontalOverflow: false, copyExact: true, iphoneFeaturesExact: true, campaignExact: true, imageDialog: true, languageToggle: true });
+        if (listing.nativePreview?.families.length) {
+          for (const family of listing.nativePreview.families) {
+            await page.eval(`document.getElementById('nativeFamily').value=${JSON.stringify(family)};document.getElementById('nativeFamily').dispatchEvent(new Event('change'))`);
+            await page.wait(`document.querySelectorAll('#nativeGallery img').length===8`);
+            const prefix = listing.nativePreview.composedFamilies.includes(family) ? `/assets/native-${family}-${language}-` : `/assets/native/${family}-${language}-`;
+            const expected = listing.locales[language].screens.map((screen) => `${prefix}${screen.id}.png`);
+            const actual = await page.eval(`[...document.querySelectorAll('#nativeGallery img')].map(img=>img.getAttribute('src'))`);
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Native gallery image identity mismatch');
+            await click('#nativeGallery button');
+            const opened = await page.eval(`document.getElementById('largeImage').getAttribute('src')`);
+            if (opened !== expected[0]) throw new Error('Native enlargement source mismatch');
+            await click('.close-dialog');
+          }
+        }
       }
     }
     await click('#reviewButton');

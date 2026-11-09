@@ -198,6 +198,51 @@ frame-count/visibility failure diagnostics.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 
+## Latest actual submission attempt and completed native families
+
+The renewed owner-authorized attempt selected existing build **52** and reused
+review draft `da769c03-e86d-4556-8c79-a8cb0d237a51`, but Apple refused adding
+the version with HTTP 409. No final submission request was sent. Diagnostic run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623704458>
+preserves Apple's nested associated errors rather than hiding them behind a
+generic invalid-state message. It identified missing URLs, copyright, age
+answers, screenshots, category, published privacy answers, pricing and content
+rights. This is not an App Review rejection or a queue receipt.
+
+The Apple UI subsequently saved **Health & Fitness** and the factual age
+questionnaire: wellness/exercise recommendations are present, medical treatment
+content is not; no advertising, social feed, chat, gambling or parental/verified
+age-assurance mechanism is claimed. Apple's 13+ override is the lowest available
+above the app's minimum of 12, producing a legacy global 12+ rating and regional
+exceptions. This does not change the app's consent flow or certify minor privacy
+compliance. Initial prices were confirmed as zero across 175 territories.
+Availability was configured for those current territories, explicitly excluding
+automatic additions of future territories. Copyright uses the confirmed operator,
+`2026 Sasi Daniel`; this does not certify third-party content rights.
+
+iPad-only recovery completed successfully:
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623335643>.
+All 32 originals are visually reviewed, with eight distinct intended scenes per
+device/language. `assets/native/provenance.json` preserves both capture commits
+and run outcomes: iPhone came from the earlier partial run; iPad came from the
+successful isolated recovery. No single combined-run receipt is invented.
+
+`capture.cjs --native-compositions --native-controls-check` creates opaque
+native-source artwork at **1320 x 2868** and **2064 x 2752**, verifies exact
+source hashes and headline placement, exercises all 32 real DOM scene controls,
+and verifies the bilingual storefront and support layouts. A separate native
+gallery offers device selection, full-size artwork and original raw downloads.
+The earlier browser-derived artwork remains explicitly identified separately.
+
+`upload-app-store-screenshots.cjs` uses Apple's current Asset Library API rather
+than deprecated screenshot-set enums. It validates the live catalog, uploads
+only verified native artwork to Apple's byte-upload hosts without forwarding
+the API JWT, checks processing dimensions/specifications, and reads back the
+four ordered eight-image groups. It refuses unrelated existing placements and
+reuses matching immutable assets on retry. It never submits, publishes, selects
+another build or uploads a binary. The workflow operation is
+`upload_store_screenshots=true`; successful local checks are not an upload receipt.
+
 ## First-party required-reason API declarations
 
 The app and Live Activity extension now have separate `PrivacyInfo.xcprivacy`

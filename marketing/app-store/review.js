@@ -18,6 +18,9 @@ const text = {
     specTitle: 'שמונה מסכים. שותף אחד.', specText: 'קובצי PNG אטומים בגודל 1290 × 2796, בעברית ובאנגלית. שליטה קולית, סטטיסטיקה ותוכניות שמורות מקבלות מקום מרכזי. אלו נכסי עיצוב לבדיקה, לא הוכחת תאימות מכשיר.',
     accuracyNote: 'המסגרת מדמה עמוד מוצר, לא את ממשק Apple המדויק. הפריסה והקיצורים בחנות תלויים במכשיר, בשפה ובגרסת החנות. אין דירוג כוכבים, ביקורות, שם מוכר או דירוג גיל מומצאים.',
     galleryHeading: 'רואים כל פרט, לפני שמאשרים.', galleryHint: 'לחיצה על תמונה פותחת תצוגה גדולה. קישור ההורדה שומר את אותו קובץ שמופיע כאן.',
+    nativeHeading: 'האפליקציה המקורית. צילומי הסימולטור.', nativeNotice: 'צילום מהאפליקציה האמיתית בסימולטור iOS, עם נתוני הדגמה בלבד וללא הדמיית האזנה. אלו מועמדים לסקירה, לא אישור שהועלו לחנות. אפשר להוריד גם את צילום המקור ללא מסגרת שיווקית.',
+    nativeFamilyLabel: 'מכשיר', nativeOriginal: 'צילום המקור',
+    navNative: 'צילומי iPhone ו־iPad',
     copyHeading: 'כך נספר את הסיפור.', downloadCopy: 'הורדת כל הטקסטים · JSON', downloadPackage: 'הורדת כל חבילת הסקירה · ZIP',
     reviewerHeading: 'הערות מוצעות לבודקי Apple (לא טקסט שיווקי)',
     readinessHeading: 'טיוטת החנות מוכנה. ההגשה עדיין לא.', readinessIntro: 'השם והטקסטים בעברית ובאנגלית אומתו בטיוטת App Store Connect, עם שחרור ידני. האפליקציה טרם נשלחה לבדיקה או פורסמה. הפריטים הבאים עדיין דורשים השלמה.',
@@ -46,6 +49,9 @@ const text = {
     specTitle: 'Eight screens. One partner.', specText: 'Opaque 1290 × 2796 PNG files in Hebrew and English. Voice control, statistics and saved plans take center stage. These are design-review assets, not device-compatibility evidence.',
     accuracyNote: 'This is a product-page approximation, not an exact Apple interface. Actual layout and truncation vary by device, language and store version. No invented ratings, reviews, seller name or age rating.',
     galleryHeading: 'Every detail, before approval.', galleryHint: 'Open any image at full size. The download link saves the same file displayed here.',
+    nativeHeading: 'The actual native app. Simulator captures.', nativeNotice: 'Captured from the real app in iOS Simulator with synthetic data and no simulated listening. These are review candidates, not confirmation of a store upload. The uncomposed original is also available.',
+    nativeFamilyLabel: 'Device', nativeOriginal: 'Original capture',
+    navNative: 'Native iPhone & iPad',
     copyHeading: 'Words that do the work.', downloadCopy: 'Download all copy · JSON', downloadPackage: 'Download the complete review package · ZIP',
     reviewerHeading: 'Proposed Apple review notes (not marketing copy)',
     readinessHeading: 'Store draft ready. Not ready to submit.', readinessIntro: 'The name and Hebrew/English copy have been verified in the App Store Connect draft, with manual release. The app has not been submitted for review or published. These items still need completion.',
@@ -60,12 +66,37 @@ const text = {
 let listing, language = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'he';
 const byId = (id) => document.getElementById(id);
 function imageURL(id) { return `/assets/${language}-${id}.png`; }
-function openImage(screen) {
-  byId('largeImage').src = imageURL(screen.id);
+function openImage(screen, url = imageURL(screen.id)) {
+  byId('largeImage').src = url;
   byId('largeImage').alt = screen.alt;
-  byId('downloadImage').href = imageURL(screen.id);
+  byId('downloadImage').href = url;
   byId('downloadImage').textContent = text[language].download;
   byId('imageDialog').showModal();
+}
+function imageButton(screen, url, width, height) {
+  const button = document.createElement('button'), img = document.createElement('img');
+  button.type = 'button'; img.src = url; img.alt = screen.alt;
+  button.setAttribute('aria-label', screen.alt);
+  img.width = width; img.height = height; img.loading = 'lazy';
+  button.append(img); button.addEventListener('click', () => openImage(screen, url));
+  return button;
+}
+function renderNative() {
+  const family = byId('nativeFamily').value, t = text[language];
+  byId('nativeGallery').replaceChildren();
+  if (!listing.nativePreview?.families.includes(family)) return;
+  for (const screen of listing.locales[language].screens) {
+    const raw = `/assets/native/${family}-${language}-${screen.id}.png`;
+    const url = listing.nativePreview.composedFamilies.includes(family)
+      ? `/assets/native-${family}-${language}-${screen.id}.png` : raw;
+    const card = document.createElement('article'); card.className = 'gallery-card';
+    card.append(imageButton(screen, url, family === 'iphone' ? 1320 : 2064, family === 'iphone' ? 2868 : 2752));
+    const meta = document.createElement('div'); meta.className = 'gallery-meta';
+    const title = document.createElement('b'); title.textContent = screen.title.replace('\n', ' ');
+    const link = document.createElement('a'); link.href = raw; link.download = `${family}-${language}-${screen.id}.png`;
+    link.textContent = t.nativeOriginal; meta.append(title, link); card.append(meta);
+    byId('nativeGallery').append(card);
+  }
 }
 function render() {
   const t = text[language], copy = listing.locales[language];
@@ -101,6 +132,12 @@ function render() {
     byId('readinessIntro').textContent = language === 'he'
       ? 'אישרת לחדש את ההגשה בלי להמתין לאישורים נוספים. האישור אינו מסמן הצהרות חסרות כמאומתות. השחרור נשאר ידני; העמוד לא טוען שההגשה התקבלה לפני אישור מ־Apple.'
       : 'You authorized resuming submission without waiting for additional approvals. Missing declarations are not marked verified. Release remains manual; this page does not claim successful submission before an Apple receipt.';
+    if (listing.appleReviewAttempt?.result === 'not-submitted') {
+      byId('readinessHeading').textContent = language === 'he' ? 'Apple טרם קיבלה את ההגשה: חסרים פרטי חובה.' : 'Apple has not accepted the submission: required fields are missing.';
+      byId('readinessIntro').textContent = language === 'he'
+        ? 'בוצע ניסיון הגשה בפועל. Apple סירבה להוסיף את הגרסה לבדיקה בגלל שדות חובה, ולא בגלל השהיה מצדך. בנייה 52 נבחרה והשחרור נשאר ידני. תיעוד הניסיון שמור בחבילת הסקירה.'
+        : 'An actual submission was attempted. Apple refused to add the version because required fields were missing, not because of an owner hold. Build 52 is selected and release remains manual. The attempt is recorded with this review package.';
+    }
   }
   byId('iphoneFeatures').replaceChildren();
   for (const feature of copy.iphoneFeatures) {
@@ -124,13 +161,7 @@ function render() {
   }
   byId('storeScreens').replaceChildren(); byId('galleryGrid').replaceChildren();
   for (const [index, screen] of copy.screens.entries()) {
-    const makeButton = () => {
-      const button = document.createElement('button'), img = document.createElement('img');
-      button.type = 'button'; img.src = imageURL(screen.id); img.alt = screen.alt;
-      button.setAttribute('aria-label', screen.alt);
-      img.width = 1290; img.height = 2796; img.loading = 'lazy';
-      button.append(img); button.addEventListener('click', () => openImage(screen)); return button;
-    };
+    const makeButton = () => imageButton(screen, imageURL(screen.id), 1290, 2796);
     byId('storeScreens').append(makeButton());
     const card = document.createElement('article'); card.className = 'gallery-card'; card.append(makeButton());
     const meta = document.createElement('div'); meta.className = 'gallery-meta';
@@ -138,6 +169,15 @@ function render() {
     const link = document.createElement('a'); link.href = imageURL(screen.id); link.download = `${language}-${screen.id}.png`; link.textContent = t.download;
     meta.append(name, link); card.append(meta); byId('galleryGrid').append(card);
   }
+  byId('native').hidden = !listing.nativePreview?.families.length;
+  const previousFamily = byId('nativeFamily').value;
+  byId('nativeFamily').replaceChildren();
+  for (const family of listing.nativePreview?.families || []) {
+    const option = document.createElement('option'); option.value = family;
+    option.textContent = family === 'iphone' ? 'iPhone' : 'iPad'; byId('nativeFamily').append(option);
+  }
+  if (listing.nativePreview?.families.includes(previousFamily)) byId('nativeFamily').value = previousFamily;
+  renderNative();
   byId('copyGrid').replaceChildren();
   for (const key of ['name', 'subtitle', 'promotionalText', 'keywords', 'description']) {
     const card = document.createElement('article'); card.className = `copy-card${key === 'description' ? ' long' : ''}`;
@@ -170,6 +210,7 @@ byId('languageToggle').addEventListener('click', () => {
   language = language === 'he' ? 'en' : 'he';
   history.replaceState(null, '', `?lang=${language}`); render();
 });
+byId('nativeFamily').addEventListener('change', renderNative);
 document.querySelector('.close-dialog').addEventListener('click', () => byId('imageDialog').close());
 byId('getButton').addEventListener('click', () => { byId('getNotice').textContent = text[language].getNotice; });
 byId('reviewButton').addEventListener('click', () => {

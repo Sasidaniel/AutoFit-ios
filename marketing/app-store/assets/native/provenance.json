@@ -1,0 +1,226 @@
+{
+  "source": "Combined independently captured families; exact commits and receipts are in captureRuns",
+  "captureFamilies": [
+    "iphone",
+    "ipad"
+  ],
+  "actualCapacitorSimulatorApp": true,
+  "syntheticData": true,
+  "nativeVoiceSimulated": false,
+  "buildConfiguration": "Debug; CI-only loopback transport; actual application UI",
+  "workflowCompletedSuccessfully": false,
+  "partialRunReason": "iPhone images preserved from a partial run; iPad recovered successfully in a separate run. No single combined-run receipt is claimed.",
+  "visualReview": "All thirty-two iPhone and iPad images visually reviewed: eight distinct expected scenes per device and language",
+  "finalSubmissionAssets": false,
+  "records": [
+    {
+      "file": "iphone-he-workout.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "d2b7bf8fc45b763fc70a0bb0fadb002e49a021dae5288e5f5accfe4072a5f789"
+    },
+    {
+      "file": "iphone-he-sets.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "5dc004a61c0f4515da87e616a461f6e582d369e6c64132bcf6ffedec621a747f"
+    },
+    {
+      "file": "iphone-he-plans.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "d521e9214a0887b167a86e4d0b0ceedbae85a5951afb8be574e4d5a0b8437f15"
+    },
+    {
+      "file": "iphone-he-saved.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "ee522772cc922339c44253517c04aece2a988cccd55904bd381ebb0a8ec57eed"
+    },
+    {
+      "file": "iphone-he-statistics.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "28ec0ec5231cc334bd38a0a68b02c2b39093a61316d6f89f8c5cb90f3b93290b"
+    },
+    {
+      "file": "iphone-he-history.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "0acd2c1ab75dca7c658cccc2937a194d54c1995eddeaa038172180fb95181919"
+    },
+    {
+      "file": "iphone-he-cardio.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "04bf8faec9fc821bd7f604cfc7ee4706bbd5d01022fe88502d56fff0a645183f"
+    },
+    {
+      "file": "iphone-he-library.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "b102d913079c25555c703fa66aa7d5d0609de5bb808b134faa9d767fc820a8ba"
+    },
+    {
+      "file": "iphone-en-workout.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "4e7da62f3d554c8d808e28f712866ec233744a8a4c3efa4ce03b2bc412f1c557"
+    },
+    {
+      "file": "iphone-en-sets.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "252ed4537ce4a3d441ddc4bdc3c23cb41fa071342888e6bef948cf0a2bf0c933"
+    },
+    {
+      "file": "iphone-en-plans.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "74e7e11200c0ff7b86e95cc478964f8fbff80f9bcbc652f98917328fb410d931"
+    },
+    {
+      "file": "iphone-en-saved.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "ba603b93fe20e9c16868b32a67f7031022505bfb6d0f980f9a9fbbe14bdb255d"
+    },
+    {
+      "file": "iphone-en-statistics.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "2aa34586a4d70adb8af6c68e4a8ce174e9e9f0b3d5b5b0bff8fb1b2ea46514f9"
+    },
+    {
+      "file": "iphone-en-history.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "97927dff271a9f413f42b472b5f527787601df127fb8b419c51910f790ec2d6f"
+    },
+    {
+      "file": "iphone-en-cardio.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "33d94f1a4ceb735afc198128012b3603419abaa770ff7b2929b8fed8bd6f0ec0"
+    },
+    {
+      "file": "iphone-en-library.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "9db575baced936cc4e01b010f9c99d212ee1f5d2597657b39a0c8f765a23d5f8"
+    },
+    {
+      "file": "ipad-en-cardio.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "238bb50e32e05559f869227f603a6918e5d80e2767603d0c8a0bf92570aa3562"
+    },
+    {
+      "file": "ipad-en-history.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "c951316deafd9b78ddaba2cbb98c33d1c1f2d639e2eb4b8b295b8cf9a50a2cd1"
+    },
+    {
+      "file": "ipad-en-library.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "41812f143b4e42ebdbcffbaab19bd5c130f726fd313977436eeec05758fedbcb"
+    },
+    {
+      "file": "ipad-en-plans.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "ad77620748384814cad5e526701dce701f071da729896634536a263bd8024b2f"
+    },
+    {
+      "file": "ipad-en-saved.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "bb3dc75df16e8ecde137fe12347254b78bdc7b14fb40642fc0aba990885a1a4d"
+    },
+    {
+      "file": "ipad-en-sets.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "6092d126e82bc2a36077fb6c04448e82f5b40ac80a38d4866b4e527f5966147c"
+    },
+    {
+      "file": "ipad-en-statistics.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "22507765d734f57287feb346ba9bf731ace54a5c06ceac73604998f93d79d70f"
+    },
+    {
+      "file": "ipad-en-workout.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "5a7e8a192f04fb092d1f987a006327d0b01b50e2074514851a9e2b367d36867c"
+    },
+    {
+      "file": "ipad-he-cardio.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "9055d5b73781b17d1ba73de3c284b0987ddc24b3264cfe30cbb07c4d4cb3541c"
+    },
+    {
+      "file": "ipad-he-history.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "2fcdc18fb149ce8c1e7cd6e0438eb453ee6b4fb7a9b5a55d361919b02e0589b1"
+    },
+    {
+      "file": "ipad-he-library.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "924740ddb6e7b12488834715024d95545b6e78d3c41a2798ff9da9624d96f099"
+    },
+    {
+      "file": "ipad-he-plans.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "b327c7ccc414abf14629685f7c8d49587839b4fe850b9ae9bfce739546a30604"
+    },
+    {
+      "file": "ipad-he-saved.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "0fda41556aa2986b2076916f1213bf45aa7a09d44c5bf164dcf034f6d45163bd"
+    },
+    {
+      "file": "ipad-he-sets.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "20acfcfaeb899be8e53ace95c4f0cf691ac9f181ad355672cb3c8195d3cdc2ee"
+    },
+    {
+      "file": "ipad-he-statistics.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "e6c83c45d85e79709175bff7bf6ba2c6ea63e2dd95d87a37f16491c30395e5ff"
+    },
+    {
+      "file": "ipad-he-workout.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "47a94832b58949caa8ddc0953366ec3fe93c5211beb794b5bdf8f4eb772a5b90"
+    }
+  ],
+  "captureRuns": [
+    {
+      "family": "iphone",
+      "source": "7b3c8851e04c0870cc0282fc0b4a4c63988e5c28",
+      "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42611518422",
+      "workflowCompletedSuccessfully": false,
+      "partialRunReason": "iPhone family completed; later iPad frame wait failed"
+    },
+    {
+      "family": "ipad",
+      "source": "d525abff49d664a0feffd6b26f978266b57a7c96",
+      "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623335643",
+      "workflowCompletedSuccessfully": true,
+      "capturedAt": "2026-11-09T13:30:17.183Z"
+    }
+  ],
+  "completeDeviceFamilies": true
+}

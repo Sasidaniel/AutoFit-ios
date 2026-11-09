@@ -18,7 +18,7 @@
     "version": "1.0",
     "state": "PREPARE_FOR_SUBMISSION",
     "currentReleaseType": "MANUAL",
-    "buildSelected": false,
+    "buildSelected": true,
     "reviewContactComplete": true,
     "demoAccountRequired": false,
     "privacyPolicyURLProvided": false,
@@ -55,6 +55,27 @@
     "fileCount": 32,
     "acceptedForSubmission": false,
     "result": "Initial stale and duplicate captures were rejected. Retry 42605899139 failed its frame guard. Run 42608293814 connected the real Simulator display and captured workout/sets, then stopped at a hidden plans shortcut. Visible navigation and safe-area scrolling are now checked across all 32 real DOM scenes in phone/tablet browser viewports; native acceptance is still pending. No native assets have been accepted."
+  },
+  "nativePreview": {
+    "families": ["iphone", "ipad"],
+    "composedFamilies": ["iphone", "ipad"],
+    "sourceWorkflowURLs": ["https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42611518422", "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623335643"],
+    "finalSubmissionAssets": true
+  },
+  "appleReviewAttempt": {
+    "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623704458",
+    "result": "not-submitted",
+    "stage": "adding-review-item",
+    "buildSelected": "1.0 (52)",
+    "releaseType": "MANUAL",
+    "requiredFields": ["privacy and support URLs", "copyright", "age questionnaire", "iPhone and iPad screenshots", "primary category", "published privacy answers", "pricing", "content rights declaration"]
+  },
+  "appleFeatureVerification": {
+    "date": "2026-11-09",
+    "primaryCategory": "Health & Fitness",
+    "ageRating": "13+ in 172 territories, regional exceptions; global 12+ on operating systems earlier than 26",
+    "minimumAgeReason": "Apple's lowest override above the in-app minimum of 12 is 13+. The app's age/consent behavior was not changed; this is not legal clearance for minors.",
+    "source": "https://appstoreconnect.apple.com/apps/6820408299/distribution/info"
   },
   "price": "Free",
   "releaseMode": "Manual release after Apple approval and separate owner authorization",

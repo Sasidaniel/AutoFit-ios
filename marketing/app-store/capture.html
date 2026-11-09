@@ -9,6 +9,18 @@
 .phone{position:absolute;width:328px;height:696px;top:222px;left:51px;padding:5px;border:1px solid #666054;border-radius:30px;background:#1d1d1d;box-shadow:0 22px 50px #000b;overflow:hidden}
 .phone img{width:316px;height:auto;display:block;border-radius:24px}
 .line{position:absolute;inset:auto 0 0;height:150px;pointer-events:none;background:linear-gradient(transparent,#0b0c0c35)}
+html[data-native-family="iphone"],html[data-native-family="iphone"] body,html[data-native-family="iphone"] .canvas{width:440px;height:956px}
+html[data-native-family="iphone"] .phone{width:338px;height:720px}
+html[data-native-family="iphone"] .phone img{width:326px}
+html[data-native-family="ipad"],html[data-native-family="ipad"] body,html[data-native-family="ipad"] .canvas{width:1032px;height:1376px}
+html[data-native-family="ipad"] .canvas{padding:40px 60px 0}
+html[data-native-family="ipad"] .brand{font-size:22px}
+html[data-native-family="ipad"] .brand img{width:40px;height:40px}
+html[data-native-family="ipad"] .eyebrow{font-size:20px;margin:24px 0 12px}
+html[data-native-family="ipad"] h1{font-size:68px}
+html[data-native-family="ipad"] p.caption{font-size:24px;margin-top:18px}
+html[data-native-family="ipad"] .phone{width:668px;height:902px;top:450px;left:182px}
+html[data-native-family="ipad"] .phone img{width:656px}
 </style>
 <div class="canvas"><div class="brand"><img src="/icon.png" alt="">AUTOFIT</div><div class="eyebrow" id="eyebrow"></div><h1 id="title"></h1><p class="caption" id="caption"></p><div class="phone"><img id="screen" alt=""></div><div class="line"></div></div>
 <script>
@@ -17,8 +29,13 @@ document.documentElement.lang = lang; document.documentElement.dir = lang === 'h
 fetch('/listing.json').then(r=>r.json()).then(data=>{
  const item = data.locales[lang].screens.find(s=>s.id===params.get('screen'));
  if(!item) throw new Error('Unknown screen');
+ const native = params.get('source') === 'native', family = params.get('family');
+ if(native) {
+  if(!['iphone','ipad'].includes(family) || !data.nativePreview?.families.includes(family)) throw new Error('Native family unavailable');
+  document.documentElement.dataset.nativeFamily=family;
+ }
  for(const field of ['eyebrow','title','caption']) document.getElementById(field).textContent=item[field];
- document.getElementById('screen').src=`/assets/raw-${lang}-${item.id}.png`;
+ document.getElementById('screen').src=native ? `/assets/native/${family}-${lang}-${item.id}.png` : `/assets/raw-${lang}-${item.id}.png`;
  document.getElementById('screen').alt=item.alt;
  document.documentElement.dataset.ready='true';
 }).catch(error=>{document.body.textContent=error.message;});

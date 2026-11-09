@@ -75,3 +75,54 @@ test('review does not pass off browser screenshots or unresolved store facts as 
   assert.match(script, /submissionAuthorized: false/);
   assert.doesNotMatch(script, /api\.appstoreconnect|fetch\([^)]*,\s*\{/);
 });
+
+test('native review gallery preserves actual source hashes and separate partial-run provenance', () => {
+  const native = JSON.parse(fs.readFileSync(path.join(assets, 'native', 'provenance.json'), 'utf8'));
+  assert.equal(native.actualCapacitorSimulatorApp, true);
+  assert.equal(native.syntheticData, true);
+  assert.equal(native.nativeVoiceSimulated, false);
+  assert.equal(native.finalSubmissionAssets, false, 'Raw simulator PNGs are not final opaque artwork');
+  for (const family of listing.nativePreview.families) {
+    const [width, height] = family === 'iphone' ? [1320, 2868] : [2064, 2752];
+    for (const language of ['he', 'en']) {
+      const hashes = [];
+      for (const screen of listing.locales[language].screens) {
+        const file = `${family}-${language}-${screen.id}.png`;
+        const record = native.records.find((item) => item.file === file);
+        assert.ok(record, file);
+        const bytes = fs.readFileSync(path.join(assets, 'native', file));
+        assert.equal(bytes.readUInt32BE(16), width); assert.equal(bytes.readUInt32BE(20), height);
+        assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), record.sha256);
+        hashes.push(record.sha256);
+      }
+      assert.equal(new Set(hashes).size, 8, 'Each device/locale has eight distinct scenes');
+    }
+  }
+});
+
+test('native artwork is opaque at exact device dimensions and tied to the original native pixels', () => {
+  const native = JSON.parse(fs.readFileSync(path.join(assets, 'native', 'provenance.json'), 'utf8'));
+  const compositions = JSON.parse(fs.readFileSync(path.join(assets, 'native-compositions.json'), 'utf8'));
+  assert.equal(compositions.nativeDeviceSource, true);
+  for (const family of listing.nativePreview.composedFamilies) {
+    const [width, height] = family === 'iphone' ? [1320, 2868] : [2064, 2752];
+    for (const language of ['he', 'en']) {
+      for (const screen of listing.locales[language].screens) {
+        const record = compositions.records.find((item) => item.file === `native-${family}-${language}-${screen.id}.png`);
+        assert.ok(record);
+        const original = native.records.find((item) => item.file === record.sourceFile);
+        assert.equal(record.sourceSHA256, original.sha256);
+        const bytes = fs.readFileSync(path.join(assets, record.file));
+        assert.equal(bytes.readUInt32BE(16), width); assert.equal(bytes.readUInt32BE(20), height);
+        assert.equal(bytes[24], 8); assert.equal(bytes[25], 2);
+        let offset = 8;
+        while (offset < bytes.length) {
+          const length = bytes.readUInt32BE(offset), type = bytes.toString('ascii', offset + 4, offset + 8);
+          assert.notEqual(type, 'tRNS'); offset += length + 12;
+        }
+        assert.equal(offset, bytes.length);
+        assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), record.sha256);
+      }
+    }
+  }
+});
