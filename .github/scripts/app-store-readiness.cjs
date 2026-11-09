@@ -1,33 +1,10 @@
 const fs = require('node:fs');
-const crypto = require('node:crypto');
-
-const origin = 'https://api.appstoreconnect.apple.com';
+const { createAppleClient } = require('./app-store-api.cjs');
 const bundleID = 'com.sasidaniel.autofit';
 
 function createReader(env = process.env, fetchImpl = fetch) {
-  const keyID = env.APPSTORE_API_KEY_ID;
-  const issuer = env.APPSTORE_API_ISSUER_ID;
-  const key = Buffer.from(env.APPSTORE_API_KEY_P8_BASE64 || '', 'base64').toString('utf8');
-  if (!keyID || !issuer || !key.includes('BEGIN PRIVATE KEY')) throw new Error('Missing Apple API credentials');
-  return async (route) => {
-    const url = new URL(route, origin);
-    if (url.origin !== origin || !url.pathname.startsWith('/v1/')) throw new Error('Unexpected Apple API destination');
-    const now = Math.floor(Date.now() / 1000);
-    const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-    const unsigned = `${encode({ alg: 'ES256', kid: keyID, typ: 'JWT' })}.${encode({ iss: issuer, iat: now, exp: now + 600, aud: 'appstoreconnect-v1' })}`;
-    const signature = crypto.sign('sha256', Buffer.from(unsigned), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${unsigned}.${signature}` },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!response.ok) {
-      const error = new Error(`Apple readiness GET ${url.pathname}: HTTP ${response.status}`);
-      error.status = response.status;
-      throw error;
-    }
-    return response.json();
-  };
+  const request = createAppleClient(env, fetchImpl);
+  return (route) => request('GET', route);
 }
 
 async function collectReadiness(read) {

@@ -32,8 +32,9 @@ The owner has now confirmed the public support/privacy email
 countries/regions. Future territories are not automatically authorized.
 Remaining review and region-specific compliance details still need confirmation;
 these answers alone do not finalize the policies.
-The owner declared **Trader** status for DSA purposes. This is an owner
-declaration, not confirmation of Apple verification. Public address/P.O. Box,
+The owner declared **Trader** status for DSA purposes and subsequently reported
+that Apple has completed and approved verification. This is owner confirmation,
+not independent API verification. Public address/P.O. Box,
 phone, email verification, supporting documents and any payment-account details
 required by Apple must be handled directly in App Store Connect, never committed
 to this public repository. Do not select Non-trader merely because launch is free.
