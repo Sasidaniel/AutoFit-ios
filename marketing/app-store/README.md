@@ -1,21 +1,49 @@
 # AutoFit App Store approval package
 
-Local creative proposal requested on 2026-11-09. **Not submitted or published.**
+**Submitted successfully on 2026-11-09 at 14:25:55.992Z; waiting for Apple review.**
+Fresh independent reads verified both the version and the reused review submission
+as `WAITING_FOR_REVIEW`. **Not approved or publicly released.**
 The reference binary is **1.0 (52)**, source
 `93bce49bf3f5aed3d9daf023d3ff31673e9f9035`.
 During the approved copy upload, application runtime code, pricing, permissions
 and billing were not changed. Subsequent local policy-contact edits are recorded
 below and have not been uploaded in a new app binary.
 The approved store name and bilingual copy are now saved in Apple's draft;
-manual release is configured, with no review submission or public distribution.
+manual release remains configured, with no new binary or public distribution.
 
 On 2026-11-09 the owner approved the presentation and requested saving the
 materials and uploading to the App Store. This authorizes proceeding with
 submission preparation; it does not establish missing privacy declarations,
-legal facts or final native screenshots. Submission is not yet confirmed.
+legal facts. The later verified submission receipt supersedes earlier attempts.
 Keep manual release configured rather than automatically publishing after review.
 
 ## Current verified state — later updates supersede historical notes below
+
+Apple confirmed **1 Item Submitted** for existing **1.0 (52)**. The existing
+review `da769c03-e86d-4556-8c79-a8cb0d237a51` was reused, not duplicated.
+Permanent sanitized evidence: `assets/apple-review-receipt.json`.
+Apple's receipt estimates up to 48 hours and an email on completion; timing
+and approval are not guaranteed. If rejected, review details are available in
+App Store Connect. Approval does not publish this manually released version:
+separate owner publication authorization and manual release remain necessary.
+
+All four public Hebrew/English support/privacy HTTPS pages were independently
+verified HTTP 200 and byte-equivalent to the generated source. Their actual URLs
+are saved in both Apple localizations. App Privacy answers were published and
+freshly read back `published: true`: Name, Email Address, Customer Support and
+Other Data Types, for App Functionality, linked to the user, not for tracking.
+This covers optional Formspree contact and provider request logs rather than
+claiming no collection. Apple-only processing and local-only records follow
+Apple's published disclosure guidance.
+
+The owner explicitly confirmed rights to **all included exercise images and
+the gold icon**. Only after that confirmation was the necessary-content-rights
+declaration saved and verified after reload; this does not establish independently
+audited historical asset provenance. The general-fitness app was also declared
+not a regulated medical device and that declaration survived fresh reload.
+Build 52's in-app draft documents and unverified guardian flow remain unchanged
+and are disclosed in the public notice. Submission acceptance is not Apple
+approval or a global legal-compliance certification.
 
 The separate public support/privacy notice describes the immutable existing
 build 52, including its legacy minor flow, Apple processing, optional Formspree
@@ -24,9 +52,11 @@ confirmed public contact. It does not publish the old draft terms as approved,
 change runtime approval flags, claim verified adult-only access, or update the
 installed app. Generate its script-free Hebrew/English files with:
 `node marketing\app-store\support-site.cjs --build52-notice --output docs`.
-The original unapproved-policy export guard remains enforced. GitHub Pages
-hosting and actual HTTPS URL verification are separate publication steps;
-generating files alone does not establish a public URL or App Review submission.
+The original unapproved-policy export guard remains enforced. GitHub Pages is
+now hosted from this feature branch's `docs` folder at
+<https://sasidaniel.github.io/AutoFit-ios/> with HTTPS enforced.
+Generating files alone is not proof of hosting or submission; the live URL checks
+and separate Apple review receipt above establish those completed steps.
 
 The owner's latest instruction authorizes temporarily excluding Europe and
 ages 12–17 where those requirements block launch. The App Store override was

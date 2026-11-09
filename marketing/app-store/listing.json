@@ -1,10 +1,10 @@
 {
-  "status": "local-review-only",
+  "status": "waiting-for-review",
   "submissionRequest": {
     "date": "2026-11-09",
     "ownerApprovedCreative": true,
     "requestedAction": "Submit the initial free version for Apple review; preserve manual release and do not publish automatically",
-    "submissionConfirmed": false,
+    "submissionConfirmed": true,
     "pausedByOwner": false,
     "pauseReason": null,
     "ownerAuthorizedReviewSubmission": true,
@@ -13,19 +13,19 @@
     "existingBuildBoundary": "Owner declined preparing/uploading build 53. Existing build 52 remains the only approved candidate; its bundled media, draft policies and minor-consent behavior are unchanged. This does not revoke the earlier authorization to submit the existing version once its mandatory facts and fields are complete.",
     "renewedAuthorization": "Owner explicitly requested submitting now without waiting for further policy/consent approvals. This does not certify unresolved declarations or authorize automatic publication.",
     "releaseMode": "Manual",
-    "readiness": "Native screenshots are uploaded and verified and the developer agreement is accepted. Public support/privacy URLs and factual privacy/content-rights declarations remain incomplete. No new binary is authorized, and existing build 52 media rights must not be certified without evidence."
+    "readiness": "Submitted successfully on 2026-11-09 at 14:25:55.992Z. Apple version and reused review submission both independently read back WAITING_FOR_REVIEW. Existing build 52 only, release MANUAL, no public distribution or new binary upload. Privacy responses are published and both locales have verified live support/privacy URLs. Content rights were declared only after explicit owner confirmation."
   },
   "appleInspection": {
     "checkedAt": "2026-11-09",
     "appID": "6820408299",
     "version": "1.0",
-    "state": "PREPARE_FOR_SUBMISSION",
+    "state": "WAITING_FOR_REVIEW",
     "currentReleaseType": "MANUAL",
     "buildSelected": true,
     "reviewContactComplete": true,
     "demoAccountRequired": false,
-    "privacyPolicyURLProvided": false,
-    "supportURLProvided": false,
+    "privacyPolicyURLProvided": true,
+    "supportURLProvided": true,
     "screenshotsUploaded": true,
     "approvedListingUploaded": true,
     "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42629838965"
@@ -83,6 +83,33 @@
     "buildSelected": "1.0 (52)",
     "releaseType": "MANUAL",
     "requiredFields": ["privacy and support URLs", "copyright", "age questionnaire", "iPhone and iPad screenshots", "primary category", "published privacy answers", "pricing", "content rights declaration"]
+  },
+  "appleReviewVerification": {
+    "receipt": "assets/apple-review-receipt.json",
+    "submittedAt": "2026-11-09T14:25:55.992Z",
+    "verifiedAt": "2026-11-09T14:26:20.673Z",
+    "reviewSubmissionID": "da769c03-e86d-4556-8c79-a8cb0d237a51",
+    "versionState": "WAITING_FOR_REVIEW",
+    "reviewState": "WAITING_FOR_REVIEW",
+    "releaseType": "MANUAL",
+    "submissionPerformed": true,
+    "publicationPerformed": false,
+    "binaryUploaded": false
+  },
+  "publicSupportSite": {
+    "baseURL": "https://sasidaniel.github.io/AutoFit-ios/",
+    "httpsVerified": true,
+    "sourceCommit": "2eb85ff1287790d04b48d6d0ef8225ac8f7c0c3f",
+    "locales": {
+      "he": {
+        "supportURL": "https://sasidaniel.github.io/AutoFit-ios/support.html",
+        "privacyURL": "https://sasidaniel.github.io/AutoFit-ios/privacy.html"
+      },
+      "en-US": {
+        "supportURL": "https://sasidaniel.github.io/AutoFit-ios/support-en.html",
+        "privacyURL": "https://sasidaniel.github.io/AutoFit-ios/privacy-en.html"
+      }
+    }
   },
   "appleFeatureVerification": {
     "date": "2026-11-09",
@@ -197,20 +224,18 @@
     "ownerDeclaredDSATraderStatus": "TRADER",
     "appleDSAVerificationConfirmed": true,
     "appleDSAVerificationConfirmationSource": "owner report; not independently verified by the API inspection",
-    "supportURL": null,
-    "privacyURL": null,
+    "supportURL": "https://sasidaniel.github.io/AutoFit-ios/support.html",
+    "privacyURL": "https://sasidaniel.github.io/AutoFit-ios/privacy.html",
     "marketingURL": null,
     "sellerName": null,
     "ageRating": "18+ override, with Apple's 19+ Korean and legacy 17+ pre-OS-26 mappings",
     "territories": "148 current territories, excluding the 27 European Union countries",
-    "privacyLabel": "Not finalized. Do not select Data Not Collected without reviewing optional contact submissions, Apple speech services and third-party handling.",
-    "reviewerNotes": "Proposed submission: version 1.0, final binary pending policy completion and readiness checks. Build 52 is the current TestFlight reference, not a confirmed final store candidate. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
-    "blockers": [
-      { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
-      { "id": "urls", "he": "עדיין נדרשות כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה. פרטי הקשר לבדיקת Apple כבר הושלמו ואומתו; הם אינם מפורסמים בחבילת הסקירה.", "en": "Live public privacy and support URLs are still required. Apple review contact details are already complete and verified; they are not published in the review package." },
-      { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
-      { "id": "store", "he": "נשמר דירוג חנות 18+ והוסרו זמנית 27 מדינות האיחוד האירופי; 148 מדינות נותרו. לפני גרסה 26 Apple ממפה את הדירוג ל־17+, ובנייה 52 לא שונתה. אישרת את הסכם המפתחים וההתראה עליו נעלמה בבדיקה מחדש. הצהרות הפרטיות וזכויות התוכן עדיין אינן שלמות.", "en": "The 18+ store override is saved and the 27 EU countries are temporarily excluded, leaving 148 territories. Before OS 26 Apple maps this to 17+, and build 52 is unchanged. The owner accepted the developer agreement and its pending notice is absent on a fresh read. Privacy and content-rights declarations remain incomplete." }
-    ]
+    "privacyLabel": "Published in App Store Connect: Name, Email Address, Customer Support and Other Data Types, for App Functionality, linked to the user, not used for tracking. Covers optional Formspree contact submissions and service request logs; no blanket Data Not Collected claim.",
+    "contentRights": "Owner explicitly confirmed rights to all included exercise images and the gold icon. Necessary-rights declaration saved and verified after fresh reload; no claim of independently verified original media provenance.",
+    "medicalDevice": "Declared not a regulated medical device; general-fitness planning/logging rather than disease diagnosis or treatment. Saved and verified after fresh reload.",
+    "reviewerNotes": "Submitted existing version 1.0 (52); Apple review contact complete, no demo login required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone with microphone/speech permission; manual entry remains available. Cardio values are manually entered, not treadmill sensors. Plan proposals require confirmation. Purchases and new sensitive iCloud writes are disabled. Release remains manual. This summary records the submission; it does not assert reviewer notes were uploaded.",
+    "knownBuildLimitations": "Existing build 52 remains unchanged: bundled in-app documents retain draft wording and older operator fields, and the 12–17 guardian declaration remains unverified. Current factual public notices disclose these limitations. Store 18+ maps to legacy 17+ before OS 26. Apple has accepted submission into its queue, not approved these details or the app.",
+    "blockers": []
   },
   "sources": [
     "https://developer.apple.com/app-store/product-page/",

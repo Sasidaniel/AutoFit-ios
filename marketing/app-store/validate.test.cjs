@@ -86,24 +86,48 @@ test('every displayed image exists, has verified dimensions and contains no alph
   }
 });
 
-test('review does not pass off browser screenshots or unresolved store facts as final', () => {
-  assert.equal(listing.status, 'local-review-only');
+test('submitted review keeps browser provenance and existing-build limitations honest', () => {
+  assert.equal(listing.status, 'waiting-for-review');
   assert.equal(listing.price, 'Free');
   assert.equal(provenance.nativeDeviceCapture, false);
   assert.equal(provenance.finalSubmissionAssets, false);
   assert.equal(provenance.syntheticData, true);
   assert.equal(provenance.referenceSource, listing.referenceSource);
-  for (const key of ['sellerName', 'supportURL', 'privacyURL']) assert.equal(listing.review[key], null);
+  assert.equal(listing.review.sellerName, null);
+  for (const key of ['supportURL', 'privacyURL']) assert.match(listing.review[key], /^https:\/\/sasidaniel\.github\.io\/AutoFit-ios\//);
   assert.match(listing.review.ageRating, /18\+.*legacy 17\+/);
   assert.match(listing.review.territories, /148.*27 European Union/);
   const availability = listing.appleFeatureVerification.territoryAvailability;
   assert.equal(availability.availableCount + availability.excludedTerritoryCodes.length, 175);
   assert.equal(new Set(availability.excludedTerritoryCodes).size, 27);
   assert.equal(availability.automaticallyIncludeFutureTerritories, false);
-  assert.deepEqual(listing.review.blockers.map((item) => item.id), ['legal', 'urls', 'privacy', 'store']);
+  assert.deepEqual(listing.review.blockers, []);
+  assert.match(listing.review.knownBuildLimitations, /draft wording.*12–17/);
   const script = fs.readFileSync(path.join(__dirname, 'review.js'), 'utf8');
   assert.match(script, /submissionAuthorized: false/);
   assert.doesNotMatch(script, /api\.appstoreconnect|fetch\([^)]*,\s*\{/);
+});
+
+test('final receipt verifies reused review and version queue states without claiming approval or publication', () => {
+  const receipt = require('./assets/apple-review-receipt.json');
+  assert.equal(listing.submissionRequest.submissionConfirmed, true);
+  assert.equal(listing.appleInspection.state, receipt.versionState);
+  assert.equal(receipt.versionState, 'WAITING_FOR_REVIEW');
+  assert.equal(receipt.reviewState, 'WAITING_FOR_REVIEW');
+  assert.equal(receipt.reviewSubmissionID, 'da769c03-e86d-4556-8c79-a8cb0d237a51');
+  assert.equal(receipt.build, '52');
+  assert.equal(receipt.referenceSource, listing.referenceSource);
+  assert.equal(receipt.existingDraftReused, true);
+  assert.equal(receipt.releaseType, 'MANUAL');
+  assert.equal(receipt.submissionPerformed, true);
+  assert.equal(receipt.privacyResponsesPublished, true);
+  for (const key of ['publicationPerformed', 'binaryUploaded']) assert.equal(receipt[key], false);
+  assert.doesNotMatch(JSON.stringify(receipt), /Authorization|contactEmail|contactPhone|uploadOperations/);
+  assert.deepEqual(receipt.privacyResponseTypes, ['Name', 'Email Address', 'Customer Support', 'Other Data Types']);
+  const { createBuild52Notice } = require('./support-site.cjs');
+  for (const [file, content] of Object.entries(createBuild52Notice(listing))) {
+    assert.equal(fs.readFileSync(path.join(__dirname, '..', '..', 'docs', file), 'utf8').replace(/\r\n/g, '\n'), content);
+  }
 });
 
 test('Apple upload receipt preserves all 32 artwork hashes and four exact ordered groups without claiming review or publication', () => {

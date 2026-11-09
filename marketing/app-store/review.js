@@ -110,11 +110,20 @@ function render() {
   byId('descriptionLead').textContent = copy.description.split('\n\n')[0];
   byId('description').textContent = copy.description.split('\n\n').slice(1).join('\n\n');
   byId('reviewerNotes').textContent = listing.review.reviewerNotes;
+  const submitted = listing.submissionRequest.submissionConfirmed === true
+    && listing.appleReviewVerification?.versionState === 'WAITING_FOR_REVIEW'
+    && listing.appleReviewVerification?.reviewState === 'WAITING_FOR_REVIEW';
+  const publicPages = listing.publicSupportSite?.locales[language === 'he' ? 'he' : 'en-US'];
   for (const [kind, he, en] of [['support', 'טיוטת עמוד התמיכה', 'Support page draft'],
     ['privacy', 'טיוטת מדיניות הפרטיות', 'Privacy notice draft'], ['terms', 'טיוטת תנאי השימוש', 'Terms draft']]) {
     const link = byId(`${kind}Preview`);
     link.textContent = language === 'he' ? he : en;
     link.href = `/${kind}${language === 'he' ? '' : '-en'}.html`;
+    if (publicPages?.[`${kind}URL`]) {
+      link.href = publicPages[`${kind}URL`];
+      link.textContent = language === 'he' ? `${kind === 'support' ? 'תמיכה' : 'פרטיות'} — אתר ציבורי`
+        : `${kind === 'support' ? 'Support' : 'Privacy'} — published website`;
+    }
   }
   const inspection = listing.appleInspection;
   const uploaded = listing.appleScreenshotVerification?.screenshotsVerified === true;
@@ -122,13 +131,24 @@ function render() {
     byId('nativeNotice').textContent = language === 'he'
       ? '32 תמונות חנות מצילומי סימולטור אמיתיים הועלו ל־Apple ואומתו בארבע קבוצות מסודרות: iPhone ו־iPad בעברית ובאנגלית. נתוני הדגמה בלבד, ללא הדמיית האזנה. הגרסה טרם הוגשה לבדיקה או פורסמה.'
       : '32 storefront images from real Simulator captures are uploaded to Apple and verified in four ordered groups: iPhone and iPad in Hebrew and English. Synthetic data only, no simulated listening. The version has not been submitted for review or published.';
+    if (submitted) byId('nativeNotice').textContent = language === 'he'
+      ? '32 תמונות מצילומי סימולטור אמיתיים הועלו ל־Apple ואומתו בארבע קבוצות מסודרות. נתוני הדגמה בלבד וללא הדמיית האזנה. בנייה 52 הוגשה לבדיקה וטרם פורסמה לציבור.'
+      : '32 images from real Simulator captures are uploaded to Apple and verified in four ordered groups. Synthetic data only, no simulated listening. Build 52 is submitted for review, not publicly released.';
   }
   byId('appleStatus').textContent = inspection
     ? language === 'he'
       ? `בדיקת Apple בתאריך ${inspection.checkedAt}: גרסה ${inspection.version} במצב ${inspection.state}. טרם הוגשה לבדיקה. ${uploaded ? '32 צילומי החנות הועלו ואומתו; נותרו פרטי חובה אחרים.' : 'פרטי חובה וצילומי מכשיר עדיין חסרים.'}`
       : `Apple inspection at ${inspection.checkedAt}: version ${inspection.version} is ${inspection.state}. Not submitted for review. ${uploaded ? 'All 32 store screenshots are uploaded and verified; other required fields remain.' : 'Required information and device screenshots are still missing.'}`
     : '';
-  if (listing.submissionRequest.pausedByOwner) {
+  if (submitted) {
+    byId('appleStatus').textContent = language === 'he'
+      ? 'אישור קבלה מאומת מ־Apple: גרסה 1.0, בנייה 52, במצב WAITING_FOR_REVIEW. השחרור נשאר MANUAL; לא פורסם לציבור ולא הועלתה בנייה חדשה.'
+      : 'Verified Apple receipt: version 1.0, build 52, is WAITING_FOR_REVIEW. Release remains MANUAL; no public distribution or new binary upload.';
+    byId('readinessHeading').textContent = language === 'he' ? 'הוגשה בהצלחה. ממתינה לבדיקת Apple.' : 'Successfully submitted. Waiting for Apple review.';
+    byId('readinessIntro').textContent = language === 'he'
+      ? 'Apple אישרה קבלת פריט אחד. לפי ההודעה שלה הבדיקה עשויה להימשך עד 48 שעות ויישלח אימייל בסיומה; אין הבטחה לזמן או לאישור. במקרה של דחייה יופיעו פרטים ב־App Store Connect. לאחר אישור עדיין נדרש שחרור ידני ואישור שלך לפרסום. בנייה 52 לא שונתה: מגבלות מסמכי הטיוטה והצהרת ההורה עדיין קיימות ומתוארות בהודעת הפרטיות הציבורית.'
+      : 'Apple confirmed one item submitted. Its message estimates up to 48 hours and an email on completion; timing and approval are not guaranteed. Rejection details appear in App Store Connect. Approval still requires manual release and your publication authorization. Build 52 is unchanged: its draft-document and guardian-declaration limitations remain and are described in the public privacy notice.';
+  } else if (listing.submissionRequest.pausedByOwner) {
     byId('readinessHeading').textContent = language === 'he' ? 'ההגשה בהמתנה לפי בקשתך.' : 'Submission is on hold at your request.';
     byId('readinessIntro').textContent = language === 'he'
       ? 'השם והטקסטים שמורים בטיוטת Apple, ופרטי הקשר לבדיקה אומתו. לא נשלח לבדיקה ולא נפרסם לפני פתרון נושא הפרטיות והסכמת הקטינים ואישור מחודש שלך.'

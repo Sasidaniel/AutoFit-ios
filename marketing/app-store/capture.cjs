@@ -246,7 +246,7 @@ async function main() {
           fullDescription:document.querySelector('.copy-card.long p').textContent
         })`);
         if (check.language !== language || check.direction !== (language === 'he' ? 'rtl' : 'ltr')
-          || check.contentWidth > check.width || check.copyCards !== 5 || check.blockers !== 5 || check.missingImages
+          || check.contentWidth > check.width || check.copyCards !== 5 || check.blockers !== listing.review.blockers.length || check.missingImages
           || check.title.includes('unavailable') || check.subtitle !== listing.locales[language].subtitle
           || JSON.stringify(check.iphoneFeatures) !== JSON.stringify(listing.locales[language].iphoneFeatures.map(({title,text})=>({title,text})))
           || JSON.stringify(check.campaign) !== JSON.stringify(listing.locales[language].campaign)
