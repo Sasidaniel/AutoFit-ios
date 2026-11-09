@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F001CA920000000000000001 /* App PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F001CA920000000000000002 /* App PrivacyInfo.xcprivacy */; };
+		F001CA920000000000000003 /* Extension PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F001CA920000000000000004 /* Extension PrivacyInfo.xcprivacy */; };
 		EEFF00110000000000000001 /* MusicBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF00110000000000000002 /* MusicBridgePlugin.swift */; };
 		DDEEFF110000000000000001 /* CommerceBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDEEFF110000000000000002 /* CommerceBridgePlugin.swift */; };
 		CCDDEEFF0000000000000001 /* WorkoutAudioPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDDEEFF0000000000000002 /* WorkoutAudioPolicy.swift */; };
@@ -61,6 +63,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F001CA920000000000000002 /* App PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F001CA920000000000000004 /* Extension PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		EEFF00110000000000000002 /* MusicBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MusicBridgePlugin.swift; path = App/MusicBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 		DDEEFF110000000000000002 /* CommerceBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CommerceBridgePlugin.swift; path = App/CommerceBridgePlugin.swift; sourceTree = SOURCE_ROOT; };
 		CCDDEEFF0000000000000002 /* WorkoutAudioPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutAudioPolicy.swift; path = App/WorkoutAudioPolicy.swift; sourceTree = SOURCE_ROOT; };
@@ -151,6 +155,7 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				F001CA920000000000000002 /* App PrivacyInfo.xcprivacy */,
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -167,6 +172,7 @@
 		AABBCCDD000000000000000E /* AutoFitLiveActivity */ = {
 			isa = PBXGroup;
 			children = (
+				F001CA920000000000000004 /* Extension PrivacyInfo.xcprivacy */,
 				AABBCCDD000000000000000A /* AutoFitLiveActivity.swift */,
 				AABBCCDD000000000000000B /* Info.plist */,
 			);
@@ -255,13 +261,16 @@
 		AABBCCDD0000000000000010 /* Extension Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (
+				F001CA920000000000000003 /* Extension PrivacyInfo.xcprivacy in Resources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		504EC3021FED79650016851F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F001CA920000000000000001 /* App PrivacyInfo.xcprivacy in Resources */,
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,

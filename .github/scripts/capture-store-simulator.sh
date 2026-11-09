@@ -43,6 +43,7 @@ xcodebuild build -project ios/App/App.xcodeproj -scheme App \
   > "$OUTPUT/build.log" 2>&1 || { tail -n 100 "$OUTPUT/build.log"; exit 1; }
 APP="$RUNNER_TEMP/StoreSimulator/Build/Products/Debug-iphonesimulator/App.app"
 test -d "$APP"
+plutil -lint "$APP/PrivacyInfo.xcprivacy" "$APP/PlugIns/AutoFitLiveActivity.appex/PrivacyInfo.xcprivacy"
 xcrun simctl list runtimes -j > "$STATE/runtimes.json"
 xcrun simctl list devicetypes -j > "$STATE/types.json"
 RUNTIME=$(node -e 'const r=require(process.env.CAPTURE_NATIVE_STATE+"/runtimes.json").runtimes.filter(x=>x.isAvailable&&x.identifier.includes(".iOS-")).sort((a,b)=>a.version.localeCompare(b.version,undefined,{numeric:true})).at(-1);if(!r)throw Error("No iOS runtime");console.log(r.identifier)')

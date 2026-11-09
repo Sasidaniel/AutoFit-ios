@@ -150,6 +150,31 @@ file-count workflow alone is not final screenshot approval.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 
+## First-party required-reason API declarations
+
+The app and Live Activity extension now have separate `PrivacyInfo.xcprivacy`
+resources in their respective Xcode targets. The declarations describe actual
+first-party native uses, not a completed App Store privacy label:
+
+| Target | API category / reason | Existing use |
+|---|---|---|
+| App and extension | User defaults / `CA92.1` | App-owned Live Activity actions and acknowledgements in `UserDefaults.standard`; no App Group defaults are accessed. |
+| App only | System boot time / `35F9.1` | `VoiceCommandPlugin.swift` measures elapsed capture/speech intervals using `systemUptime`. |
+| App only | File timestamps / `C617.1` | `ShareBridgePlugin.swift` reads creation dates inside the app's temporary export directory to remove expired exports. |
+
+These manifests deliberately do not invent data-collection or tracking answers.
+Formspree, optional speech processing, minors, native backup exclusion and the
+final aggregated dependency privacy report still require their separate review.
+The capture pipeline checks that both manifests are present and valid in the
+built app; this check applies to subsequent captures, not the already-running
+capture at source `528cc0b` or TestFlight build 52.
+
+Apple requires the bundle containing each executable to report its own covered
+API use; an SDK manifest is not a substitute for the app's declarations:
+<https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api>.
+Approved category reasons:
+<https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype>.
+
 ## Review
 
 Run `node marketing\app-store\serve.cjs` from the worktree and open

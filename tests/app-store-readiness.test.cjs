@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createReader, collectReadiness } = require('../.github/scripts/app-store-readiness.cjs');
 
 test('Apple readiness client permits only same-origin read requests', async () => {
@@ -57,4 +59,34 @@ test('readiness reports missing records honestly and never emits review contact 
 test('API failure is not interpreted as an empty successful inspection', async () => {
   await assert.rejects(collectReadiness(async () => { throw new Error('Apple unavailable'); }), /Apple unavailable/);
   await assert.rejects(collectReadiness(async () => ({ data: [] })), /uniquely identify/);
+});
+
+test('first-party manifests declare only the native required-reason API uses of each target', () => {
+  const root = path.join(__dirname, '..', 'ios', 'App');
+  for (const [target, expected] of [
+    ['App', [['UserDefaults', 'CA92.1'], ['SystemBootTime', '35F9.1'], ['FileTimestamp', 'C617.1']]],
+    ['AutoFitLiveActivity', [['UserDefaults', 'CA92.1']]],
+  ]) {
+    const xml = fs.readFileSync(path.join(root, target, 'PrivacyInfo.xcprivacy'), 'utf8');
+    const entries = [...xml.matchAll(/<key>NSPrivacyAccessedAPIType<\/key>\s*<string>NSPrivacyAccessedAPICategory(\w+)<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array><string>([\w.]+)<\/string><\/array>/g)];
+    assert.deepEqual(entries.map((entry) => [entry[1], entry[2]]), expected, target);
+    assert.equal((xml.match(/<key>NSPrivacyAccessedAPIType<\/key>/g) || []).length, expected.length);
+    assert.doesNotMatch(xml, /NSPrivacyCollectedDataTypes|NSPrivacyTracking|1C8F\.1|C56D\.1/);
+  }
+});
+
+test('Xcode embeds a separate privacy resource in each executable bundle and capture validates both', () => {
+  const root = path.join(__dirname, '..');
+  const project = fs.readFileSync(path.join(root, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj'), 'utf8');
+  for (const [group, phase, buildID, referenceID] of [
+    ['504EC3061FED79650016851F', '504EC3021FED79650016851F', 'F001CA920000000000000001', 'F001CA920000000000000002'],
+    ['AABBCCDD000000000000000E', 'AABBCCDD0000000000000010', 'F001CA920000000000000003', 'F001CA920000000000000004'],
+  ]) {
+    const object = (id, isa) => project.match(new RegExp(`${id} /\\*[^\\n]*\\*/ = \\{\\s*isa = ${isa};[\\s\\S]*?\\n\\s*\\};`))?.[0];
+    assert.ok(object(group, 'PBXGroup')?.includes(referenceID));
+    assert.ok(object(phase, 'PBXResourcesBuildPhase')?.includes(buildID));
+    assert.match(project, new RegExp(`${buildID} /\\*[^\\n]*\\*/ = \\{isa = PBXBuildFile; fileRef = ${referenceID}`));
+  }
+  const capture = fs.readFileSync(path.join(root, '.github', 'scripts', 'capture-store-simulator.sh'), 'utf8');
+  assert.ok(capture.includes('plutil -lint "$APP/PrivacyInfo.xcprivacy" "$APP/PlugIns/AutoFitLiveActivity.appex/PrivacyInfo.xcprivacy"'));
 });
