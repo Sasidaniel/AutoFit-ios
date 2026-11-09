@@ -79,6 +79,12 @@ function render() {
   byId('descriptionLead').textContent = copy.description.split('\n\n')[0];
   byId('description').textContent = copy.description.split('\n\n').slice(1).join('\n\n');
   byId('reviewerNotes').textContent = listing.review.reviewerNotes;
+  const inspection = listing.appleInspection;
+  byId('appleStatus').textContent = inspection
+    ? language === 'he'
+      ? `בדיקת Apple בתאריך ${inspection.checkedAt}: גרסה ${inspection.version} במצב ${inspection.state}. טרם הוגשה לבדיקה. פרטי חובה וצילומי מכשיר עדיין חסרים.`
+      : `Apple inspection at ${inspection.checkedAt}: version ${inspection.version} is ${inspection.state}. Not submitted for review. Required information and device screenshots are still missing.`
+    : '';
   byId('iphoneFeatures').replaceChildren();
   for (const feature of copy.iphoneFeatures) {
     const card = document.createElement('article'); card.className = 'iphone-feature';

@@ -11,6 +11,24 @@ submission preparation; it does not establish missing privacy declarations,
 legal facts or final native screenshots. Submission is not yet confirmed.
 Keep manual release configured rather than automatically publishing after review.
 
+## Live Apple inspection — 2026-11-09
+
+Read-only inspection succeeded in
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42590615251>.
+The actual app is `6820408299`, currently named **AutoFit Workout Tracker**.
+Version 1.0 is **PREPARE_FOR_SUBMISSION**, not Waiting for Review.
+No build is selected, no screenshots are uploaded, the store description is
+empty, and public support/privacy URLs and complete review contact are missing.
+The existing release type is **AFTER_APPROVAL**; switch it to **MANUAL** before
+submission. The read-only inspection has not changed that setting or any other
+Apple record. Local metadata and creative approval are not an Apple receipt.
+
+Submission is blocked pending real owner-provided contact/policy facts,
+completed in-app policies and final native iPhone/iPad captures. Do not invent
+an email address, review phone, policy approval or privacy-label answer.
+Price, territories, agreements, age-rating and privacy-label answers remain
+unassessed by this read-only check.
+
 ## Review
 
 Run `node marketing\app-store\serve.cjs` from the worktree and open

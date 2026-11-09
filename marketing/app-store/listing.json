@@ -8,6 +8,20 @@
     "releaseMode": "Manual",
     "readiness": "Required facts, policies and final native screenshots must be completed before submission"
   },
+  "appleInspection": {
+    "checkedAt": "2026-11-09T09:04:58.554Z",
+    "appID": "6820408299",
+    "version": "1.0",
+    "state": "PREPARE_FOR_SUBMISSION",
+    "currentReleaseType": "AFTER_APPROVAL",
+    "buildSelected": false,
+    "reviewContactComplete": false,
+    "privacyPolicyURLProvided": false,
+    "supportURLProvided": false,
+    "screenshotsUploaded": false,
+    "approvedListingUploaded": false,
+    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42590615251"
+  },
   "referenceBuild": "1.0 (52)",
   "referenceSource": "93bce49bf3f5aed3d9daf023d3ff31673e9f9035",
   "price": "Free",
