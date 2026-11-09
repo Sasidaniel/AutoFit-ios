@@ -23,9 +23,9 @@
     "demoAccountRequired": false,
     "privacyPolicyURLProvided": false,
     "supportURLProvided": false,
-    "screenshotsUploaded": false,
+    "screenshotsUploaded": true,
     "approvedListingUploaded": true,
-    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42596732165"
+    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42629838965"
   },
   "appleDraftVerification": {
     "checkedAt": "2026-11-09T09:38:04.866Z",
@@ -62,6 +62,17 @@
     "sourceWorkflowURLs": ["https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42611518422", "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623335643"],
     "finalSubmissionAssets": true
   },
+  "appleScreenshotVerification": {
+    "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42629838965",
+    "receipt": "assets/apple-screenshots-receipt.json",
+    "screenshotsVerified": true,
+    "imageCount": 32,
+    "orderedGroupCount": 4,
+    "groups": ["he/iphone", "he/ipad", "en/iphone", "en/ipad"],
+    "submissionPerformed": false,
+    "publicationPerformed": false,
+    "binaryUploaded": false
+  },
   "appleReviewAttempt": {
     "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42623704458",
     "result": "not-submitted",
@@ -73,6 +84,12 @@
   "appleFeatureVerification": {
     "date": "2026-11-09",
     "primaryCategory": "Health & Fitness",
+    "developerAgreement": {
+      "ownerReportedAcceptance": true,
+      "pendingAgreementBannerAbsentOnFreshAppStoreHome": true,
+      "source": "https://appstoreconnect.apple.com/apps",
+      "agentAcceptedAgreement": false
+    },
     "ageRating": "Owner-requested 18+ override saved; Apple displays 18+ in 173 territories and 19+ in Korea. Operating systems earlier than 26 display Apple's legacy 17+ rating with regional exceptions.",
     "minimumAgeReason": "Owner authorized temporarily excluding minors. The store override was changed and read back after Save; build 52's in-app age/consent flow is unchanged. Apple's legacy 17+ mapping is not an enforceable 18+ in-app gate or legal clearance.",
     "territoryAvailability": {
@@ -186,11 +203,10 @@
     "privacyLabel": "Not finalized. Do not select Data Not Collected without reviewing optional contact submissions, Apple speech services and third-party handling.",
     "reviewerNotes": "Proposed submission: version 1.0, final binary pending policy completion and readiness checks. Build 52 is the current TestFlight reference, not a confirmed final store candidate. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
     "blockers": [
-      { "id": "native", "he": "הושלמו ונשמרו 32 צילומי סימולטור אמיתיים ו־32 תמונות חנות אטומות, ל־iPhone ול־iPad בשתי השפות. גלריית צילומי המכשיר נפרדת מצילומי הווב הישנים. ההעלאה ל־Apple עדיין אינה מאומתת.", "en": "All 32 real Simulator originals and 32 opaque storefront compositions are preserved for iPhone and iPad in both languages. The native gallery is separate from the older browser artwork. Apple upload is not yet verified." },
       { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
-      { "id": "urls", "he": "נדרשים כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה, ופרטי קשר אמיתיים לבדיקת Apple. לא הומצאו כתובות או פרטים.", "en": "Live public privacy and support URLs and real Apple review contact details are needed. No URLs or contact details have been invented." },
+      { "id": "urls", "he": "עדיין נדרשות כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה. פרטי הקשר לבדיקת Apple כבר הושלמו ואומתו; הם אינם מפורסמים בחבילת הסקירה.", "en": "Live public privacy and support URLs are still required. Apple review contact details are already complete and verified; they are not published in the review package." },
       { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
-      { "id": "store", "he": "לפי בקשתך נשמר דירוג חנות 18+ והוסרו זמנית 27 מדינות האיחוד האירופי; 148 מדינות נותרו. במערכות שלפני גרסה 26 Apple ממפה את הדירוג ל־17+, ובנייה 52 לא שונתה. הצהרת הפרטיות והסכם המפתחים המעודכן עדיין דורשים טיפול; שינוי מדינות אינו פותר אותם.", "en": "As requested, the 18+ store override is saved and the 27 EU countries are temporarily excluded, leaving 148 territories. Before OS 26 Apple maps this to 17+, and build 52 is unchanged. Privacy declarations and the updated developer agreement remain unresolved; changing territories does not resolve them." }
+      { "id": "store", "he": "נשמר דירוג חנות 18+ והוסרו זמנית 27 מדינות האיחוד האירופי; 148 מדינות נותרו. לפני גרסה 26 Apple ממפה את הדירוג ל־17+, ובנייה 52 לא שונתה. אישרת את הסכם המפתחים וההתראה עליו נעלמה בבדיקה מחדש. הצהרות הפרטיות וזכויות התוכן עדיין אינן שלמות.", "en": "The 18+ store override is saved and the 27 EU countries are temporarily excluded, leaving 148 territories. Before OS 26 Apple maps this to 17+, and build 52 is unchanged. The owner accepted the developer agreement and its pending notice is absent on a fresh read. Privacy and content-rights declarations remain incomplete." }
     ]
   },
   "sources": [

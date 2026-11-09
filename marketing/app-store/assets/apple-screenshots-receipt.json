@@ -1,0 +1,403 @@
+{
+  "checkedAt": "2026-11-09T13:56:21.501Z",
+  "screenshotsVerified": true,
+  "submissionPerformed": false,
+  "publicationPerformed": false,
+  "binaryUploaded": false,
+  "records": [
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "workout",
+      "sha256": "0ca51850c87298a73c6dc675f396bbbff9af793653097734d50398d18a9c1528",
+      "imageID": "e2800019-6872-8beb-8018-4c237cd20165",
+      "placementID": "2b400019-6872-8beb-8f1b-56eb99c02163"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "plans",
+      "sha256": "b43914ae168f906a13af84bf1a393c4629454725b1318bef3e86a87cf9b5a6c8",
+      "imageID": "2fc00019-6872-8beb-8028-b44ae4b30c24",
+      "placementID": "1f800019-6872-8beb-8f3b-31c232aceb36"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "sets",
+      "sha256": "a1c4bc3ce5a1e58fbe63d2413adcce84eb93def8846dc6c290a28c028b053615",
+      "imageID": "71c00019-6872-8beb-800a-d3d90d639403",
+      "placementID": "fac00019-6872-8beb-8f36-3bfde382c10c"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "statistics",
+      "sha256": "8915b3d2b359ae9ee7195dac9b096f0130231703e9ca12c4bde7361b334e163f",
+      "imageID": "5d000019-6872-8beb-8020-542dcad7e1c0",
+      "placementID": "2c400019-6872-8beb-8f32-eb7f969bdc83"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "saved",
+      "sha256": "4fcc04a12cd365c9afe0ba3b96af2f57f8656b4679327a14f43c288b896f63ee",
+      "imageID": "1e000019-6872-8beb-801a-646318fa7a61",
+      "placementID": "d3800019-6872-8beb-8f0a-2bc6204cae23"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "history",
+      "sha256": "eb45f3d79cfe85a69f0d438bc5aa73deb278bb3474aabf8675217593be789f29",
+      "imageID": "cc000019-6872-8beb-800d-c93bda0ca5a3",
+      "placementID": "9e800019-6872-8beb-8f2a-1b396bd80337"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "cardio",
+      "sha256": "03802494296de66acf2746294ecc2d6f1b989743bf324534c7cbdd03dbbc52ca",
+      "imageID": "30800019-6872-8beb-8001-755203efdf3d",
+      "placementID": "8b800019-6872-8beb-8f32-91f979779283"
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "scene": "library",
+      "sha256": "6659189cd6fa1f47eb1d7ee373ae5bec8954ad39402abfa7175bcd25a45ec1d4",
+      "imageID": "00800019-6872-8beb-802d-7cbde8936215",
+      "placementID": "59400019-6872-8beb-8f2e-100c7bc0f1b1"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "workout",
+      "sha256": "47f2e260968b183c54e78dd6ca1c5a9a45929152162cad3c34d187b027978381",
+      "imageID": "43400019-6872-8beb-8039-abdd6aefdf4c",
+      "placementID": "86000019-6872-8beb-8f2c-e4334201c52a"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "plans",
+      "sha256": "f52c9b1c0d3f04424d1504f61f521fb58b6763811a2cb83abdba0c21f012ce33",
+      "imageID": "55800019-6872-8beb-8039-a8cb35d6fdde",
+      "placementID": "96c00019-6872-8beb-8f2a-141c6fa6a328"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "sets",
+      "sha256": "35c1291e1058fbe49dc62a0c0a4847330c899523f7bba25e2c0c7e0d60e37ffe",
+      "imageID": "14800019-6872-8beb-8000-7fcfb715a304",
+      "placementID": "5b400019-6872-8beb-8f2c-238959a7c033"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "statistics",
+      "sha256": "985528ff9846c13ea373ad1c19fa9616e3abba00049208e8529388a5a259492f",
+      "imageID": "94400019-6872-8beb-8006-d4323a193b79",
+      "placementID": "2b800019-6872-8beb-8f0d-73f2333a57f8"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "saved",
+      "sha256": "e85c95debf80b3d42f459fc431385d8f85822d91f99686a7ef2e2e590a998312",
+      "imageID": "2b400019-6872-8beb-8025-2a583f2f901e",
+      "placementID": "da800019-6872-8beb-8f06-2f2b8e7af57c"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "history",
+      "sha256": "f9a26a672844ecd3eac0946793fcd8ff8127e0192523e6667b952f8278077470",
+      "imageID": "02c00019-6872-8beb-8022-dfa5e0a1fb54",
+      "placementID": "c9c00019-6872-8beb-8f20-301dd35ea0aa"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "cardio",
+      "sha256": "0ec5d3f0be5e31e4d6e3d58baf7c2833052facf6e4b5a1d142e297cc38fa2520",
+      "imageID": "fd000019-6872-8beb-8027-703454d7a7ed",
+      "placementID": "94800019-6872-8beb-8f2e-649a26f08c26"
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "scene": "library",
+      "sha256": "18bd91a6ba5e6291d107e53b8a435f6eb0f9cf60f3afa7fc148bb8a7da63e7b3",
+      "imageID": "9a000019-6872-8beb-8037-dfa03fb7c470",
+      "placementID": "81800019-6872-8beb-8f09-34f7331e90cd"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "workout",
+      "sha256": "0cd878a527488181ce2f30f23991acb2351efa5ff11fd563df2ca6d3d2b55688",
+      "imageID": "a7c00019-6872-8beb-8019-3a9593a96430",
+      "placementID": "3b800019-6872-8beb-8f03-2a42119adb0f"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "plans",
+      "sha256": "34d92b47ec9e1c1c5dcef5785b378da3b98f80be3a2efd8beec107000006ffd8",
+      "imageID": "75400019-6872-8beb-800f-c5e7459eaccd",
+      "placementID": "0a800019-6872-8beb-8f09-b5320dfef705"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "sets",
+      "sha256": "69376c2a6f1b1e462bc813e32134eef736b6d0958be720df4d34870854517411",
+      "imageID": "f1400019-6872-8beb-8032-53b319843a1e",
+      "placementID": "a3c00019-6872-8beb-8f28-0e0894ba66b6"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "statistics",
+      "sha256": "4dc7303f11d6be12632de58aa322ebbf2fe2a13cc44aabd9ecbb5022445c3e81",
+      "imageID": "06000019-6872-8beb-8010-5306daa00e1c",
+      "placementID": "13c00019-6872-8beb-8f09-af6554c93055"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "saved",
+      "sha256": "7aa2ff52d0f8c1d70376b45938f388632792c6ad9af80c767d6c28f8b26d8af7",
+      "imageID": "38800019-6872-8beb-8030-3e5fd539a448",
+      "placementID": "06000019-6872-8beb-8f06-83bb2ae18cfb"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "history",
+      "sha256": "dc93bd67a595b8fa8a3f0b51a93b170e0df84b03434e704cd6e6ce2fb5d9be2b",
+      "imageID": "83000019-6872-8beb-800c-f73a8e320f19",
+      "placementID": "45000019-6872-8beb-8f38-552f47deddf8"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "cardio",
+      "sha256": "52f3b8e069bb7efa5feac53eaacba80e025547e7eae1449487d2853be1d4691e",
+      "imageID": "1ac00019-6872-8beb-801b-510c88a4350e",
+      "placementID": "9fc00019-6872-8beb-8f3f-52bf4eb62045"
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "scene": "library",
+      "sha256": "f868140d79e62f248021ef7afd45280513c5776ade906cd626013ef279ae661f",
+      "imageID": "c5000019-6872-8beb-801c-3e0a7844a6bb",
+      "placementID": "87400019-6872-8beb-8f23-000fcda910d7"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "workout",
+      "sha256": "a092805e60ff29a1c224dc0647753b5af8942bf917cc44170570da45594576b9",
+      "imageID": "08800019-6872-8beb-8039-02eb8542259b",
+      "placementID": "b3c00019-6872-8beb-8f14-d8a0b89e7b36"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "plans",
+      "sha256": "9f184bb76c8273e6b0500f1ca700f0898e59586e32bc1a54576f181236fe42bf",
+      "imageID": "d8000019-6872-8beb-8007-b915394dffc3",
+      "placementID": "c0c00019-6872-8beb-8f39-0624e6b45a24"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "sets",
+      "sha256": "0962d06bc45735dbef187aef96cd6c66c1cd58c7d23f7f76039b7c594db72b83",
+      "imageID": "8b400019-6872-8beb-8000-be6bf0960b64",
+      "placementID": "ea800019-6872-8beb-8f32-9ec3fac19230"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "statistics",
+      "sha256": "3e6cd4d33eaaaeb7b054b63915d55c019e3988ccab081fc70d468f84c32a4326",
+      "imageID": "d3000019-6872-8beb-800e-7c3b07c0307c",
+      "placementID": "d7400019-6872-8beb-8f34-9fa51f6e3182"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "saved",
+      "sha256": "58eab81208ba1b83f51e3518f75a3c1e9d0365e1f48610c365dda784e1f2e03a",
+      "imageID": "99000019-6872-8beb-800e-de92cb548589",
+      "placementID": "ed400019-6872-8beb-8f11-c70b1671f5aa"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "history",
+      "sha256": "41b4064d1ab48d8c25935c036db9f88483329a14140319b652d8dd4a9240c109",
+      "imageID": "59800019-6872-8beb-8006-d5dc11b5b031",
+      "placementID": "6f400019-6872-8beb-8f0f-b5af8d5903d2"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "cardio",
+      "sha256": "b8e1d035dbff2ba532b91eef693624bf9e234098abe1d46447ed33b4d02cafd9",
+      "imageID": "65000019-6872-8beb-8001-8cc0b1a233cc",
+      "placementID": "f1000019-6872-8beb-8f21-0b3889d21e45"
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "scene": "library",
+      "sha256": "916c59070ecdc6be42428616f456cca2eac2b065755060434400ee97c5b39c33",
+      "imageID": "e1c00019-6872-8beb-8020-c1b45ac87369",
+      "placementID": "ae000019-6872-8beb-8f23-3f65846fbcf1"
+    }
+  ],
+  "placementChecks": [
+    {
+      "family": "iphone",
+      "language": "he",
+      "expectedIDs": [
+        "2b400019-6872-8beb-8f1b-56eb99c02163",
+        "1f800019-6872-8beb-8f3b-31c232aceb36",
+        "fac00019-6872-8beb-8f36-3bfde382c10c",
+        "2c400019-6872-8beb-8f32-eb7f969bdc83",
+        "d3800019-6872-8beb-8f0a-2bc6204cae23",
+        "9e800019-6872-8beb-8f2a-1b396bd80337",
+        "8b800019-6872-8beb-8f32-91f979779283",
+        "59400019-6872-8beb-8f2e-100c7bc0f1b1"
+      ],
+      "actualIDs": [
+        "2b400019-6872-8beb-8f1b-56eb99c02163",
+        "1f800019-6872-8beb-8f3b-31c232aceb36",
+        "fac00019-6872-8beb-8f36-3bfde382c10c",
+        "2c400019-6872-8beb-8f32-eb7f969bdc83",
+        "d3800019-6872-8beb-8f0a-2bc6204cae23",
+        "9e800019-6872-8beb-8f2a-1b396bd80337",
+        "8b800019-6872-8beb-8f32-91f979779283",
+        "59400019-6872-8beb-8f2e-100c7bc0f1b1"
+      ],
+      "states": [
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE"
+      ]
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "expectedIDs": [
+        "86000019-6872-8beb-8f2c-e4334201c52a",
+        "96c00019-6872-8beb-8f2a-141c6fa6a328",
+        "5b400019-6872-8beb-8f2c-238959a7c033",
+        "2b800019-6872-8beb-8f0d-73f2333a57f8",
+        "da800019-6872-8beb-8f06-2f2b8e7af57c",
+        "c9c00019-6872-8beb-8f20-301dd35ea0aa",
+        "94800019-6872-8beb-8f2e-649a26f08c26",
+        "81800019-6872-8beb-8f09-34f7331e90cd"
+      ],
+      "actualIDs": [
+        "86000019-6872-8beb-8f2c-e4334201c52a",
+        "96c00019-6872-8beb-8f2a-141c6fa6a328",
+        "5b400019-6872-8beb-8f2c-238959a7c033",
+        "2b800019-6872-8beb-8f0d-73f2333a57f8",
+        "da800019-6872-8beb-8f06-2f2b8e7af57c",
+        "c9c00019-6872-8beb-8f20-301dd35ea0aa",
+        "94800019-6872-8beb-8f2e-649a26f08c26",
+        "81800019-6872-8beb-8f09-34f7331e90cd"
+      ],
+      "states": [
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE"
+      ]
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "expectedIDs": [
+        "3b800019-6872-8beb-8f03-2a42119adb0f",
+        "0a800019-6872-8beb-8f09-b5320dfef705",
+        "a3c00019-6872-8beb-8f28-0e0894ba66b6",
+        "13c00019-6872-8beb-8f09-af6554c93055",
+        "06000019-6872-8beb-8f06-83bb2ae18cfb",
+        "45000019-6872-8beb-8f38-552f47deddf8",
+        "9fc00019-6872-8beb-8f3f-52bf4eb62045",
+        "87400019-6872-8beb-8f23-000fcda910d7"
+      ],
+      "actualIDs": [
+        "3b800019-6872-8beb-8f03-2a42119adb0f",
+        "0a800019-6872-8beb-8f09-b5320dfef705",
+        "a3c00019-6872-8beb-8f28-0e0894ba66b6",
+        "13c00019-6872-8beb-8f09-af6554c93055",
+        "06000019-6872-8beb-8f06-83bb2ae18cfb",
+        "45000019-6872-8beb-8f38-552f47deddf8",
+        "9fc00019-6872-8beb-8f3f-52bf4eb62045",
+        "87400019-6872-8beb-8f23-000fcda910d7"
+      ],
+      "states": [
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE"
+      ]
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "expectedIDs": [
+        "b3c00019-6872-8beb-8f14-d8a0b89e7b36",
+        "c0c00019-6872-8beb-8f39-0624e6b45a24",
+        "ea800019-6872-8beb-8f32-9ec3fac19230",
+        "d7400019-6872-8beb-8f34-9fa51f6e3182",
+        "ed400019-6872-8beb-8f11-c70b1671f5aa",
+        "6f400019-6872-8beb-8f0f-b5af8d5903d2",
+        "f1000019-6872-8beb-8f21-0b3889d21e45",
+        "ae000019-6872-8beb-8f23-3f65846fbcf1"
+      ],
+      "actualIDs": [
+        "b3c00019-6872-8beb-8f14-d8a0b89e7b36",
+        "c0c00019-6872-8beb-8f39-0624e6b45a24",
+        "ea800019-6872-8beb-8f32-9ec3fac19230",
+        "d7400019-6872-8beb-8f34-9fa51f6e3182",
+        "ed400019-6872-8beb-8f11-c70b1671f5aa",
+        "6f400019-6872-8beb-8f0f-b5af8d5903d2",
+        "f1000019-6872-8beb-8f21-0b3889d21e45",
+        "ae000019-6872-8beb-8f23-3f65846fbcf1"
+      ],
+      "states": [
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE",
+        "ACTIVE"
+      ]
+    }
+  ]
+}

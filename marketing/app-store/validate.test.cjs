@@ -76,10 +76,27 @@ test('review does not pass off browser screenshots or unresolved store facts as 
   assert.equal(availability.availableCount + availability.excludedTerritoryCodes.length, 175);
   assert.equal(new Set(availability.excludedTerritoryCodes).size, 27);
   assert.equal(availability.automaticallyIncludeFutureTerritories, false);
-  assert.deepEqual(listing.review.blockers.map((item) => item.id), ['native', 'legal', 'urls', 'privacy', 'store']);
+  assert.deepEqual(listing.review.blockers.map((item) => item.id), ['legal', 'urls', 'privacy', 'store']);
   const script = fs.readFileSync(path.join(__dirname, 'review.js'), 'utf8');
   assert.match(script, /submissionAuthorized: false/);
   assert.doesNotMatch(script, /api\.appstoreconnect|fetch\([^)]*,\s*\{/);
+});
+
+test('Apple upload receipt preserves all 32 artwork hashes and four exact ordered groups without claiming review or publication', () => {
+  const receipt = JSON.parse(fs.readFileSync(path.join(__dirname, listing.appleScreenshotVerification.receipt), 'utf8'));
+  const compositions = JSON.parse(fs.readFileSync(path.join(assets, 'native-compositions.json'), 'utf8'));
+  assert.equal(receipt.screenshotsVerified, true);
+  assert.equal(receipt.records.length, 32);
+  assert.equal(new Set(receipt.records.map((item) => item.sha256)).size, 32);
+  for (const item of receipt.records) assert.ok(compositions.records.some((source) => source.sha256 === item.sha256));
+  assert.equal(receipt.placementChecks.length, 4);
+  for (const group of receipt.placementChecks) {
+    assert.equal(group.expectedIDs.length, 8);
+    assert.deepEqual(group.actualIDs, group.expectedIDs);
+    assert.ok(group.states.every((state) => ['ACTIVE', 'PARENT_PREPARE_FOR_SUBMISSION'].includes(state)));
+  }
+  for (const key of ['submissionPerformed', 'publicationPerformed', 'binaryUploaded']) assert.equal(receipt[key], false);
+  assert.doesNotMatch(JSON.stringify(receipt), /uploadOperations|templateUrl|Authorization|contactEmail/);
 });
 
 test('native review gallery preserves actual source hashes and separate partial-run provenance', () => {

@@ -30,9 +30,11 @@ Israel, the US, UK and Norway remain Available on App Release.
 Automatic inclusion of future territories remains disabled. No preorder,
 new binary, public release or automatic publication was started.
 Readback: <https://appstoreconnect.apple.com/apps/6820408299/distribution/pricing/availability>.
-Removing EU availability does not waive global privacy requirements or
-Apple's updated Developer Program agreement, which the Account Holder must
-personally review and accept.
+Removing EU availability does not waive global privacy requirements.
+The owner subsequently accepted Apple's updated Developer Program agreement.
+A fresh authenticated App Store Connect home-page read confirms the pending
+agreement/Account Holder acceptance notice is absent. The agent did not accept
+the agreement or request that it be accepted again.
 
 All 32 native originals and 32 opaque marketing compositions are preserved
 with their separate capture-run provenance. Upload run
@@ -62,6 +64,24 @@ and still requires the parent version to remain editable with manual release.
 Pending placements and mismatched order are rejected. Both modern and
 legacy readiness views are source-labelled; they must not be summed as
 independent screenshots when Apple exposes the same assets through both APIs.
+Run <https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42629653057>
+stopped before upload because a newly added regression was accidentally nested
+and cancelled under the CI test runner. This was an implementation/test failure,
+not an Apple rejection. The regression is now an independent top-level test,
+and the exact 29-test App Store CI selector passes locally before the next retry.
+
+**Native screenshot delivery is now verified.** Successful run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42629838965>
+read back **all 32 images in four exact ordered groups of eight**: Hebrew and
+English, iPhone and iPad. Every modern placement is `ACTIVE`; the independent
+post-upload metadata snapshot confirms eight per group. The permanent,
+sanitized receipt is `assets/apple-screenshots-receipt.json` and links every
+uploaded image to the exact approved artwork SHA-256. Retries reused the
+existing immutable assets rather than uploading duplicate binaries or images.
+The version remains `PREPARE_FOR_SUBMISSION` / `MANUAL`; **this is a successful
+screenshot upload, not an App Review submission or public release**.
+Public support/privacy URLs and privacy/content-rights declarations remain
+unresolved. The developer agreement is no longer an outstanding blocker.
 
 ## Live Apple inspection — 2026-11-09
 

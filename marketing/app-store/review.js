@@ -117,10 +117,16 @@ function render() {
     link.href = `/${kind}${language === 'he' ? '' : '-en'}.html`;
   }
   const inspection = listing.appleInspection;
+  const uploaded = listing.appleScreenshotVerification?.screenshotsVerified === true;
+  if (uploaded) {
+    byId('nativeNotice').textContent = language === 'he'
+      ? '32 תמונות חנות מצילומי סימולטור אמיתיים הועלו ל־Apple ואומתו בארבע קבוצות מסודרות: iPhone ו־iPad בעברית ובאנגלית. נתוני הדגמה בלבד, ללא הדמיית האזנה. הגרסה טרם הוגשה לבדיקה או פורסמה.'
+      : '32 storefront images from real Simulator captures are uploaded to Apple and verified in four ordered groups: iPhone and iPad in Hebrew and English. Synthetic data only, no simulated listening. The version has not been submitted for review or published.';
+  }
   byId('appleStatus').textContent = inspection
     ? language === 'he'
-      ? `בדיקת Apple בתאריך ${inspection.checkedAt}: גרסה ${inspection.version} במצב ${inspection.state}. טרם הוגשה לבדיקה. פרטי חובה וצילומי מכשיר עדיין חסרים.`
-      : `Apple inspection at ${inspection.checkedAt}: version ${inspection.version} is ${inspection.state}. Not submitted for review. Required information and device screenshots are still missing.`
+      ? `בדיקת Apple בתאריך ${inspection.checkedAt}: גרסה ${inspection.version} במצב ${inspection.state}. טרם הוגשה לבדיקה. ${uploaded ? '32 צילומי החנות הועלו ואומתו; נותרו פרטי חובה אחרים.' : 'פרטי חובה וצילומי מכשיר עדיין חסרים.'}`
+      : `Apple inspection at ${inspection.checkedAt}: version ${inspection.version} is ${inspection.state}. Not submitted for review. ${uploaded ? 'All 32 store screenshots are uploaded and verified; other required fields remain.' : 'Required information and device screenshots are still missing.'}`
     : '';
   if (listing.submissionRequest.pausedByOwner) {
     byId('readinessHeading').textContent = language === 'he' ? 'ההגשה בהמתנה לפי בקשתך.' : 'Submission is on hold at your request.';
