@@ -24,6 +24,15 @@ test('native control server refuses activation outside macOS CI', () => {
   assert.match(result.stderr, /isolated macOS CI/);
 });
 
+test('capture connects the dedicated simulator to the real display before launching the app', () => {
+  const script = fs.readFileSync(path.join(root, '.github', 'scripts', 'capture-store-simulator.sh'), 'utf8');
+  const boot = script.indexOf('xcrun simctl boot "$UDID"');
+  const display = script.indexOf('open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"');
+  const launch = script.indexOf('xcrun simctl launch "$UDID" com.sasidaniel.autofit');
+  assert.ok(boot > 0 && display > boot && launch > display);
+  assert.match(script, /native-store-captures/);
+});
+
 test('capture readiness rejects hidden tabs, stale dialogs and collapsed exercise details', () => {
   const source = fs.readFileSync(path.join(root, 'marketing', 'app-store', 'native-controls.js'), 'utf8');
   const nodes = new Map();

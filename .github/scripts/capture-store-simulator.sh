@@ -53,6 +53,8 @@ for FAMILY in iphone ipad; do
   UDID=$(xcrun simctl create "AutoFit Store $FAMILY" "$TYPE" "$RUNTIME")
   DEVICE_IDS+=("$UDID")
   xcrun simctl boot "$UDID"
+  # A booted headless device can run JavaScript without presenting WKWebView frames.
+  open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"
   xcrun simctl bootstatus "$UDID" -b
   xcrun simctl status_bar "$UDID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
   for LANGUAGE in he en; do

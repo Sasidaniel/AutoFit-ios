@@ -147,6 +147,17 @@ the workout tab, waits for presented animation frames, and the pipeline rejects
 duplicate images within each device/language group. Those corrections have
 regressions but still need a fresh macOS capture and visual acceptance; a green
 file-count workflow alone is not final screenshot approval.
+
+The corrected attempt
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42605899139>
+failed before the first capture: the actual WKWebView never presented the
+required animation frames, while the simulator screenshot still showed the
+startup splash despite the DOM having advanced. The new guard correctly refused
+the stale image. The next attempt explicitly opens the dedicated device in
+Xcode's Simulator application to provide its real display connection; the frame
+guard remains mandatory. This is a CI capture-environment correction, not a
+production audio or startup change. Native assets are still unaccepted.
+
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 

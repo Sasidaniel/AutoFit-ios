@@ -52,7 +52,7 @@
     "capturedAt": "2026-11-09T10:03:43.177Z",
     "fileCount": 32,
     "acceptedForSubmission": false,
-    "result": "Visual review rejected stale and duplicate screen captures despite successful build and file-count checks. Foreground/render readiness and duplicate-image guards added; a fresh native run is still required."
+    "result": "Visual review rejected stale and duplicate screen captures despite successful build and file-count checks. Retry 42605899139 correctly failed its new animation-frame guard while the simulator display still showed the startup splash. The next attempt explicitly connects the real Simulator display; no native assets have been accepted."
   },
   "price": "Free",
   "releaseMode": "Manual release after Apple approval and separate owner authorization",
