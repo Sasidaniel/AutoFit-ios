@@ -144,21 +144,21 @@ test('native screenshot uploads overlap Apple processing and tolerate more than 
   const result = await uploadScreenshots(listing, assets, mock.request, {
     transfer: mock.transfer, wait: async () => { waits++; },
   });
-
-  test('placement verification accepts the documented ready state but refuses pending assets or a different display order', async () => {
-    const documented = mockApple({ placementState: 'PARENT_PREPARE_FOR_SUBMISSION' });
-    assert.equal((await uploadScreenshots(listing, assets, documented.request, {
-      transfer: documented.transfer,
-    })).screenshotsVerified, true);
-    for (const settings of [{ placementState: 'ASSET_PROCESSING' }, { reverseReadback: true }]) {
-      const invalid = mockApple(settings);
-      await assert.rejects(uploadScreenshots(listing, assets, invalid.request, {
-        transfer: invalid.transfer,
-      }), /placement\/order readback did not match/);
-    }
-  });
   assert.equal(result.screenshotsVerified, true);
   assert.equal(result.records.length, 32);
   assert.ok(waits > 40);
   assert.equal(mock.transfers.length, 32);
+});
+
+test('placement verification accepts the documented ready state but refuses pending assets or a different display order', async () => {
+  const documented = mockApple({ placementState: 'PARENT_PREPARE_FOR_SUBMISSION' });
+  assert.equal((await uploadScreenshots(listing, assets, documented.request, {
+    transfer: documented.transfer,
+  })).screenshotsVerified, true);
+  for (const settings of [{ placementState: 'ASSET_PROCESSING' }, { reverseReadback: true }]) {
+    const invalid = mockApple(settings);
+    await assert.rejects(uploadScreenshots(listing, assets, invalid.request, {
+      transfer: invalid.transfer,
+    }), /placement\/order readback did not match/);
+  }
 });
