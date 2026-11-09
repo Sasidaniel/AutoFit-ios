@@ -2,6 +2,9 @@ const fs = require('node:fs');
 const { createAppleClient } = require('./app-store-api.cjs');
 
 async function prepareDraft(listing, request) {
+  if (listing.submissionRequest?.pausedByOwner === true) {
+    throw new Error('App Store preparation is paused by the owner; renewed approval is required');
+  }
   if (listing.submissionRequest?.ownerApprovedCreative !== true
     || listing.submissionRequest.submissionConfirmed !== false
     || listing.referenceBuild !== '1.0 (52)' || listing.price !== 'Free') {

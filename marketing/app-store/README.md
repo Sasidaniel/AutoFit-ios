@@ -127,6 +127,26 @@ References:
 - <https://developer.apple.com/app-store/review/guidelines/#kids>
 - <https://commission.europa.eu/law/law-topic/data-protection/information-business-and-organisations/legal-grounds-processing-data/are-there-any-specific-safeguards-data-about-children_en>
 - <https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions>
+
+## Owner pause and native asset review
+
+The owner explicitly chose to **hold submission** until the minor/privacy issue
+is resolved. `submissionRequest.pausedByOwner` records this decision, and the draft
+writer refuses all Apple requests while it is true. Earlier creative approval is
+not permission to resume. Apple's existing draft and manual-release configuration
+are preserved; nothing has been sent for review or made public.
+
+Native capture run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42595427163>
+built the actual app and produced 32 iPhone/iPad files in both languages.
+**Visual review did not accept these assets:** several images show stale screens
+or duplicate views rather than their labelled content. The files are retained in
+session artifacts, not substituted into the approved gallery or uploaded to Apple.
+The controller now requires the foreground visible tab/dialog, explicitly opens
+the workout tab, waits for presented animation frames, and the pipeline rejects
+duplicate images within each device/language group. Those corrections have
+regressions but still need a fresh macOS capture and visual acceptance; a green
+file-count workflow alone is not final screenshot approval.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 

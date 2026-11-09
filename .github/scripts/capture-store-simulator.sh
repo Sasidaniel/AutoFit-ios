@@ -67,7 +67,12 @@ for FAMILY in iphone ipad; do
       fi
       READY=false
       for attempt in {1..120}; do
-        if [[ -f "$STATE/error.json" ]]; then cat "$STATE/error.json" >&2; exit 1; fi
+        if [[ -f "$STATE/error.json" ]]; then
+          cp "$STATE/error.json" "$OUTPUT/error.json"
+          xcrun simctl io "$UDID" screenshot "$OUTPUT/failure-$FAMILY-$LANGUAGE-$SCREEN.png"
+          cat "$STATE/error.json" >&2
+          exit 1
+        fi
         if ID="$COMMAND_ID" node -e 'const fs=require("fs"),p=process.env.CAPTURE_NATIVE_STATE+"/ready.json";if(!fs.existsSync(p))process.exit(1);const r=JSON.parse(fs.readFileSync(p));process.exit(r.id===Number(process.env.ID)&&r.nativeBridgeVerified===true?0:1)'; then READY=true; break; fi
         sleep 1
       done
@@ -89,6 +94,10 @@ const fs=require('fs'),path=require('path'),crypto=require('crypto');
 const files=fs.readdirSync(process.env.OUTPUT).filter(n=>/^(iphone|ipad)-(he|en)-/.test(n)&&n.endsWith('.png'));
 if(files.length!==32)throw Error('Missing native device captures');
 const records=files.map(file=>{const b=fs.readFileSync(path.join(process.env.OUTPUT,file));return{file,width:b.readUInt32BE(16),height:b.readUInt32BE(20),sha256:crypto.createHash('sha256').update(b).digest('hex')}});
+for(const family of ['iphone','ipad'])for(const language of ['he','en']){
+  const group=records.filter(r=>r.file.startsWith(`${family}-${language}-`));
+  if(group.length!==8||new Set(group.map(r=>r.sha256)).size!==8)throw Error(`Missing or duplicate rendered screens: ${family}/${language}`);
+}
 fs.writeFileSync(path.join(process.env.OUTPUT,'provenance.json'),JSON.stringify({
 capturedAt:new Date().toISOString(),source:process.env.GITHUB_SHA,runtime:process.env.RUNTIME,
 actualCapacitorSimulatorApp:true,syntheticData:true,nativeVoiceSimulated:false,

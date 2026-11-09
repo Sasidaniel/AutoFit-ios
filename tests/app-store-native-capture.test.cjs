@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const serverPath = path.join(root, 'marketing', 'app-store', 'serve.cjs');
 
@@ -18,6 +19,35 @@ test('native control server refuses activation outside macOS CI', () => {
   const result = spawnSync(process.execPath, [serverPath], {
     env: { ...process.env, CI: 'false', CAPTURE_NATIVE: '1', CAPTURE_NATIVE_STATE: root },
     encoding: 'utf8',
+  });
+
+  test('capture readiness rejects hidden tabs, stale dialogs and collapsed exercise details', () => {
+    const source = fs.readFileSync(path.join(root, 'marketing', 'app-store', 'native-controls.js'), 'utf8');
+    const nodes = new Map();
+    const document = { visibilityState: 'visible', querySelector: (selector) => nodes.get(selector) || null };
+    const context = vm.createContext({ document });
+    vm.runInContext(source.slice(0, source.indexOf('\nrun().catch')).replace(/^import .*$/gm, ''), context);
+    const ready = vm.runInContext('captureReady', context);
+    const shown = { getClientRects: () => [{}] };
+    const hidden = { getClientRects: () => [] };
+    assert.equal(ready('workout'), false);
+    nodes.set('#tab-workout.active', hidden);
+    assert.equal(ready('workout'), false);
+    nodes.set('#tab-workout.active', shown);
+    assert.equal(ready('workout'), true);
+    assert.equal(ready('sets'), false);
+    nodes.set('.exercise-card[data-entry-index="1"]:not(.is-collapsed)', shown);
+    assert.equal(ready('sets'), true);
+    nodes.set('dialog[open]', shown);
+    assert.equal(ready('sets'), false);
+    nodes.set('#tab-plans.active', shown);
+    nodes.set('dialog[open] .training-plan-row', shown);
+    assert.equal(ready('plans'), true);
+    assert.equal(ready('saved'), false);
+    nodes.set('dialog[open].saved-plans-dialog [data-edit-plan]', shown);
+    assert.equal(ready('saved'), true);
+    document.visibilityState = 'hidden';
+    assert.equal(ready('plans'), false);
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /isolated macOS CI/);

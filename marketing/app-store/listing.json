@@ -5,6 +5,8 @@
     "ownerApprovedCreative": true,
     "requestedAction": "Save approved materials and proceed with App Store submission",
     "submissionConfirmed": false,
+    "pausedByOwner": true,
+    "pauseReason": "Owner chose to keep ages 12–17 and hold submission until the unresolved minor-privacy/consent review is addressed.",
     "releaseMode": "Manual",
     "readiness": "Required facts, policies and final native screenshots must be completed before submission"
   },
@@ -44,6 +46,14 @@
   },
   "referenceBuild": "1.0 (52)",
   "referenceSource": "93bce49bf3f5aed3d9daf023d3ff31673e9f9035",
+  "nativeCaptureReview": {
+    "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42595427163",
+    "source": "396f92bcc215b74ca75fa79fe73bd7ac2f3ed9f0",
+    "capturedAt": "2026-11-09T10:03:43.177Z",
+    "fileCount": 32,
+    "acceptedForSubmission": false,
+    "result": "Visual review rejected stale and duplicate screen captures despite successful build and file-count checks. Foreground/render readiness and duplicate-image guards added; a fresh native run is still required."
+  },
   "price": "Free",
   "releaseMode": "Manual release after Apple approval and separate owner authorization",
   "primaryCategory": "Health & Fitness",

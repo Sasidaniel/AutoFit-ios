@@ -91,6 +91,12 @@ function render() {
       ? `בדיקת Apple בתאריך ${inspection.checkedAt}: גרסה ${inspection.version} במצב ${inspection.state}. טרם הוגשה לבדיקה. פרטי חובה וצילומי מכשיר עדיין חסרים.`
       : `Apple inspection at ${inspection.checkedAt}: version ${inspection.version} is ${inspection.state}. Not submitted for review. Required information and device screenshots are still missing.`
     : '';
+  if (listing.submissionRequest.pausedByOwner) {
+    byId('readinessHeading').textContent = language === 'he' ? 'ההגשה בהמתנה לפי בקשתך.' : 'Submission is on hold at your request.';
+    byId('readinessIntro').textContent = language === 'he'
+      ? 'השם והטקסטים שמורים בטיוטת Apple, ופרטי הקשר לבדיקה אומתו. לא נשלח לבדיקה ולא נפרסם לפני פתרון נושא הפרטיות והסכמת הקטינים ואישור מחודש שלך.'
+      : 'The name and copy are saved in Apple’s draft, and review contact completeness is verified. No submission or publication will proceed until minor privacy/consent is resolved and you approve resuming.';
+  }
   byId('iphoneFeatures').replaceChildren();
   for (const feature of copy.iphoneFeatures) {
     const card = document.createElement('article'); card.className = 'iphone-feature';

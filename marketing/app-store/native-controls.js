@@ -10,9 +10,32 @@ async function wait(check, label) {
   throw new Error(`Native screenshot control unavailable: ${label}`);
 }
 function click(selector) {
-  const node = document.querySelector(selector);
+  const node = [...document.querySelectorAll(selector)].find((item) => item.getClientRects().length > 0);
   if (!node) throw new Error(`Missing actual app control: ${selector}`);
   node.click();
+}
+function captureReady(screen) {
+  const panels = { workout: 'workout', sets: 'workout', plans: 'plans', saved: 'plans',
+    statistics: 'dashboard', history: 'history', cardio: 'workout', library: 'exercises' };
+  const panel = document.querySelector(`#tab-${panels[screen]}.active`);
+  if (document.visibilityState !== 'visible' || !panel?.getClientRects().length) return false;
+  const expected = screen === 'plans' ? 'dialog[open] .training-plan-row'
+    : screen === 'saved' ? 'dialog[open].saved-plans-dialog [data-edit-plan]'
+    : screen === 'sets' ? '.exercise-card[data-entry-index="1"]:not(.is-collapsed)'
+    : screen === 'cardio' ? '.exercise-card[data-entry-index="0"]:not(.is-collapsed)' : null;
+  if (expected && !document.querySelector(expected)?.getClientRects().length) return false;
+  return ['plans', 'saved'].includes(screen) || !document.querySelector('dialog[open]');
+}
+async function waitForPaint() {
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Native WebView did not present animation frames')), 10000);
+    let frames = 0;
+    const next = () => {
+      if (++frames === 4) { clearTimeout(timeout); resolve(); }
+      else requestAnimationFrame(next);
+    };
+    requestAnimationFrame(next);
+  });
 }
 function scrollCard(index) {
   const card = document.querySelector(`.exercise-card[data-entry-index="${index}"]`);
@@ -20,7 +43,11 @@ function scrollCard(index) {
   window.scrollTo(0, card.getBoundingClientRect().top + scrollY - 170);
 }
 async function prepare(screen) {
-  if (screen === 'workout') scrollCard(0);
+  if (screen === 'workout') {
+    click('.tab-btn[data-tab="workout"]');
+    await wait(() => document.querySelector('#tab-workout.active'), 'visible workout tab');
+    scrollCard(0);
+  }
   if (screen === 'sets') {
     click('.exercise-card[data-entry-index="1"] .workout-card-toggle'); scrollCard(1);
   }
@@ -54,7 +81,10 @@ async function prepare(screen) {
   }
   document.activeElement?.blur();
   await document.fonts.ready;
-  await sleep(1000);
+  await wait(() => captureReady(screen), `visible ${screen} screen`);
+  await sleep(3000);
+  await waitForPaint();
+  if (!captureReady(screen)) throw new Error(`Native screen changed before capture: ${screen}`);
 }
 
 async function run() {

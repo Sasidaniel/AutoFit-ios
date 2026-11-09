@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { prepareDraft } = require('../.github/scripts/prepare-app-store-draft.cjs');
-const approved = require('../marketing/app-store/listing.json');
+const listing = require('../marketing/app-store/listing.json');
+const approved = { ...listing, submissionRequest: { ...listing.submissionRequest, pausedByOwner: false } };
 
 function fixture(options = {}) {
   const calls = [];
@@ -70,6 +71,13 @@ test('draft preparation refuses missing approval and noneditable versions before
   const submitted = fixture({ state: 'WAITING_FOR_REVIEW' });
   await assert.rejects(prepareDraft(approved, submitted.request), /editable/);
   assert.equal(submitted.calls.filter((call) => call.method !== 'GET').length, 0);
+});
+
+test('an owner pause overrides earlier creative approval before even reading Apple records', async () => {
+  const f = fixture();
+  await assert.rejects(prepareDraft({ ...approved,
+    submissionRequest: { ...approved.submissionRequest, pausedByOwner: true } }, f.request), /paused by the owner/);
+  assert.equal(f.calls.length, 0);
 });
 
 test('a rejected app name or unsuccessful readback remains an explicit failure', async () => {
