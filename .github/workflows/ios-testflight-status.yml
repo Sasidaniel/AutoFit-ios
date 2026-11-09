@@ -7,6 +7,11 @@ on:
         description: 'Existing approved Apple build number. Does not build or upload another binary.'
         required: true
         type: string
+      inspect_app_store:
+        description: 'Read-only App Store metadata inspection instead of TestFlight distribution verification'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -28,9 +33,29 @@ jobs:
       - name: Test internal delivery verification
         run: node --test --test-name-pattern='release verifier|internal delivery' tests/native-regressions.test.cjs
       - name: Complete and verify existing internal distribution
+        if: ${{ !inputs.inspect_app_store }}
         env:
           APP_BUILD_NUMBER: ${{ inputs.build_number }}
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
           APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
         run: node .github/scripts/verify-testflight.cjs
+      - name: Test read-only App Store inspection
+        if: ${{ inputs.inspect_app_store }}
+        run: node --test tests/app-store-readiness.test.cjs
+      - name: Inspect App Store metadata without changing it
+        if: ${{ inputs.inspect_app_store }}
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
+          APPSTORE_READINESS_REPORT: ${{ runner.temp }}/app-store-readiness.json
+        run: node .github/scripts/app-store-readiness.cjs
+      - name: Preserve sanitized App Store snapshot
+        if: ${{ success() && inputs.inspect_app_store }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-readiness
+          path: ${{ runner.temp }}/app-store-readiness.json
+          if-no-files-found: error
+          retention-days: 14

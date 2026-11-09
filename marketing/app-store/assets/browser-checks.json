@@ -1,0 +1,87 @@
+{
+  "checkedAt": "2026-11-09T08:58:20.129Z",
+  "checks": [
+    {
+      "language": "he",
+      "width": 320,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "he",
+      "width": 390,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "he",
+      "width": 768,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "he",
+      "width": 1280,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "en",
+      "width": 320,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "en",
+      "width": 390,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "en",
+      "width": 768,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    },
+    {
+      "language": "en",
+      "width": 1280,
+      "horizontalOverflow": false,
+      "copyExact": true,
+      "iphoneFeaturesExact": true,
+      "campaignExact": true,
+      "imageDialog": true,
+      "languageToggle": true
+    }
+  ],
+  "localApprovalOnly": true,
+  "nonpublicPathsBlocked": 5
+}

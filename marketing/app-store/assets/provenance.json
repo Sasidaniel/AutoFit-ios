@@ -1,0 +1,213 @@
+{
+  "capturedAt": "2026-11-09T08:58:18.268Z",
+  "referenceSource": "93bce49bf3f5aed3d9daf023d3ff31673e9f9035",
+  "runtime": "Chrome/157.0.8103.39",
+  "source": "Actual unmodified www UI in isolated Chrome; no native plugin simulation",
+  "syntheticData": true,
+  "nativeDeviceCapture": false,
+  "finalSubmissionAssets": false,
+  "rawViewport": {
+    "width": 390,
+    "height": 844,
+    "scale": 3
+  },
+  "compositionViewport": {
+    "width": 430,
+    "height": 932,
+    "scale": 3
+  },
+  "records": [
+    {
+      "file": "raw-he-workout.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "c49c72c0b7384abeb95782890f32c2be58fbca2c60cde618d0ed942e1483fa45"
+    },
+    {
+      "file": "raw-he-sets.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "1227aa51fc814a28fd451a66dbc3048c7cfa08bbaa9a473f83121db7131ddc36"
+    },
+    {
+      "file": "raw-he-plans.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "13ec24a7432021a6c55060d193d537f7248bd12e16032bb5e7923a7ec033a883"
+    },
+    {
+      "file": "raw-he-saved.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "e9a4de9d5d7dbaeee7470fc0589d680404e3658c0f636252db380601df435d01"
+    },
+    {
+      "file": "raw-he-statistics.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "64eb74058b565d949482c20470a3cd6aece7707d759d542c0e3925f00f6484d1"
+    },
+    {
+      "file": "raw-he-history.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "fe553a68b94035f7b5a60fb3cb31f3e793ea6a35c02893c42229089aadec9058"
+    },
+    {
+      "file": "raw-he-cardio.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "dbf4d85c6525844962c31e855c0edd42f49699dc2d4e8a6c2f938dfe05c7a9b3"
+    },
+    {
+      "file": "raw-he-library.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "dc962d33c19869f9d83aea2121ec37683abd87499c2bbff6b598ff7e1a4cf944"
+    },
+    {
+      "file": "he-workout.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "56a5fa5b1f02b8ef8faa81fb1e617031efa980e4a7b2a32cb8db073ddc0420cc"
+    },
+    {
+      "file": "he-plans.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "82d12df0f38ff6332fcbbc03e8607afec6a768a12e51ba066635490a37f19676"
+    },
+    {
+      "file": "he-sets.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "1bdc45542771e46138197b512aba8b53cbbc36a5f4ed08eead68bcae6c2b8e88"
+    },
+    {
+      "file": "he-statistics.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "9b76fbfae30e11cd5c0338adeca96bfd72ce176a4c368bd72f157e10d937c23b"
+    },
+    {
+      "file": "he-saved.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "0c4be8d0a1d41164997f85a78e738bf89511109fdd40a46daa95da71e61da362"
+    },
+    {
+      "file": "he-history.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "d587873fe892422870b2243e9f2bb7a603d6553292bc83284f0bd13cce58643b"
+    },
+    {
+      "file": "he-cardio.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "39755900342e92e22a2b96a4d94c1e340c3391cea2d80684e434675b7b56f8f9"
+    },
+    {
+      "file": "he-library.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "7e9282e575419cd9ed65f9125bc9179db3e7ced878503785fb188a92482a4b77"
+    },
+    {
+      "file": "raw-en-workout.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "c5b7922325dd8de416d1f43090b151332307ba447ff3031bf7227dcd74e6104e"
+    },
+    {
+      "file": "raw-en-sets.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "c8d3e022b5d7ef9a66a24207b19d9289d270069c0bbbbe225a1546867d250a97"
+    },
+    {
+      "file": "raw-en-plans.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "0b22c9e18cb27a15d19a2d00c3b66b2e1d74fcfa995d5bb1d0ef87043574149c"
+    },
+    {
+      "file": "raw-en-saved.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "c0295ce14e283a446c2cf8f6f19199efac12ecebb7c7b28b36cc75e39236b04b"
+    },
+    {
+      "file": "raw-en-statistics.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "2e65d08bb81ecbfd44f7b7da3ebc16f53f0deef989daff9beea12f51598e9942"
+    },
+    {
+      "file": "raw-en-history.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "84a5e44d29c7273df76f40a98c7df0afcb19415f69f26248ab7f6cd3db932d1c"
+    },
+    {
+      "file": "raw-en-cardio.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "8eaa6bc88dce6766b4b29525bb89c1e7c20d7cc1277d60ccc3d793cf1259f018"
+    },
+    {
+      "file": "raw-en-library.png",
+      "width": 1170,
+      "height": 2532,
+      "sha256": "65b6c3830f2cb64fcd1e41dbf16008f585bf72036a62b779d170e5af18449c8a"
+    },
+    {
+      "file": "en-workout.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "0acd5880f45c6f0ed5a85b005aa2e4adeb018e25ea55005e251434252da91332"
+    },
+    {
+      "file": "en-plans.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "de7068f6d180bdfcb92caa8bf79a54e6c50bdf453032dfb1fc51d10f23e5445f"
+    },
+    {
+      "file": "en-sets.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "edea844e0d19a63bd2dd3b03dbda73b8afc86b36a0081c3fa4c8c69a32a81fb2"
+    },
+    {
+      "file": "en-statistics.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "7f66f77b58a5b2f31fb45ca688ca68d8df3adc4c1434de4714899a784e46ab04"
+    },
+    {
+      "file": "en-saved.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "a9db5f2f59174381ceb77f26fdc459d3b68039156b880add88ceab45bcfae5fe"
+    },
+    {
+      "file": "en-history.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "001089af66666d31a39265d378d35fc00ffd243665344e2462d31b41b106e0b6"
+    },
+    {
+      "file": "en-cardio.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "eb1ade1ab0a134fd56839ad1fc80d26afe92f08fe4abb38580e916490f76335a"
+    },
+    {
+      "file": "en-library.png",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "7255ffcbc62d92d66268c4dbe99884e66fc0c4a43bf6ceec2fb85a78afc80e58"
+    }
+  ]
+}

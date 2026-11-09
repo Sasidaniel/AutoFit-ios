@@ -1,0 +1,119 @@
+{
+  "status": "local-review-only",
+  "submissionRequest": {
+    "date": "2026-11-09",
+    "ownerApprovedCreative": true,
+    "requestedAction": "Save approved materials and proceed with App Store submission",
+    "submissionConfirmed": false,
+    "releaseMode": "Manual",
+    "readiness": "Required facts, policies and final native screenshots must be completed before submission"
+  },
+  "referenceBuild": "1.0 (52)",
+  "referenceSource": "93bce49bf3f5aed3d9daf023d3ff31673e9f9035",
+  "price": "Free",
+  "releaseMode": "Manual release after Apple approval and separate owner authorization",
+  "primaryCategory": "Health & Fitness",
+  "minimumIOS": "17.0",
+  "locales": {
+    "he": {
+      "name": "AutoFit",
+      "subtitle": "העוזר האישי והשותף שלך באימון",
+      "promotionalText": "תוכנית אישית לפי הזמן, הסביבה והציוד שלכם. שליטה קולית בעברית, מעקב התקדמות ותוכניות שמורות — עם החיבור לאייפון.",
+      "keywords": "כושר,אימון,משקולות,חזרות,סטים,תוכנית,אישי,יומן",
+      "campaign": {
+        "headline": "האימון שלכם. החיים שלכם. התוכנית שלכם.",
+        "positioning": "לא עוד רשימת תרגילים: שותף שמחבר תוכנית אישית לזמן, לסביבה ולציוד שלכם, מלווה את ביצוע האימון ועוזר להבין את ההתקדמות מהתיעוד שלכם.",
+        "cards": [
+          { "title": "מתחילים בקהל ממוקד", "text": "מתאמנים דוברי עברית עם אייפון, שרוצים סדר ועצמאות בבית או בחדר הכושר. השליטה הקולית בעברית היא יתרון מוחשי לקהל הזה. נכין גם הצגה מלאה באנגלית, בלי לייחס למוצר פקודות קוליות באנגלית שאינן נתמכות." },
+          { "title": "מראים את ההבדל, לא רק אומרים", "text": "הצעת סרטון של 20–25 שניות: בוחרים זמן, סביבה וציוד; רואים את התוכנית שנוצרה; מדווחים על סט בקול באייפון; מסיימים בהיסטוריה ובסטטיסטיקה. הפקודות חייבות להיות מוקלטות מהמכשיר בפועל ובהסכמה — לא הדמיית האזנה בדפדפן. זה תסריט מוצע, לא סרטון שכבר הופק." },
+          { "title": "יוצרים סיבה אמיתית להמליץ", "text": "מתמקדים ברגע שבו התוכנית מתאימה לציוד הקיים או שבו קל לחזור לנתוני האימון הקודם. לאחר שיש חוויית שימוש טובה, מזמינים לשתף חבר עם צורך דומה וקישור אמיתי לחנות לאחר הפרסום. אין פרס תמורת דירוג, גישה לאנשי קשר או משלוח אוטומטי. לא נוסף מנגנון הפניות לאפליקציה." },
+          { "title": "צומחים מהוכחה לפני תקציב", "text": "אחרי אישור הפרסום: הדגמות קצרות לקהילות רלוונטיות, למאמנים ולמתאמנים שרוצים להתנסות — בכפוף לכללי הקהילה ובהסכמה, בלי ספאם. בוחנים משוב ונתוני צפייה, הורדה ומקורות ש־App Store Connect מעמידה לרשותנו. קמפיין ממומן נשקל רק לאחר למידה ואישור תקציב נפרד; לא נוספו כלי מעקב ולא נשלחו פניות." }
+        ],
+        "hooks": [
+          "יש לכם חצי שעה וזוג משקולות? התחילו מתוכנית שבנויה למה שיש לכם.",
+          "פחות נגיעות בטלפון. יותר להיות באימון — עם פקודות קוליות בעברית באייפון.",
+          "מה עשיתם באימון הקודם? הפעם לא צריך לזכור."
+        ]
+      },
+      "iphoneFeatures": [
+        { "id": "health", "title": "Apple Health", "text": "שמרו אימונים שהושלמו באפליקציית בריאות לאחר מתן הרשאה. עריכה מאוחרת ב־AutoFit אינה מעדכנת אוטומטית רישום שכבר נשלח לבריאות." },
+        { "id": "biometrics", "title": "Face ID / Touch ID", "text": "הפעילו נעילה אופציונלית בכניסה לאפליקציה באמצעות האימות הביומטרי המוגדר במכשיר תומך." },
+        { "id": "music", "title": "Apple Music", "text": "נגנו והשהו מוזיקה מתוך האימון לאחר בחירת שיר או רשימה בנגן ומתן הרשאה. תוכן מוזיקה ומנוי אינם כלולים." },
+        { "id": "activity", "title": "Live Activity", "text": "ראו את מצב האימון גם במסך הנעילה וב־Dynamic Island, במכשירים תומכים ובהתאם להגדרות iOS." }
+      ],
+      "description": "העוזר האישי והשותף שלך באימון.\n\nלא צריך להתאים את החיים לתוכנית. מתחילים מתוכנית שמתאימה לכם: AutoFit בונה הצעת אימון אישית לפי הסביבה שבה אתם מתאמנים, הזמן הפנוי והציוד שברשותכם — ומלווה את הביצוע עם שליטה קולית בעברית, תיעוד וכלים למעקב ולהתקדמות. הממשק זמין בעברית ובאנגלית.\n\nתוכנית אישית למציאות שלכם\nבבית או בחדר הכושר, עם זמן קצר או אימון ארוך יותר: בחרו מטרה, רמת ניסיון, מספר אימונים בשבוע, זמן וציוד. AutoFit תרכיב הצעה עם תרגילים ויעדים, לבדיקה ולעריכה לפני הפעלה. אפשר גם להתחיל מתוכנית מוכנה. אין החלפה אוטומטית של האימון הקיים.\n\nשליטה קולית — פחות נגיעות, יותר אימון\nבחרו תרגיל, ספרו חזרות ודווחו על סטים באמצעות פקודות קוליות בעברית באייפון. שמעו הכרזות וטיימרים שיעזרו לעקוב אחרי רצף האימון. אפשר גם להזין משקלים וחזרות ידנית בכל שלב. זיהוי הדיבור דורש הרשאות מיקרופון וזיהוי דיבור, ותלוי בתנאי הסביבה ובשירותי iOS.\n\nלהתקדם עם תמונה ברורה, לא עם ניחושים\nחזרו לנתוני התרגיל והשוו אימונים כדי להבין מה השתנה ומה כדאי לתרגל בהמשך. סיכומים, גרפים והמלצות מוסברות עוזרים לבחון את הצעד הבא לפי התיעוד שלכם. צפו בתדירות האימונים, בסטים שהושלמו ובנפח העבודה שתועד. יותר נפח אינו בהכרח שיפור בכוח; ההשוואות מסייגות נתונים חסרים או לא תואמים. המלצות אינן משנות יעדים בלי אישור.\n\nהתוכניות וההיסטוריה, תמיד מסודרות\nשמרו כמה תוכניות, ערכו תרגילים ויעדים ובחרו את התוכנית לאימון הבא. פתחו אימונים קודמים ובדקו מה עשיתם בכל תרגיל: משקל, חזרות, סטים, משך, הערות ודירוגי קושי שהזנתם. אפשר לבדוק ולערוך אימון שנשמר ולשמור אימון מההיסטוריה לשימוש חוזר כתוכנית.\n\nמשתלבת באייפון שלכם\nApple Health: שמרו אימונים שהושלמו באפליקציית בריאות לאחר מתן הרשאה. עריכה מאוחרת ב־AutoFit אינה מעדכנת אוטומטית רישום שכבר נשלח לבריאות.\nFace ID / Touch ID: הפעילו נעילה אופציונלית בכניסה לאפליקציה באמצעות האימות הביומטרי המוגדר במכשיר תומך.\nApple Music: נגנו והשהו מוזיקה מתוך האימון לאחר בחירת שיר או רשימה בנגן ומתן הרשאה. תוכן מוזיקה ומנוי אינם כלולים.\nLive Activity: ראו את מצב האימון גם במסך הנעילה וב־Dynamic Island, במכשירים תומכים ובהתאם להגדרות iOS.\n\nכל סט, כל מנוחה, כל שלב\nתעדו משקל וחזרות בנפרד לכל סט, החזקות לפי זמן ודירוג קושי לבחירתכם. עקבו אחרי התרגיל הנוכחי, היעד והתקדמות האימון, עם טיימר מנוחה ואפשרות להשהות ולהמשיך.\n\nמהחימום ועד השחרור\nשלבו חימום, הליכה, ריצה ושחרור לצד אימוני הכוח. הגדירו משך ותעדו מהירות ושיפוע כשמתאים. הנתונים שהוזנו אינם מדידה אוטומטית מההליכון.\n\nהתאמה גם כשמשהו משתנה\nבדקו הצעת סדרי עדיפויות כשיש פחות זמן, חפשו חלופות כשהציוד תפוס והוסיפו תרגילים מהספרייה. שינויים מוצעים דורשים אישור; אומדני הזמן אינם הבטחה למשך מדויק.\n\nבלי חובה ליצור חשבון AutoFit\nנתוני האימון נשמרים מקומית. בניית התוכניות מבוססת על כללים מקומיים, ולא על שירות AI חיצוני. אפשר לייצא נתונים או למחוק אותם דרך האפליקציה. שירותי מערכת, קישורים ושיתוף כפופים להרשאות ולבחירות שלכם.\n\nהאימון הבא שלכם מתחיל כאן. הורידו את AutoFit — ואם היא עוזרת לכם באימון, ספרו גם לחבר שמתאמן איתכם.\n\nAutoFit מיועדת לתכנון ותיעוד כושר כללי, ואינה תחליף לייעוץ רפואי או להדרכה מקצועית. אין הבטחה לתוצאה גופנית מסוימת.",
+      "screens": [
+        { "id": "workout", "eyebrow": "האימון שלכם. מסודר.", "title": "כל האימון.\nבמקום אחד.", "caption": "תוכנית, סטים ומנוחות — ברצף ברור.", "alt": "מסך האימון האמיתי של AutoFit עם תוכנית ותרגילים ממוזערים" },
+        { "id": "plans", "eyebrow": "בבית או בחדר הכושר. בזמן שלכם.", "title": "תוכנית אישית.\nלמציאות שלכם.", "caption": "הזמן, הסביבה והציוד שלכם — נקודת הפתיחה.", "alt": "הצעת תוכנית אישית אמיתית לבדיקה ולעריכה לפי מטרות, ניסיון, זמן, סביבת אימון וציוד" },
+        { "id": "sets", "eyebrow": "שליטה קולית בעברית באייפון", "title": "אתם מתאמנים.\nהקול שולט.", "caption": "בחירת תרגיל, ספירת חזרות ודיווח סטים.", "alt": "כרטיס תרגיל אמיתי עם שדות משקל וחזרות; שליטה קולית זמינה באייפון ולא הודמתה בדפדפן" },
+        { "id": "statistics", "eyebrow": "סטטיסטיקה על בסיס מה שתיעדתם", "title": "הנתונים שלכם.\nהתמונה ברורה.", "caption": "תדירות, סטים והשוואות לאורך זמן.", "alt": "מסך הסטטיסטיקה האמיתי של AutoFit עם נתוני הדגמה בלבד" },
+        { "id": "saved", "eyebrow": "תוכניות שמורות. בחירה אישית.", "title": "התוכניות שלכם.\nבקצב שלכם.", "caption": "שומרים, עורכים ובוחרים לאימון הבא.", "alt": "רשימת התוכניות השמורות האמיתית עם תוכנית הדגמה שנשמרה ללא הפעלה" },
+        { "id": "history", "eyebrow": "האימונים מאחוריכם. הנתונים איתכם.", "title": "לא רק להתאמן.\nגם לזכור.", "caption": "היסטוריה מפורטת של העבודה שתיעדתם.", "alt": "היסטוריית אימונים אמיתית עם נתוני הדגמה בלבד" },
+        { "id": "cardio", "eyebrow": "כוח ואירובי באותו רצף", "title": "מהחימום\nועד השחרור.", "caption": "זמן, מהירות ושיפוע — לפי הבחירה שלכם.", "alt": "כרטיס הליכה אמיתי עם יעד בדקות, מהירות ושיפוע" },
+        { "id": "library", "eyebrow": "מוצאים. בוחרים. מוסיפים.", "title": "התרגיל הבא\nכבר כאן.", "caption": "ספרייה לפי קבוצות שרירים וציוד.", "alt": "ספריית התרגילים האמיתית של AutoFit" }
+      ]
+    },
+    "en": {
+      "name": "AutoFit",
+      "subtitle": "Your personal workout partner",
+      "promotionalText": "A personal plan for your time, space and equipment. Hebrew voice commands, saved plans and progress tracking, connected to your iPhone.",
+      "keywords": "fitness,strength,weights,reps,sets,training,planner,exercise,rest,timer,hebrew,personal,workout",
+      "campaign": {
+        "headline": "Your workout. Your life. Your plan.",
+        "positioning": "More than an exercise list: a partner that connects a personal plan to your time, training space and equipment, supports your sessions and helps you understand progress from your own records.",
+        "cards": [
+          { "title": "Start with a focused audience", "text": "Hebrew-speaking iPhone users who want structure and independence at home or at the gym. Hebrew voice commands offer a tangible benefit for this audience. Prepare a complete English presentation too, without suggesting unsupported English voice commands." },
+          { "title": "Show the difference", "text": "Proposed 20–25-second demo: choose time, environment and equipment; see the generated plan; report a set by voice on iPhone; finish with history and statistics. Record actual device behavior with consent, not simulated browser listening. This is a proposed storyboard, not a finished video." },
+          { "title": "Give people a real reason to recommend it", "text": "Lead with the moment a plan fits the equipment available, or a previous session is easy to look up. After a useful experience, invite people to tell a friend with a similar need and use a real store link once published. No rating rewards, contact access or automatic messages. No referral system has been added to the app." },
+          { "title": "Earn evidence before buying reach", "text": "After publication approval: share short demonstrations with relevant communities, coaches and interested users, following community rules and consent, without spam. Review voluntary feedback and the page-view, download and source data available in App Store Connect. Consider paid promotion only after learning and separate budget approval. No tracking tools or outreach have been launched." }
+        ],
+        "hooks": [
+          "Half an hour and a pair of dumbbells? Start with a plan built for what you have.",
+          "Fewer taps. More training — with Hebrew voice commands on iPhone.",
+          "What did you do last session? This time, you do not have to remember."
+        ]
+      },
+      "iphoneFeatures": [
+        { "id": "health", "title": "Apple Health", "text": "Save completed workouts to the Health app after granting permission. Later edits in AutoFit do not automatically update records already sent to Health." },
+        { "id": "biometrics", "title": "Face ID / Touch ID", "text": "Enable an optional app-entry lock using the biometrics configured on a supported device." },
+        { "id": "music", "title": "Apple Music", "text": "Play and pause music from your workout after choosing a song or playlist in the player and granting permission. Music content and subscriptions are not included." },
+        { "id": "activity", "title": "Live Activity", "text": "See workout status on the Lock Screen and in Dynamic Island on supported devices, subject to your iOS settings." }
+      ],
+      "description": "Your personal workout partner.\n\nYour routine should not have to fit someone else's plan. AutoFit builds a personal workout proposal around where you train, the time you have and the equipment available, then supports your sessions with Hebrew voice commands, logging and tools to track progress. The interface supports Hebrew and English.\n\nA personal plan for your real life\nAt home or at the gym, with a shorter window or more time to train: choose your goal, experience, days per week, session length and equipment. AutoFit puts together exercises and targets for you to review and edit before activating. You can also start with a ready-made plan. Proposals do not automatically replace your existing workout.\n\nVoice control: fewer taps, more training\nUse Hebrew voice commands on iPhone to select exercises, count repetitions and report sets. Follow spoken announcements and timers throughout your workout. Manual weight and rep entry remains available. Microphone and speech-recognition permissions are required; recognition depends on your surroundings and iOS services. Voice commands are currently in Hebrew.\n\nWork toward progress with a clearer picture\nRevisit exercise records and compare sessions to understand what changed and consider your next step. Summaries, charts and explained recommendations help you make decisions from your own records. See workout frequency, completed sets and recorded training volume. More volume is not necessarily more strength; comparisons flag missing or incompatible data. Recommendations do not change targets without your approval.\n\nYour plans and history, organized\nKeep multiple plans, edit exercises and targets, and choose a plan for your next workout. Open previous sessions to review recorded weights, reps, sets, duration, notes and effort ratings. Inspect or edit a saved workout and save a session from history as a reusable plan.\n\nFits right into your iPhone\nApple Health: Save completed workouts to the Health app after granting permission. Later edits in AutoFit do not automatically update records already sent to Health.\nFace ID / Touch ID: Enable an optional app-entry lock using the biometrics configured on a supported device.\nApple Music: Play and pause music from your workout after choosing a song or playlist in the player and granting permission. Music content and subscriptions are not included.\nLive Activity: See workout status on the Lock Screen and in Dynamic Island on supported devices, subject to your iOS settings.\n\nEvery set, every rest, every stage\nLog individual set weights and reps, timed holds and optional effort ratings. See your current exercise, target and workout progress. Use rest timers, pause your workout and pick up where you left off.\n\nFrom warmup to cooldown\nCombine strength work with warmup, walking, running and cooldown activities. Set a duration and record speed or incline where relevant. Entered measurements are not automatically read from a treadmill.\n\nAdapt when plans change\nReview priorities when time is limited, explore alternatives when equipment is busy, or add exercises from the library. Proposed changes need your confirmation. Duration estimates are approximate.\n\nNo AutoFit account required\nWorkout records are stored locally. Plan generation uses local rules, not an external AI service. Export or delete your data from the app. System services, external links and sharing depend on your permissions and choices.\n\nYour next workout starts here. Download AutoFit, and if it helps your routine, tell your training partner too.\n\nAutoFit supports general fitness planning and logging. It does not replace medical advice or qualified instruction and does not guarantee a particular physical result.",
+      "screens": [
+        { "id": "workout", "eyebrow": "YOUR WORKOUT. ORGANIZED.", "title": "Your whole workout.\nOne place.", "caption": "Your plan, sets and rest. In a clear flow.", "alt": "Actual AutoFit workout screen with a plan and collapsed exercise cards" },
+        { "id": "plans", "eyebrow": "AT HOME OR AT THE GYM. YOUR TIME.", "title": "A personal plan.\nBuilt around you.", "caption": "Your time, training space and equipment.", "alt": "Actual editable personal plan proposal based on goals, experience, time, training environment and equipment" },
+        { "id": "sets", "eyebrow": "HEBREW VOICE COMMANDS ON IPHONE", "title": "You train.\nYour voice leads.", "caption": "Select exercises, count reps and report sets.", "alt": "Actual set logging card; iPhone voice control is not simulated in this browser capture" },
+        { "id": "statistics", "eyebrow": "STATISTICS FROM THE WORK YOU LOG", "title": "Your records.\nA clearer picture.", "caption": "Frequency, sets and comparisons over time.", "alt": "Actual AutoFit statistics screen with synthetic demonstration records only" },
+        { "id": "saved", "eyebrow": "SAVED PLANS. PERSONAL CHOICES.", "title": "Your plans.\nYour own rhythm.", "caption": "Save, edit and choose your next workout.", "alt": "Actual saved plans list with a demonstration plan saved without activation" },
+        { "id": "history", "eyebrow": "THE WORK IS DONE. THE RECORD STAYS.", "title": "Train today.\nRemember every set.", "caption": "A detailed history of the work you logged.", "alt": "Actual workout history populated only with synthetic demonstration records" },
+        { "id": "cardio", "eyebrow": "STRENGTH AND CARDIO, TOGETHER", "title": "From warmup\nto cooldown.", "caption": "Time, speed and incline. Your choice.", "alt": "Actual walking card with duration in minutes, speed and incline fields" },
+        { "id": "library", "eyebrow": "FIND. CHOOSE. ADD.", "title": "Your next exercise\nstarts here.", "caption": "Browse by muscle group and equipment.", "alt": "Actual AutoFit exercise library" }
+      ]
+    }
+  },
+  "review": {
+    "supportURL": null,
+    "privacyURL": null,
+    "marketingURL": null,
+    "sellerName": null,
+    "ageRating": null,
+    "territories": null,
+    "privacyLabel": "Not finalized. Do not select Data Not Collected without reviewing optional contact submissions, Apple speech services and third-party handling.",
+    "reviewerNotes": "Proposed submission: version 1.0, existing build 52, pending owner approval and readiness checks. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
+    "blockers": [
+      { "id": "native", "he": "צילומי מכשיר סופיים: התמונות כאן צולמו מממשק הווב האמיתי ב־Chrome, לא מבנייה 52 באייפון. יש להחליף בצילומי iPhone וגם iPad לפני הגשה; הפרויקט תומך בשניהם.", "en": "Final device captures: these images show the real web UI in Chrome, not build 52 on an iPhone. Replace with iPhone and iPad captures before submission; the project supports both." },
+      { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
+      { "id": "urls", "he": "נדרשים כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה, ופרטי קשר אמיתיים לבדיקת Apple. לא הומצאו כתובות או פרטים.", "en": "Live public privacy and support URLs and real Apple review contact details are needed. No URLs or contact details have been invented." },
+      { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
+      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. No ratings or reviews are fabricated." }
+    ]
+  },
+  "sources": [
+    "https://developer.apple.com/app-store/product-page/",
+    "https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information/",
+    "https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/",
+    "https://developer.apple.com/app-store/app-privacy-details/",
+    "https://developer.apple.com/app-store/review/guidelines/"
+  ]
+}

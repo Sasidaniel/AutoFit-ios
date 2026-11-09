@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoFit screenshot composition</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:430px;height:932px;overflow:hidden;background:#101111;color:#faf8f1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.canvas{position:relative;width:430px;height:932px;background:radial-gradient(ellipse at 85% 40%,#4a3b193d,transparent 58%),linear-gradient(155deg,#20201e,#0c0d0e 70%);padding:26px 28px 0;text-align:center}
+.brand{font-size:10px;letter-spacing:3.3px;font-weight:700;color:#d9b44a;direction:ltr;display:flex;align-items:center;justify-content:center;gap:9px}.brand img{width:20px;height:20px;border-radius:5px}
+.eyebrow{font-size:10px;font-weight:600;letter-spacing:.5px;color:#d5c9ab;margin:15px 0 8px}h1{font-size:34px;line-height:1.13;letter-spacing:-.8px;font-weight:750;margin:0;white-space:pre-line}p.caption{font-size:11px;color:#c8c4ba;margin:12px 0 0;white-space:nowrap}
+.phone{position:absolute;width:328px;height:696px;top:222px;left:51px;padding:5px;border:1px solid #666054;border-radius:30px;background:#1d1d1d;box-shadow:0 22px 50px #000b;overflow:hidden}
+.phone img{width:316px;height:auto;display:block;border-radius:24px}
+.line{position:absolute;inset:auto 0 0;height:150px;pointer-events:none;background:linear-gradient(transparent,#0b0c0c35)}
+</style>
+<div class="canvas"><div class="brand"><img src="/icon.png" alt="">AUTOFIT</div><div class="eyebrow" id="eyebrow"></div><h1 id="title"></h1><p class="caption" id="caption"></p><div class="phone"><img id="screen" alt=""></div><div class="line"></div></div>
+<script>
+const params = new URLSearchParams(location.search), lang = params.get('lang') === 'en' ? 'en' : 'he';
+document.documentElement.lang = lang; document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+fetch('/listing.json').then(r=>r.json()).then(data=>{
+ const item = data.locales[lang].screens.find(s=>s.id===params.get('screen'));
+ if(!item) throw new Error('Unknown screen');
+ for(const field of ['eyebrow','title','caption']) document.getElementById(field).textContent=item[field];
+ document.getElementById('screen').src=`/assets/raw-${lang}-${item.id}.png`;
+ document.getElementById('screen').alt=item.alt;
+ document.documentElement.dataset.ready='true';
+}).catch(error=>{document.body.textContent=error.message;});
+</script></html>
