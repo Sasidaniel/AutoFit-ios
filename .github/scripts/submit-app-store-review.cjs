@@ -136,7 +136,8 @@ if (require.main === module) {
   submitReview(listing, createAppleClient(), save).then((result) => {
     console.log(JSON.stringify(result, null, 2));
   }).catch((error) => {
-    save({ ...report, error: error.message, submissionOutcome: report.submissionOutcome || 'not-submitted' });
+    save({ ...report, error: error.message, appleErrors: error.appleErrors || [],
+      submissionOutcome: report.submissionOutcome || 'not-submitted' });
     console.error(error.message);
     process.exitCode = 1;
   });

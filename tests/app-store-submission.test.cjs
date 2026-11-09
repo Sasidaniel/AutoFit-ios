@@ -1,8 +1,22 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { submitReview } = require('../.github/scripts/submit-app-store-review.cjs');
+const { appleErrorDetails } = require('../.github/scripts/app-store-api.cjs');
 const listing = require('../marketing/app-store/listing.json');
 const buildID = '8848fbbb-477b-4fc0-b40a-94a5b61920f2';
+
+test('Apple associated validation errors are preserved instead of hiding the actionable blockers', () => {
+  const details = appleErrorDetails([{ code: 'INVALID_STATE', detail: 'See associated errors',
+    meta: { ignored: 'not-for-report', associatedErrors: {
+      '/version': [{ code: 'MISSING_FIELD', detail: 'Support URL required', source: { pointer: '/data/attributes/supportUrl' } }],
+      '/app': [{ code: 'MISSING_PRIVACY', detail: 'Privacy policy URL required' }],
+    } },
+  }]);
+  assert.equal(details.length, 3);
+  assert.match(details[1], /Support URL required.*supportUrl/);
+  assert.match(details[2], /Privacy policy URL required/);
+  assert.doesNotMatch(JSON.stringify(details), /not-for-report/);
+});
 
 function fixture(options = {}) {
   const calls = [], checkpoints = [];
