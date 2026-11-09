@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      submit_store_review:
+        description: 'Submit the existing owner-authorized initial version for Apple review; manual release, no binary upload or publication'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -35,10 +40,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Reject conflicting Apple operations
+        env:
+          INSPECT: ${{ inputs.inspect_app_store }}
+          PREPARE: ${{ inputs.prepare_store_draft }}
+          SUBMIT: ${{ inputs.submit_store_review }}
+        run: node -e 'if(["INSPECT","PREPARE","SUBMIT"].filter(k=>process.env[k]==="true").length>1)throw Error("Choose one Apple operation per run")'
       - name: Test internal delivery verification
         run: node --test --test-name-pattern='release verifier|internal delivery' tests/native-regressions.test.cjs
       - name: Complete and verify existing internal distribution
-        if: ${{ !inputs.inspect_app_store && !inputs.prepare_store_draft }}
+        if: ${{ !inputs.inspect_app_store && !inputs.prepare_store_draft && !inputs.submit_store_review }}
         env:
           APP_BUILD_NUMBER: ${{ inputs.build_number }}
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
@@ -46,8 +57,8 @@ jobs:
           APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
         run: node .github/scripts/verify-testflight.cjs
       - name: Test read-only App Store inspection
-        if: ${{ inputs.inspect_app_store || inputs.prepare_store_draft }}
-        run: node --test tests/app-store-readiness.test.cjs tests/app-store-draft.test.cjs marketing/app-store/validate.test.cjs
+        if: ${{ inputs.inspect_app_store || inputs.prepare_store_draft || inputs.submit_store_review }}
+        run: node --test tests/app-store-readiness.test.cjs tests/app-store-draft.test.cjs tests/app-store-submission.test.cjs marketing/app-store/validate.test.cjs
       - name: Prepare owner-approved App Store draft without submitting
         if: ${{ inputs.prepare_store_draft }}
         env:
@@ -57,7 +68,23 @@ jobs:
           APPSTORE_DRAFT_REPORT: ${{ runner.temp }}/app-store-draft.json
         run: node .github/scripts/prepare-app-store-draft.cjs
       - name: Inspect App Store metadata without changing it
-        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft) }}
+        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft || inputs.submit_store_review) }}
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
+          APPSTORE_READINESS_REPORT: ${{ runner.temp }}/app-store-readiness.json
+        run: node .github/scripts/app-store-readiness.cjs
+      - name: Submit explicitly owner-authorized App Review with manual release
+        if: ${{ inputs.submit_store_review && !inputs.prepare_store_draft }}
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
+          APPSTORE_REVIEW_REPORT: ${{ runner.temp }}/app-store-review.json
+        run: node .github/scripts/submit-app-store-review.cjs
+      - name: Read back metadata after the requested submission
+        if: ${{ always() && inputs.submit_store_review }}
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
@@ -65,12 +92,13 @@ jobs:
           APPSTORE_READINESS_REPORT: ${{ runner.temp }}/app-store-readiness.json
         run: node .github/scripts/app-store-readiness.cjs
       - name: Preserve sanitized App Store snapshot
-        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft) }}
+        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft || inputs.submit_store_review) }}
         uses: actions/upload-artifact@v4
         with:
           name: app-store-readiness
           path: |
             ${{ runner.temp }}/app-store-readiness.json
             ${{ runner.temp }}/app-store-draft.json
+            ${{ runner.temp }}/app-store-review.json
           if-no-files-found: error
           retention-days: 14

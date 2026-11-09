@@ -11,6 +11,11 @@ on:
         description: 'Capture the actual app in iPhone and iPad simulators with synthetic data; no release'
         type: boolean
         default: false
+      store_device:
+        description: 'Device family to capture; select one to recover a partial capture without repeating the other'
+        type: choice
+        options: [all, iphone, ipad]
+        default: all
   push:
     paths:
       - '.github/workflows/ios-audio-validation.yml'
@@ -126,6 +131,8 @@ jobs:
           gh release download "$VERSION" --repo ionic-team/capacitor-swift-pm --pattern Capacitor.xcframework.zip --pattern Cordova.xcframework.zip --dir "$DOWNLOAD"
           node .github/scripts/prime-capacitor-cache.cjs "$VERSION" "$DOWNLOAD" "$RUNNER_TEMP/swift-package-cache/artifacts"
       - name: Capture actual iPhone and iPad app screens
+        env:
+          CAPTURE_DEVICE_FAMILY: ${{ inputs.store_device || 'all' }}
         run: bash .github/scripts/capture-store-simulator.sh
       - name: Preserve native captures and provenance
         if: always()

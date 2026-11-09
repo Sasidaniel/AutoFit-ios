@@ -128,13 +128,27 @@ References:
 - <https://commission.europa.eu/law/law-topic/data-protection/information-business-and-organisations/legal-grounds-processing-data/are-there-any-specific-safeguards-data-about-children_en>
 - <https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions>
 
-## Owner pause and native asset review
+## Owner authorization and native asset review
 
-The owner explicitly chose to **hold submission** until the minor/privacy issue
-is resolved. `submissionRequest.pausedByOwner` records this decision, and the draft
-writer refuses all Apple requests while it is true. Earlier creative approval is
-not permission to resume. Apple's existing draft and manual-release configuration
-are preserved; nothing has been sent for review or made public.
+The owner initially chose to **hold submission** until the minor/privacy issue
+was resolved. The draft writer still refuses all Apple requests whenever
+`submissionRequest.pausedByOwner` is true; creative approval alone is not
+permission to resume.
+
+The owner subsequently explicitly requested **submitting now without waiting
+for further approvals**. That renewed decision sets `pausedByOwner: false` and
+`ownerAuthorizedReviewSubmission: true`. It authorizes App Review submission,
+not fabricated privacy/age/rights declarations or automatic publication. The
+approved existing build 1.0 (52) may be selected for the initial review;
+the submission workflow does not upload a new binary. Unresolved policy
+questions remain documented rather than being marked approved.
+
+`submit-app-store-review.cjs` uses Apple's review-submission/item endpoints,
+preserves manual release, refuses unrelated existing review items or a different
+selected binary, and records each stage. It reports success only after readback
+confirms the matching version and review in Apple's queue. Required-field errors
+remain explicit failed attempts. A readback failure after sending is recorded as
+unverified, not safe to resubmit blindly.
 
 Native capture run
 <https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42595427163>
@@ -171,6 +185,15 @@ simulator pipeline remains bounded at 60 minutes to accommodate measured slow
 GUI boot/launch and real frame presentation across both devices and languages.
 The frame guard remains mandatory. These are capture-environment/controller
 corrections, not production audio or startup changes.
+
+Run `42611518422` completed all 16 iPhone images and two Hebrew iPad scenes,
+then failed the frame guard at the iPad plans dialog. All 16 iPhone images were
+visually reviewed as distinct matching scenes, but there is no complete 32-image
+provenance receipt. Explicit device-family selection now allows iPad recovery
+without repeating completed iPhone work. Each family opens a new Simulator
+instance so its selected-device argument is not ignored by a running instance.
+The four-frame guard remains required, with a bounded 30-second deadline and
+frame-count/visibility failure diagnostics.
 
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.

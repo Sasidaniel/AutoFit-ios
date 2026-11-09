@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/native-regressions.test.cjs tests/training-tools.test.cjs tests/commercial-readiness.test.cjs tests/app-store-readiness.test.cjs tests/app-store-draft.test.cjs tests/app-store-native-capture.test.cjs tests/app-store-support-site.test.cjs marketing/app-store/validate.test.cjs"
+    "test": "node --test tests/native-regressions.test.cjs tests/training-tools.test.cjs tests/commercial-readiness.test.cjs tests/app-store-readiness.test.cjs tests/app-store-draft.test.cjs tests/app-store-submission.test.cjs tests/app-store-native-capture.test.cjs tests/app-store-support-site.test.cjs marketing/app-store/validate.test.cjs"
   },
   "keywords": [],
   "author": "",

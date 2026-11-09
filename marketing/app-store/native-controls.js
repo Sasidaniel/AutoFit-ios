@@ -28,13 +28,16 @@ function captureReady(screen) {
 }
 async function waitForPaint() {
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Native WebView did not present animation frames')), 10000);
-    let frames = 0;
+    let frames = 0, requestedFrame;
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(requestedFrame);
+      reject(new Error(`Native WebView did not present animation frames (${frames}/4 in 30s; ${document.visibilityState})`));
+    }, 30000);
     const next = () => {
       if (++frames === 4) { clearTimeout(timeout); resolve(); }
-      else requestAnimationFrame(next);
+      else requestedFrame = requestAnimationFrame(next);
     };
-    requestAnimationFrame(next);
+    requestedFrame = requestAnimationFrame(next);
   });
 }
 function scrollCard(index) {

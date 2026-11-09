@@ -5,6 +5,11 @@ if [[ "${CI:-}" != "true" || "$(uname)" != "Darwin" ]]; then
   echo "Native store capture requires the isolated macOS Actions runner." >&2
   exit 1
 fi
+case "${CAPTURE_DEVICE_FAMILY:-all}" in
+  all) FAMILIES=(iphone ipad) ;;
+  iphone|ipad) FAMILIES=("$CAPTURE_DEVICE_FAMILY") ;;
+  *) echo "Unknown native capture device family." >&2; exit 1 ;;
+esac
 OUTPUT="$RUNNER_TEMP/native-store-captures"
 STATE="$RUNNER_TEMP/native-store-control"
 mkdir -p "$OUTPUT" "$STATE"
@@ -48,13 +53,13 @@ xcrun simctl list runtimes -j > "$STATE/runtimes.json"
 xcrun simctl list devicetypes -j > "$STATE/types.json"
 RUNTIME=$(node -e 'const r=require(process.env.CAPTURE_NATIVE_STATE+"/runtimes.json").runtimes.filter(x=>x.isAvailable&&x.identifier.includes(".iOS-")).sort((a,b)=>a.version.localeCompare(b.version,undefined,{numeric:true})).at(-1);if(!r)throw Error("No iOS runtime");console.log(r.identifier)')
 COMMAND_ID=0
-for FAMILY in iphone ipad; do
+for FAMILY in "${FAMILIES[@]}"; do
   TYPE=$(FAMILY="$FAMILY" node -e 'const a=require(process.env.CAPTURE_NATIVE_STATE+"/types.json").devicetypes;const pattern=process.env.FAMILY==="iphone"?/^iPhone 17 Pro Max$/:/^iPad Pro 13-inch/;const d=a.filter(x=>pattern.test(x.name)).at(-1);if(!d)throw Error("Required screenshot device unavailable");console.log(d.identifier)')
   UDID=$(xcrun simctl create "AutoFit Store $FAMILY" "$TYPE" "$RUNTIME")
   DEVICE_IDS+=("$UDID")
   xcrun simctl boot "$UDID"
   # A booted headless device can run JavaScript without presenting WKWebView frames.
-  open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"
+  open -na "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"
   xcrun simctl bootstatus "$UDID" -b
   xcrun simctl status_bar "$UDID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
   for LANGUAGE in he en; do
@@ -92,18 +97,24 @@ for FAMILY in iphone ipad; do
   done
   xcrun simctl shutdown "$UDID"
 done
-OUTPUT="$OUTPUT" RUNTIME="$RUNTIME" node - <<'JS'
+OUTPUT="$OUTPUT" RUNTIME="$RUNTIME" CAPTURE_DEVICE_FAMILY="${CAPTURE_DEVICE_FAMILY:-all}" node - <<'JS'
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
+const selection=process.env.CAPTURE_DEVICE_FAMILY||'all';
+if(!['all','iphone','ipad'].includes(selection))throw Error('Invalid capture family');
+const families=selection==='all'?['iphone','ipad']:[selection];
+const screens=['workout','sets','plans','saved','statistics','history','cardio','library'];
+const expected=new Set(families.flatMap(family=>['he','en'].flatMap(language=>screens.map(screen=>`${family}-${language}-${screen}.png`))));
 const files=fs.readdirSync(process.env.OUTPUT).filter(n=>/^(iphone|ipad)-(he|en)-/.test(n)&&n.endsWith('.png'));
-if(files.length!==32)throw Error('Missing native device captures');
+if(files.length!==expected.size||files.some(file=>!expected.has(file)))throw Error('Missing or unexpected native device captures');
 const records=files.map(file=>{const b=fs.readFileSync(path.join(process.env.OUTPUT,file));return{file,width:b.readUInt32BE(16),height:b.readUInt32BE(20),sha256:crypto.createHash('sha256').update(b).digest('hex')}});
-for(const family of ['iphone','ipad'])for(const language of ['he','en']){
+for(const family of families)for(const language of ['he','en']){
   const group=records.filter(r=>r.file.startsWith(`${family}-${language}-`));
   if(group.length!==8||new Set(group.map(r=>r.sha256)).size!==8)throw Error(`Missing or duplicate rendered screens: ${family}/${language}`);
 }
 fs.writeFileSync(path.join(process.env.OUTPUT,'provenance.json'),JSON.stringify({
 capturedAt:new Date().toISOString(),source:process.env.GITHUB_SHA,runtime:process.env.RUNTIME,
 actualCapacitorSimulatorApp:true,syntheticData:true,nativeVoiceSimulated:false,
+captureFamilies:families,
 buildConfiguration:'Debug; CI-only loopback server and transport settings; unchanged application UI',
 finalSubmissionAssets:false,records},null,2));
 JS

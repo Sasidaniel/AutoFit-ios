@@ -27,7 +27,7 @@ test('native control server refuses activation outside macOS CI', () => {
 test('capture connects the dedicated simulator to the real display before launching the app', () => {
   const script = fs.readFileSync(path.join(root, '.github', 'scripts', 'capture-store-simulator.sh'), 'utf8');
   const boot = script.indexOf('xcrun simctl boot "$UDID"');
-  const display = script.indexOf('open -a "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"');
+  const display = script.indexOf('open -na "$(xcode-select -p)/Applications/Simulator.app" --args -CurrentDeviceUDID "$UDID"');
   const launch = script.indexOf('xcrun simctl launch "$UDID" com.sasidaniel.autofit');
   assert.ok(boot > 0 && display > boot && launch > display);
   assert.match(script, /native-store-captures/);
@@ -65,10 +65,12 @@ test('capture readiness rejects hidden tabs, stale dialogs and collapsed exercis
 test('capture rendering waits for four actual animation frames and explicitly fails a stalled WebView', async () => {
   const source = fs.readFileSync(path.join(root, 'marketing', 'app-store', 'native-controls.js'), 'utf8');
   const frames = [];
-  let timeout, cleared = 0;
+  let timeout, cleared = 0, cancelled = 0;
   const context = vm.createContext({
+    document: { visibilityState: 'visible' },
     requestAnimationFrame: (callback) => frames.push(callback),
-    setTimeout: (callback) => { timeout = callback; return 1; },
+    cancelAnimationFrame: () => { cancelled++; },
+    setTimeout: (callback, delay) => { assert.equal(delay, 30000); timeout = callback; return 1; },
     clearTimeout: () => { cleared++; },
   });
   vm.runInContext(source.slice(0, source.indexOf('\nrun().catch')).replace(/^import .*$/gm, ''), context);
@@ -86,7 +88,8 @@ test('capture rendering waits for four actual animation frames and explicitly fa
   assert.equal(cleared, 1);
   const stalled = paint();
   timeout();
-  await assert.rejects(stalled, /did not present animation frames/);
+  await assert.rejects(stalled, /did not present animation frames \(0\/4 in 30s; visible\)/);
+  assert.equal(cancelled, 1);
 });
 
 test('capture scroll offset accounts for the real safe-area header and sticky workout controls', () => {
@@ -114,14 +117,14 @@ test('capture scroll offset accounts for the real safe-area header and sticky wo
 
 test('native artifact validation refuses duplicate screen pixels before writing provenance', () => {
   const script = fs.readFileSync(path.join(root, '.github', 'scripts', 'capture-store-simulator.sh'), 'utf8');
-  const validator = script.match(/OUTPUT="\$OUTPUT" RUNTIME="\$RUNTIME" node - <<'JS'\r?\n([\s\S]*?)\r?\nJS/);
+  const validator = script.match(/OUTPUT="\$OUTPUT" RUNTIME="\$RUNTIME"[^\r\n]* node - <<'JS'\r?\n([\s\S]*?)\r?\nJS/);
   assert.ok(validator);
   const screens = ['workout', 'sets', 'plans', 'saved', 'statistics', 'history', 'cardio', 'library'];
   const files = ['iphone', 'ipad'].flatMap((family) => ['he', 'en'].flatMap((language) =>
     screens.map((screen) => `${family}-${language}-${screen}.png`)));
-  let writes = 0, duplicates = true;
+  let writes = 0, duplicates = true, selection = 'all';
   const fakeFS = {
-    readdirSync: () => files,
+    readdirSync: () => selection === 'all' ? files : files.filter((file) => file.startsWith(`${selection}-`)),
     readFileSync: (file) => {
       const buffer = Buffer.alloc(32);
       buffer.writeUInt32BE(1320, 16); buffer.writeUInt32BE(2868, 20);
@@ -132,13 +135,19 @@ test('native artifact validation refuses duplicate screen pixels before writing 
   };
   const run = () => vm.runInNewContext(validator[1], {
     require: (name) => name === 'fs' ? fakeFS : require(name),
-    process: { env: { OUTPUT: 'capture-output', RUNTIME: 'test-runtime', GITHUB_SHA: 'test-source' } },
+    process: { env: { OUTPUT: 'capture-output', RUNTIME: 'test-runtime', GITHUB_SHA: 'test-source', CAPTURE_DEVICE_FAMILY: selection } },
   });
   assert.throws(run, /duplicate rendered screens/);
   assert.equal(writes, 0);
   duplicates = false;
   run();
   assert.equal(writes, 1);
+  selection = 'ipad';
+  run();
+  assert.equal(writes, 2);
+  selection = 'unsupported';
+  assert.throws(run, /Invalid capture family/);
+  assert.equal(writes, 2);
 });
 
 test('ordinary review server exposes neither native controls nor injected production scripts', async (t) => {

@@ -96,6 +96,11 @@ function render() {
     byId('readinessIntro').textContent = language === 'he'
       ? 'השם והטקסטים שמורים בטיוטת Apple, ופרטי הקשר לבדיקה אומתו. לא נשלח לבדיקה ולא נפרסם לפני פתרון נושא הפרטיות והסכמת הקטינים ואישור מחודש שלך.'
       : 'The name and copy are saved in Apple’s draft, and review contact completeness is verified. No submission or publication will proceed until minor privacy/consent is resolved and you approve resuming.';
+  } else if (listing.submissionRequest.ownerAuthorizedReviewSubmission) {
+    byId('readinessHeading').textContent = language === 'he' ? 'אישרת הגשה לבדיקה. ממתינים לאישור קבלה מ־Apple.' : 'Review submission authorized. Awaiting an Apple receipt.';
+    byId('readinessIntro').textContent = language === 'he'
+      ? 'אישרת לחדש את ההגשה בלי להמתין לאישורים נוספים. האישור אינו מסמן הצהרות חסרות כמאומתות. השחרור נשאר ידני; העמוד לא טוען שההגשה התקבלה לפני אישור מ־Apple.'
+      : 'You authorized resuming submission without waiting for additional approvals. Missing declarations are not marked verified. Release remains manual; this page does not claim successful submission before an Apple receipt.';
   }
   byId('iphoneFeatures').replaceChildren();
   for (const feature of copy.iphoneFeatures) {

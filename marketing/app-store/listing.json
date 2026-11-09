@@ -3,10 +3,12 @@
   "submissionRequest": {
     "date": "2026-11-09",
     "ownerApprovedCreative": true,
-    "requestedAction": "Save approved materials and proceed with App Store submission",
+    "requestedAction": "Submit the initial free version for Apple review; preserve manual release and do not publish automatically",
     "submissionConfirmed": false,
-    "pausedByOwner": true,
-    "pauseReason": "Owner chose to keep ages 12–17 and hold submission until the unresolved minor-privacy/consent review is addressed.",
+    "pausedByOwner": false,
+    "pauseReason": null,
+    "ownerAuthorizedReviewSubmission": true,
+    "renewedAuthorization": "Owner explicitly requested submitting now without waiting for further policy/consent approvals. This does not certify unresolved declarations or authorize automatic publication.",
     "releaseMode": "Manual",
     "readiness": "Required facts, policies and final native screenshots must be completed before submission"
   },
