@@ -17,6 +17,17 @@ Keep manual release configured rather than automatically publishing after review
 
 ## Current verified state — later updates supersede historical notes below
 
+The separate public support/privacy notice describes the immutable existing
+build 52, including its legacy minor flow, Apple processing, optional Formspree
+contact submissions and provider logs, device/cloud-copy limitations and current
+confirmed public contact. It does not publish the old draft terms as approved,
+change runtime approval flags, claim verified adult-only access, or update the
+installed app. Generate its script-free Hebrew/English files with:
+`node marketing\app-store\support-site.cjs --build52-notice --output docs`.
+The original unapproved-policy export guard remains enforced. GitHub Pages
+hosting and actual HTTPS URL verification are separate publication steps;
+generating files alone does not establish a public URL or App Review submission.
+
 The owner's latest instruction authorizes temporarily excluding Europe and
 ages 12–17 where those requirements block launch. The App Store override was
 changed from 13+ to **18+**, saved and read back. Apple displays 19+ in Korea

@@ -7,6 +7,30 @@ const listing = require('./listing.json');
 const assets = path.join(__dirname, 'assets');
 const provenance = JSON.parse(fs.readFileSync(path.join(assets, 'provenance.json'), 'utf8'));
 
+test('public existing-build notices disclose real external processing without changing runtime approval or age assurance', () => {
+  const { createBuild52Notice, createSupportPages } = require('./support-site.cjs');
+  const pages = createBuild52Notice(listing);
+  assert.equal(Object.keys(pages).length, 6);
+  for (const language of ['he', 'en']) {
+    const suffix = language === 'he' ? '' : '-en';
+    const privacy = pages[`privacy${suffix}.html`];
+    assert.ok(privacy.includes(`lang="${language}"`));
+    for (const value of ['1.0 (52)', 'Sasi Daniel', 'autofitrainer@gmail.com', 'Formspree', 'GitHub', '17+', '12–17']) {
+      assert.ok(privacy.includes(value), value);
+    }
+    assert.doesNotMatch(privacy, /<script|<iframe|<form|<img|https?:\/\/[^"]+\.(?:js|woff)/i);
+  }
+  assert.match(pages['privacy-en.html'], /not an in-app age-enforcement mechanism/);
+  assert.match(pages['privacy-en.html'], /does not configure automatic expiry/);
+  assert.throws(() => createBuild52Notice({ ...listing, referenceBuild: '1.0 (53)' }), /approved existing binary/);
+  assert.throws(() => createBuild52Notice({ ...listing, submissionRequest: {
+    ...listing.submissionRequest, ownerAuthorizedReviewSubmission: false,
+  } }), /authorization/);
+  assert.throws(() => createSupportPages(), /policies are not final and approved/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'www', 'js', 'commercial-config.js'), 'utf8'),
+    /POLICY_IS_DRAFT = true/);
+});
+
 test('both localizations meet actual metadata limits, including UTF-8 keyword bytes', () => {
   for (const [locale, copy] of Object.entries(listing.locales)) {
     for (const [field, limit] of Object.entries({ name: 30, subtitle: 30, promotionalText: 170, description: 4000 })) {
