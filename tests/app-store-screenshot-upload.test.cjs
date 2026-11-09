@@ -22,8 +22,9 @@ const catalog = {
   }),
 };
 
-function mockApple({ unrelated = false, processingFailed = false } = {}) {
+function mockApple({ unrelated = false, processingFailed = false, processingReads = 0 } = {}) {
   const images = [], placements = [], writes = [], transfers = [];
+  const remaining = new Map();
   const version = { id: 'bd117cfb-bd2b-4874-9baf-92a0e4ede4cc', attributes: {
     versionString: '1.0', appStoreState: 'PREPARE_FOR_SUBMISSION', releaseType: 'MANUAL' } };
   async function request(method, route, body) {
@@ -52,8 +53,14 @@ function mockApple({ unrelated = false, processingFailed = false } = {}) {
       if (method === 'PATCH') {
         assert.deepEqual(body.data.attributes, { uploaded: true });
         const asset = assets.find((item) => item.fileName === image.attributes.fileName);
-        Object.assign(image.attributes, { state: processingFailed ? 'FAILED' : 'PREPARE_FOR_SUBMISSION',
+        remaining.set(image.id, processingReads);
+        Object.assign(image.attributes, { state: processingFailed ? 'FAILED' : processingReads ? 'UPLOAD_COMPLETE' : 'PREPARE_FOR_SUBMISSION',
           specId: asset.family, imageAsset: { width: asset.width, height: asset.height } });
+      } else if (processingReads && image.attributes.state === 'UPLOAD_COMPLETE') {
+        assert.equal(images.length, 32, 'All transfers must be committed before processing is polled');
+        const reads = remaining.get(image.id);
+        if (reads > 0) remaining.set(image.id, reads - 1);
+        else image.attributes.state = 'PREPARE_FOR_SUBMISSION';
       }
       return { data: image };
     }
@@ -125,4 +132,16 @@ test('native screenshot uploader preserves unrelated assets and explicitly rejec
   assert.equal(foreign.writes.length, 0);
   const failed = mockApple({ processingFailed: true });
   await assert.rejects(uploadScreenshots(listing, assets, failed.request, { transfer: failed.transfer }), /processing refused/);
+});
+
+test('native screenshot uploads overlap Apple processing and tolerate more than the old minute-long polling limit', async () => {
+  const mock = mockApple({ processingReads: 80 });
+  let waits = 0;
+  const result = await uploadScreenshots(listing, assets, mock.request, {
+    transfer: mock.transfer, wait: async () => { waits++; },
+  });
+  assert.equal(result.screenshotsVerified, true);
+  assert.equal(result.records.length, 32);
+  assert.ok(waits > 40);
+  assert.equal(mock.transfers.length, 32);
 });

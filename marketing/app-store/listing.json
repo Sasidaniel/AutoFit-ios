@@ -54,7 +54,7 @@
     "capturedAt": "2026-11-09T10:03:43.177Z",
     "fileCount": 32,
     "acceptedForSubmission": false,
-    "result": "Initial stale and duplicate captures were rejected. Retry 42605899139 failed its frame guard. Run 42608293814 connected the real Simulator display and captured workout/sets, then stopped at a hidden plans shortcut. Visible navigation and safe-area scrolling are now checked across all 32 real DOM scenes in phone/tablet browser viewports; native acceptance is still pending. No native assets have been accepted."
+    "result": "This record identifies the rejected initial capture attempt. It is superseded by the 32 accepted native originals from runs 42611518422 and 42623335643 and their 32 verified opaque compositions. Separate family provenance is preserved in assets/native/provenance.json and assets/native-compositions.json; upload is not yet verified."
   },
   "nativePreview": {
     "families": ["iphone", "ipad"],
@@ -73,8 +73,16 @@
   "appleFeatureVerification": {
     "date": "2026-11-09",
     "primaryCategory": "Health & Fitness",
-    "ageRating": "13+ in 172 territories, regional exceptions; global 12+ on operating systems earlier than 26",
-    "minimumAgeReason": "Apple's lowest override above the in-app minimum of 12 is 13+. The app's age/consent behavior was not changed; this is not legal clearance for minors.",
+    "ageRating": "Owner-requested 18+ override saved; Apple displays 18+ in 173 territories and 19+ in Korea. Operating systems earlier than 26 display Apple's legacy 17+ rating with regional exceptions.",
+    "minimumAgeReason": "Owner authorized temporarily excluding minors. The store override was changed and read back after Save; build 52's in-app age/consent flow is unchanged. Apple's legacy 17+ mapping is not an enforceable 18+ in-app gate or legal clearance.",
+    "territoryAvailability": {
+      "availableCount": 148,
+      "excludedRegion": "European Union",
+      "excludedTerritoryCodes": ["AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE"],
+      "automaticallyIncludeFutureTerritories": false,
+      "readback": "Availability (148 Countries or Regions); Austria, Germany and France Not Available; Israel, United States, United Kingdom and Norway Available on App Release.",
+      "source": "https://appstoreconnect.apple.com/apps/6820408299/distribution/pricing/availability"
+    },
     "source": "https://appstoreconnect.apple.com/apps/6820408299/distribution/info"
   },
   "price": "Free",
@@ -163,8 +171,8 @@
     "publicSupportAndPrivacyEmail": "autofitrainer@gmail.com",
     "operatorLegalName": "ששי דניאל / Sasi Daniel",
     "operatorEntityType": "individual",
-    "minorLaunchDecision": "Owner chose to retain ages 12–17 and complete privacy/consent review before public launch; no adult-only restriction was authorized.",
-    "requestedTerritoryScope": "all available App Store countries and regions",
+    "minorLaunchDecision": "Owner superseded retaining ages 12–17 and authorized temporarily excluding minors. An 18+ App Store override is saved and verified. Apple maps it to legacy 17+ before OS 26; existing build 52's in-app consent remains unchanged, so this is not a verified adult-only access gate.",
+    "requestedTerritoryScope": "148 current App Store territories; temporarily exclude the 27 European Union countries under the owner's conditional authorization to avoid European compliance blockers. Other territories remain unchanged; future territories are not automatically included.",
     "automaticallyIncludeFutureTerritories": false,
     "ownerDeclaredDSATraderStatus": "TRADER",
     "appleDSAVerificationConfirmed": true,
@@ -173,16 +181,16 @@
     "privacyURL": null,
     "marketingURL": null,
     "sellerName": null,
-    "ageRating": null,
-    "territories": null,
+    "ageRating": "18+ override, with Apple's 19+ Korean and legacy 17+ pre-OS-26 mappings",
+    "territories": "148 current territories, excluding the 27 European Union countries",
     "privacyLabel": "Not finalized. Do not select Data Not Collected without reviewing optional contact submissions, Apple speech services and third-party handling.",
     "reviewerNotes": "Proposed submission: version 1.0, final binary pending policy completion and readiness checks. Build 52 is the current TestFlight reference, not a confirmed final store candidate. No AutoFit login is required. Interface: Hebrew and English. Voice commands: Hebrew on iPhone, with microphone and speech permissions; test manual entry separately. Start a workout, expand an exercise and record a set. Walking/running values are manually entered, not treadmill sensor integrations. Local plan proposals require confirmation. Purchases are disabled. New sensitive iCloud writes are disabled; legacy recovery is not a new cloud-sync service. Provide an actual review contact in App Store Connect before submission.",
     "blockers": [
-      { "id": "native", "he": "צילומי מכשיר סופיים: התמונות כאן צולמו מממשק הווב האמיתי ב־Chrome, לא מבנייה 52 באייפון. יש להחליף בצילומי iPhone וגם iPad לפני הגשה; הפרויקט תומך בשניהם.", "en": "Final device captures: these images show the real web UI in Chrome, not build 52 on an iPhone. Replace with iPhone and iPad captures before submission; the project supports both." },
+      { "id": "native", "he": "הושלמו ונשמרו 32 צילומי סימולטור אמיתיים ו־32 תמונות חנות אטומות, ל־iPhone ול־iPad בשתי השפות. גלריית צילומי המכשיר נפרדת מצילומי הווב הישנים. ההעלאה ל־Apple עדיין אינה מאומתת.", "en": "All 32 real Simulator originals and 32 opaque storefront compositions are preserved for iPhone and iPad in both languages. The native gallery is separate from the older browser artwork. Apple upload is not yet verified." },
       { "id": "legal", "he": "האפליקציה עדיין מציגה תנאים ופרטיות כטיוטה. יש להשלים מסמכים ופרטי מפעיל, לבדוק התאמה להתנהגות בפועל ולעדכן את האפליקציה לפני הגשה. גם הפצה חינמית היא הפצה ציבורית.", "en": "In-app terms and privacy are still drafts. Complete operator details and documents, verify actual practices and update the app before submission. A free public release still needs this." },
       { "id": "urls", "he": "נדרשים כתובות ציבוריות פעילות למדיניות פרטיות ולתמיכה, ופרטי קשר אמיתיים לבדיקת Apple. לא הומצאו כתובות או פרטים.", "en": "Live public privacy and support URLs and real Apple review contact details are needed. No URLs or contact details have been invented." },
       { "id": "privacy", "he": "הצהרת הפרטיות דורשת אישור: טופס יצירת קשר שולח שם, אימייל והודעה ל־Formspree; זיהוי דיבור משתמש בשירותי Apple. יש לבדוק גם גיבויי מערכת, מניפסטי פרטיות וזכויות מדיה. אין כאן אישור משפטי.", "en": "Approve privacy answers: Contact sends name, email and message to Formspree; speech uses Apple services. Verify device backup handling, privacy manifests and media rights. This package is not legal approval." },
-      { "id": "store", "he": "שם מוכר, דירוג גיל, מדינות הפצה ותצוגת הפרטיות טרם אומתו ב־App Store Connect. המשתמש ביקש הפצה עולמית ואישר ש-Apple כבר אישרה את אימות ה-Trader; אישור זה נמסר על ידו ולא נבדק ב-API. לא נדרשת חזרה על האימות. לא הוצגו דירוגים או ביקורות מומצאים.", "en": "Seller name, age rating, territories and privacy labels have not been verified in App Store Connect. The owner requested worldwide distribution and confirmed that Apple approved Trader verification; this is owner-reported, not independently API-verified. Repeating verification is not requested. No ratings or reviews are fabricated." }
+      { "id": "store", "he": "לפי בקשתך נשמר דירוג חנות 18+ והוסרו זמנית 27 מדינות האיחוד האירופי; 148 מדינות נותרו. במערכות שלפני גרסה 26 Apple ממפה את הדירוג ל־17+, ובנייה 52 לא שונתה. הצהרת הפרטיות והסכם המפתחים המעודכן עדיין דורשים טיפול; שינוי מדינות אינו פותר אותם.", "en": "As requested, the 18+ store override is saved and the 27 EU countries are temporarily excluded, leaving 148 territories. Before OS 26 Apple maps this to 17+, and build 52 is unchanged. Privacy declarations and the updated developer agreement remain unresolved; changing territories does not resolve them." }
     ]
   },
   "sources": [

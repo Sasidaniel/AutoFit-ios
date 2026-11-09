@@ -1,4 +1,6 @@
 name: Verify existing internal TestFlight build
+run-name: >-
+  ${{ inputs.upload_store_screenshots && 'App Store screenshots' || inputs.submit_store_review && 'App Review submission' || inputs.inspect_app_store && 'Read-only App Store inspection' || inputs.prepare_store_draft && 'App Store draft metadata' || 'Existing TestFlight verification' }} - existing build ${{ inputs.build_number }}
 
 on:
   workflow_dispatch:
@@ -98,8 +100,8 @@ jobs:
           APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
           APPSTORE_REVIEW_REPORT: ${{ runner.temp }}/app-store-review.json
         run: node .github/scripts/submit-app-store-review.cjs
-      - name: Read back metadata after the requested submission
-        if: ${{ always() && inputs.submit_store_review }}
+      - name: Read back metadata after the Apple write
+        if: ${{ always() && (inputs.submit_store_review || inputs.upload_store_screenshots) }}
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}

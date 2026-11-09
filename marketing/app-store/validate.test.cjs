@@ -69,7 +69,13 @@ test('review does not pass off browser screenshots or unresolved store facts as 
   assert.equal(provenance.finalSubmissionAssets, false);
   assert.equal(provenance.syntheticData, true);
   assert.equal(provenance.referenceSource, listing.referenceSource);
-  for (const key of ['sellerName', 'ageRating', 'supportURL', 'privacyURL', 'territories']) assert.equal(listing.review[key], null);
+  for (const key of ['sellerName', 'supportURL', 'privacyURL']) assert.equal(listing.review[key], null);
+  assert.match(listing.review.ageRating, /18\+.*legacy 17\+/);
+  assert.match(listing.review.territories, /148.*27 European Union/);
+  const availability = listing.appleFeatureVerification.territoryAvailability;
+  assert.equal(availability.availableCount + availability.excludedTerritoryCodes.length, 175);
+  assert.equal(new Set(availability.excludedTerritoryCodes).size, 27);
+  assert.equal(availability.automaticallyIncludeFutureTerritories, false);
   assert.deepEqual(listing.review.blockers.map((item) => item.id), ['native', 'legal', 'urls', 'privacy', 'store']);
   const script = fs.readFileSync(path.join(__dirname, 'review.js'), 'utf8');
   assert.match(script, /submissionAuthorized: false/);

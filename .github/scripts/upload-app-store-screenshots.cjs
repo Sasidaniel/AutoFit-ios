@@ -127,48 +127,63 @@ async function uploadScreenshots(listing, assets, request, {
     return { ...asset, localeID: selected[0].id, ...specification(catalog, asset) };
   });
   const images = await list(`/v1/appAssetLibraries/${libraryID}/images?limit=200`);
+  const existingPlacements = new Map();
+  for (const language of ['he', 'en']) {
+    for (const family of ['iphone', 'ipad']) {
+      const group = prepared.filter((item) => item.language === language && item.family === family);
+      const { localeID, groupID } = group[0];
+      const existing = await list(`/v1/appStoreVersionLocalizations/${localeID}/placements?filter[placementType]=APP_SCREENSHOT&filter[placementGroup]=${groupID}&sort=placementGroupPosition&include=image&limit=200`);
+      const knownIDs = images.filter((image) => group.some((asset) => asset.fileName === image.attributes.fileName)).map((image) => image.id);
+      if (existing.some((placement) => !knownIDs.includes(placement.relationships?.image?.data?.id))) {
+        throw new Error('Existing unrelated screenshots will not be overwritten or reordered');
+      }
+      existingPlacements.set(`${language}/${family}`, existing);
+    }
+  }
+  const recordProcessing = (asset, image, attempt) => {
+    report.processing = { family: asset.family, language: asset.language, scene: asset.scene, imageID: image.id,
+      state: image.attributes.state, attempt, expectedSpecID: asset.specID,
+      observedSpecID: image.attributes.specId || null,
+      width: image.attributes.imageAsset?.width || null, height: image.attributes.imageAsset?.height || null };
+    checkpoint(report);
+  };
+  // Commit every transfer before waiting, so Apple's asynchronous processing can overlap.
+  for (const asset of prepared) {
+    const found = images.filter((image) => image.attributes.fileName === asset.fileName);
+    if (found.length > 1) throw new Error('Ambiguous existing native image');
+    let image = found[0];
+    if (!image) {
+      image = (await request('POST', '/v1/appAssetLibraryImages', { data: {
+        type: 'appAssetLibraryImages', attributes: { category: 'APP_SCREENSHOTS_AND_PREVIEWS',
+          fileName: asset.fileName, fileSize: asset.bytes.length, referenceName: asset.fileName },
+        relationships: { assetLibrary: { data: { type: 'appAssetLibraries', id: libraryID } } },
+      } })).data;
+      images.push(image);
+    }
+    if (image.attributes.fileSize !== asset.bytes.length) throw new Error('Existing image size mismatch');
+    recordProcessing(asset, image, 0);
+    if (image.attributes.state === 'AWAITING_UPLOAD') {
+      await uploadParts(image.attributes.uploadOperations, asset.bytes, transfer);
+      await request('PATCH', `/v1/appAssetLibraryImages/${image.id}`, {
+        data: { type: 'appAssetLibraryImages', id: image.id, attributes: { uploaded: true } },
+      });
+    } else if (!['UPLOAD_COMPLETE', 'PREPARE_FOR_SUBMISSION'].includes(image.attributes.state)) {
+      throw new Error(`Apple image processing refused ${asset.family}/${asset.language}/${asset.scene}: ${image.attributes.state}`);
+    }
+  }
   for (const language of ['he', 'en']) {
     for (const family of ['iphone', 'ipad']) {
       const group = prepared.filter((item) => item.language === language && item.family === family);
       const { localeID, groupID } = group[0];
       const placementRoute = `/v1/appStoreVersionLocalizations/${localeID}/placements?filter[placementType]=APP_SCREENSHOT&filter[placementGroup]=${groupID}&sort=placementGroupPosition&include=image&limit=200`;
-      const existing = await list(placementRoute);
-      const knownIDs = images.filter((image) => group.some((asset) => asset.fileName === image.attributes.fileName)).map((image) => image.id);
-      if (existing.some((placement) => !knownIDs.includes(placement.relationships?.image?.data?.id))) {
-        throw new Error('Existing unrelated screenshots will not be overwritten or reordered');
-      }
+      const existing = existingPlacements.get(`${language}/${family}`);
       const order = [];
       for (const asset of group) {
-        const found = images.filter((image) => image.attributes.fileName === asset.fileName);
-        if (found.length > 1) throw new Error('Ambiguous existing native image');
-        let image = found[0];
-        if (!image) {
-          image = (await request('POST', '/v1/appAssetLibraryImages', { data: {
-            type: 'appAssetLibraryImages', attributes: { category: 'APP_SCREENSHOTS_AND_PREVIEWS',
-              fileName: asset.fileName, fileSize: asset.bytes.length, referenceName: asset.fileName },
-            relationships: { assetLibrary: { data: { type: 'appAssetLibraries', id: libraryID } } },
-          } })).data;
-          images.push(image);
-        }
-        if (image.attributes.fileSize !== asset.bytes.length) throw new Error('Existing image size mismatch');
-        const recordProcessing = (attempt) => {
-          report.processing = { family, language, scene: asset.scene, imageID: image.id,
-            state: image.attributes.state, attempt, expectedSpecID: asset.specID,
-            observedSpecID: image.attributes.specId || null,
-            width: image.attributes.imageAsset?.width || null, height: image.attributes.imageAsset?.height || null };
-          checkpoint(report);
-        };
-        recordProcessing(0);
-        if (image.attributes.state === 'AWAITING_UPLOAD') {
-          await uploadParts(image.attributes.uploadOperations, asset.bytes, transfer);
-          await request('PATCH', `/v1/appAssetLibraryImages/${image.id}`, {
-            data: { type: 'appAssetLibraryImages', id: image.id, attributes: { uploaded: true } },
-          });
-        }
+        let image = images.find((item) => item.attributes.fileName === asset.fileName);
         let ready = false;
-        for (let attempt = 0; attempt < 40; attempt++) {
+        for (let attempt = 0; attempt < 240; attempt++) {
           image = (await request('GET', `/v1/appAssetLibraryImages/${image.id}`)).data;
-          recordProcessing(attempt + 1);
+          recordProcessing(asset, image, attempt + 1);
           if (image.attributes.state === 'PREPARE_FOR_SUBMISSION') { ready = true; break; }
           if (image.attributes.state !== 'UPLOAD_COMPLETE') throw new Error(`Apple image processing refused ${asset.family}/${language}/${asset.scene}: ${image.attributes.state}; ${JSON.stringify(image.attributes.stateDetails)}`);
           await wait();

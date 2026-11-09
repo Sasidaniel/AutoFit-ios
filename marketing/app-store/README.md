@@ -15,6 +15,43 @@ submission preparation; it does not establish missing privacy declarations,
 legal facts or final native screenshots. Submission is not yet confirmed.
 Keep manual release configured rather than automatically publishing after review.
 
+## Current verified state — later updates supersede historical notes below
+
+The owner's latest instruction authorizes temporarily excluding Europe and
+ages 12–17 where those requirements block launch. The App Store override was
+changed from 13+ to **18+**, saved and read back. Apple displays 19+ in Korea
+and maps this override to **17+ on operating systems before version 26**.
+This store setting is not age verification: the existing build 52's in-app
+minor/guardian flow is unchanged. An enforced adult-only onboarding change
+would require an app update and separately authorized binary upload.
+
+The **27 EU countries are now Not Available**, leaving **148 current territories**.
+Israel, the US, UK and Norway remain Available on App Release.
+Automatic inclusion of future territories remains disabled. No preorder,
+new binary, public release or automatic publication was started.
+Readback: <https://appstoreconnect.apple.com/apps/6820408299/distribution/pricing/availability>.
+Removing EU availability does not waive global privacy requirements or
+Apple's updated Developer Program agreement, which the Account Holder must
+personally review and accept.
+
+All 32 native originals and 32 opaque marketing compositions are preserved
+with their separate capture-run provenance. Upload run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42626923506>
+stopped before transfer because the first guard incorrectly expected `IOS`
+instead of Apple's `IPHONE_APP_STORE` / `IPAD_APP_STORE` catalog platforms.
+That guard was corrected against Apple's official schema.
+Run <https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42627229097>
+then transferred and committed the first image, but its one-minute polling
+limit expired while Apple was still processing it. Read-only inspection
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42627748864>
+confirmed that same immutable image reached `PREPARE_FOR_SUBMISSION`,
+specification `bd402f1a-26ee-5b83-9dd7-972c60c43d47`, 1320 × 2868.
+It was not rejected by Apple. The uploader now commits all transfers before
+waiting, allowing server-side processing to overlap, with a six-minute polling
+bound per image, safe retry reuse and sanitized processing checkpoints.
+Regression coverage includes processing lasting beyond the former limit.
+Neither an upload retry nor a green read-only inspection is an App Review receipt.
+
 ## Live Apple inspection — 2026-11-09
 
 Read-only inspection succeeded in
