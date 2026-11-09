@@ -151,6 +151,14 @@ async function uploadScreenshots(listing, assets, request, {
           images.push(image);
         }
         if (image.attributes.fileSize !== asset.bytes.length) throw new Error('Existing image size mismatch');
+        const recordProcessing = (attempt) => {
+          report.processing = { family, language, scene: asset.scene, imageID: image.id,
+            state: image.attributes.state, attempt, expectedSpecID: asset.specID,
+            observedSpecID: image.attributes.specId || null,
+            width: image.attributes.imageAsset?.width || null, height: image.attributes.imageAsset?.height || null };
+          checkpoint(report);
+        };
+        recordProcessing(0);
         if (image.attributes.state === 'AWAITING_UPLOAD') {
           await uploadParts(image.attributes.uploadOperations, asset.bytes, transfer);
           await request('PATCH', `/v1/appAssetLibraryImages/${image.id}`, {
@@ -160,12 +168,15 @@ async function uploadScreenshots(listing, assets, request, {
         let ready = false;
         for (let attempt = 0; attempt < 40; attempt++) {
           image = (await request('GET', `/v1/appAssetLibraryImages/${image.id}`)).data;
+          recordProcessing(attempt + 1);
           if (image.attributes.state === 'PREPARE_FOR_SUBMISSION') { ready = true; break; }
           if (image.attributes.state !== 'UPLOAD_COMPLETE') throw new Error(`Apple image processing refused ${asset.family}/${language}/${asset.scene}: ${image.attributes.state}; ${JSON.stringify(image.attributes.stateDetails)}`);
           await wait();
         }
         if (!ready || image.attributes.specId !== asset.specID || image.attributes.imageAsset?.width !== asset.width
-          || image.attributes.imageAsset?.height !== asset.height) throw new Error('Apple did not confirm the expected processed screenshot');
+          || image.attributes.imageAsset?.height !== asset.height) {
+          throw new Error(`Apple did not confirm the expected processed screenshot: ${JSON.stringify(report.processing)}`);
+        }
         const placed = existing.filter((item) => item.relationships?.image?.data?.id === image.id);
         if (placed.length > 1) throw new Error('Ambiguous existing placement');
         const placement = placed[0] || (await request('POST', '/v1/appAssetLibraryPlacements', { data: {
@@ -193,6 +204,7 @@ async function uploadScreenshots(listing, assets, request, {
   if (version.attributes.releaseType !== 'MANUAL' || version.attributes.appStoreState !== 'PREPARE_FOR_SUBMISSION') {
     throw new Error('Version release/review state changed during upload');
   }
+  delete report.processing;
   report.screenshotsVerified = true; checkpoint(report);
   return report;
 }

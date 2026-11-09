@@ -31,6 +31,12 @@ test('readiness reports missing records honestly and never emits review contact 
   const record = (id, attributes) => ({ id, attributes });
   const routes = {
     '/v1/apps?filter[bundleId]=com.sasidaniel.autofit&limit=2': list([record('app', { bundleId: 'com.sasidaniel.autofit', name: 'AutoFit' })]),
+    '/v1/apps/app/assetLibrary': { data: record('library', {}) },
+    '/v1/appAssetLibraries/library/images?limit=200': list([record('image', {
+      fileName: 'native.png', fileSize: 10, state: 'UPLOAD_COMPLETE',
+      uploadOperations: [{ url: 'https://private-upload.example.test' }],
+      imageAsset: { templateUrl: 'https://private-image.example.test', width: 1320, height: 2868 },
+    })]),
     '/v1/apps/app/appInfos?limit=50': list([record('info', { appStoreState: 'PREPARE_FOR_SUBMISSION' })]),
     '/v1/appInfos/info/appInfoLocalizations?limit=50': list([record('en', { locale: 'en-US', name: 'AutoFit' })]),
     '/v1/apps/app/appStoreVersions?filter[platform]=IOS&limit=50': list([record('version', { versionString: '1.0', appStoreState: 'PREPARE_FOR_SUBMISSION', releaseType: 'MANUAL' })]),
@@ -54,7 +60,12 @@ test('readiness reports missing records honestly and never emits review contact 
   assert.equal(report.versions[0].locales[0].supportURL, null);
   assert.deepEqual(report.versions[0].locales[0].screenshots, []);
   assert.doesNotMatch(JSON.stringify(report), /not-for-report|"Private"|"Contact"/);
-  assert.equal(paths.length, 9);
+  assert.equal(paths.length, 11);
+  assert.deepEqual(report.assetLibrary.images, [{
+    id: 'image', fileName: 'native.png', fileSize: 10, state: 'UPLOAD_COMPLETE',
+    specId: null, width: 1320, height: 2868,
+  }]);
+  assert.doesNotMatch(JSON.stringify(report), /private-upload|private-image|uploadOperations|templateUrl/);
   routes['/v1/appStoreVersionLocalizations/locale/placements?filter[placementType]=APP_SCREENSHOT&limit=200']
     = list([record('placement', { placementGroup: 'IPAD_13_PROFILE', state: 'PARENT_PREPARE_FOR_SUBMISSION' })]);
   const modern = await collectReadiness(async (route) => routes[route]);

@@ -29,6 +29,16 @@ async function collectReadiness(read) {
   const apps = await many(`/v1/apps?filter[bundleId]=${bundleID}&limit=2`);
   if (apps.length !== 1 || apps[0].attributes.bundleId !== bundleID) throw new Error('Cannot uniquely identify AutoFit');
   const app = apps[0], appPath = `/v1/apps/${encodeURIComponent(app.id)}`;
+  const library = (await read(`${appPath}/assetLibrary`)).data;
+  if (!library?.id) throw new Error('Apple asset library is missing');
+  const libraryImages = await many(`/v1/appAssetLibraries/${encodeURIComponent(library.id)}/images?limit=200`);
+  const assetLibrary = {
+    id: library.id,
+    images: libraryImages.map(({ id, attributes: a }) => ({
+      id, fileName: a.fileName, fileSize: a.fileSize, state: a.state,
+      specId: a.specId || null, width: a.imageAsset?.width || null, height: a.imageAsset?.height || null,
+    })),
+  };
   const infos = await many(`${appPath}/appInfos?limit=50`);
   const appInformation = [];
   for (const info of infos) {
@@ -91,7 +101,7 @@ async function collectReadiness(read) {
   return {
     checkedAt: new Date().toISOString(), readOnly: true, submissionPerformed: false,
     app: { id: app.id, name: app.attributes.name, bundleID },
-    appInformation, versions: versionInformation,
+    appInformation, versions: versionInformation, assetLibrary,
     notAssessed: ['agreements', 'price and availability', 'age-rating answers', 'privacy-label answers',
       'policy accuracy and approval', 'native screenshot provenance', 'media rights', 'system-backup handling'],
   };
