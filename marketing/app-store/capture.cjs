@@ -81,7 +81,35 @@ async function main() {
     };
     const click = async (selector) => page.eval(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)throw new Error('Missing capture control: '+${JSON.stringify(selector)});node.click();})()`);
     const scrollCard = async (index) => page.eval(`window.scrollTo(0, document.querySelector('.exercise-card[data-entry-index="${index}"]').getBoundingClientRect().top + scrollY - 170)`);
-    if (!process.argv.includes('--review-only')) {
+    const nativeControlChecks = [];
+    if (process.argv.includes('--native-controls-check')) {
+      const nativeSource = fs.readFileSync(path.join(__dirname, 'native-controls.js'), 'utf8');
+      const source = nativeSource.slice(0, nativeSource.indexOf('\nrun().catch')).replace(/^import .*$/gm, '');
+      for (const [family, width, height] of [['iphone', 440, 956], ['ipad', 1032, 1376]]) {
+        for (const language of ['he', 'en']) {
+          await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+          await page.send('Page.navigate', { url: `${base}/fixture.html?lang=${language}` });
+          await page.wait(`location.pathname==='/app/' && !!document.querySelector('#exerciseList .exercise-card') && document.documentElement.lang==='${language}' && document.getElementById('splashScreen').classList.contains('hidden')`);
+          await page.eval(`window.prepareStoreScene=(()=>{${source};return prepare;})()`);
+          for (const screen of ['workout', 'sets', 'plans', 'saved', 'statistics', 'history', 'cardio', 'library']) {
+            await page.eval(`window.prepareStoreScene(${JSON.stringify(screen)})`);
+            if (['sets', 'cardio'].includes(screen)) {
+              const index = screen === 'sets' ? 1 : 0;
+              const visible = await page.eval(`(()=>{
+                const card=document.querySelector('.exercise-card[data-entry-index="${index}"]').getBoundingClientRect();
+                const header=document.querySelector('.topbar').getBoundingClientRect();
+                const status=document.querySelector('.workout-quick-status');
+                return card.top>=Math.max(header.bottom,status?.getClientRects().length?status.getBoundingClientRect().bottom:0);
+              })()`);
+              if (!visible) throw new Error(`Exercise heading hidden by sticky controls: ${family}/${language}/${screen}`);
+            }
+            nativeControlChecks.push({ family, language, screen, actualDOMControls: true, nativeDeviceCapture: false });
+          }
+          console.log(`Verified eight actual DOM capture controls: ${family}/${language}; browser only, no native simulation`);
+        }
+      }
+    }
+    if (!process.argv.includes('--review-only') && !process.argv.includes('--native-controls-check')) {
     for (const language of ['he', 'en']) {
       await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
       await page.send('Page.navigate', { url: `${base}/fixture.html?lang=${language}` });
@@ -229,7 +257,7 @@ async function main() {
       if (response.status < 400) throw new Error(`Local server exposed a nonpublic path: ${url}`);
     }
     if (page.errors.length) throw new Error(`Review errors: ${JSON.stringify(page.errors)}`);
-    const report = { checkedAt: new Date().toISOString(), checks, supportChecks, localApprovalOnly: true, nonpublicPathsBlocked: blockedPaths.length };
+    const report = { checkedAt: new Date().toISOString(), checks, supportChecks, nativeControlChecks, localApprovalOnly: true, nonpublicPathsBlocked: blockedPaths.length };
     fs.writeFileSync(path.join(assets, 'browser-checks.json'), JSON.stringify(report, null, 2));
     console.log(`Verified ${checks.length} storefront layouts, ${supportChecks.length} support/policy layouts, image identity, language toggle and local-only approval`);
   } finally {

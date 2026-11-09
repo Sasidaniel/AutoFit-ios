@@ -89,6 +89,29 @@ test('capture rendering waits for four actual animation frames and explicitly fa
   await assert.rejects(stalled, /did not present animation frames/);
 });
 
+test('capture scroll offset accounts for the real safe-area header and sticky workout controls', () => {
+  const source = fs.readFileSync(path.join(root, 'marketing', 'app-store', 'native-controls.js'), 'utf8');
+  let scrolled, statusVisible = true;
+  const nodes = {
+    '.exercise-card[data-entry-index="1"]': { getBoundingClientRect: () => ({ top: 400 }) },
+    '.topbar': { getBoundingClientRect: () => ({ bottom: 140 }) },
+    '.workout-quick-status': {
+      getBoundingClientRect: () => ({ height: 60 }),
+      getClientRects: () => statusVisible ? [{}] : [],
+    },
+  };
+  const context = vm.createContext({
+    document: { querySelector: (selector) => nodes[selector] },
+    scrollY: 600, window: { scrollTo: (_x, y) => { scrolled = y; } },
+  });
+  vm.runInContext(source.slice(0, source.indexOf('\nrun().catch')).replace(/^import .*$/gm, ''), context);
+  vm.runInContext('scrollCard(1)', context);
+  assert.equal(scrolled, 782);
+  statusVisible = false;
+  vm.runInContext('scrollCard(1)', context);
+  assert.equal(scrolled, 848);
+});
+
 test('native artifact validation refuses duplicate screen pixels before writing provenance', () => {
   const script = fs.readFileSync(path.join(root, '.github', 'scripts', 'capture-store-simulator.sh'), 'utf8');
   const validator = script.match(/OUTPUT="\$OUTPUT" RUNTIME="\$RUNTIME" node - <<'JS'\r?\n([\s\S]*?)\r?\nJS/);

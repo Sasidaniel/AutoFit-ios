@@ -52,7 +52,7 @@
     "capturedAt": "2026-11-09T10:03:43.177Z",
     "fileCount": 32,
     "acceptedForSubmission": false,
-    "result": "Visual review rejected stale and duplicate screen captures despite successful build and file-count checks. Retry 42605899139 correctly failed its new animation-frame guard while the simulator display still showed the startup splash. The next attempt explicitly connects the real Simulator display; no native assets have been accepted."
+    "result": "Initial stale and duplicate captures were rejected. Retry 42605899139 failed its frame guard. Run 42608293814 connected the real Simulator display and captured workout/sets, then stopped at a hidden plans shortcut. Visible navigation and safe-area scrolling are now checked across all 32 real DOM scenes in phone/tablet browser viewports; native acceptance is still pending. No native assets have been accepted."
   },
   "price": "Free",
   "releaseMode": "Manual release after Apple approval and separate owner authorization",

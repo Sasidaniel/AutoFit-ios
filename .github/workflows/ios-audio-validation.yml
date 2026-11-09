@@ -104,7 +104,7 @@ jobs:
   store-screenshots:
     if: github.event_name == 'workflow_dispatch' && inputs.store_screenshots && !inputs.widget_only
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

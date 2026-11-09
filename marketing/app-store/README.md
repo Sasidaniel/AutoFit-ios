@@ -153,10 +153,24 @@ The corrected attempt
 failed before the first capture: the actual WKWebView never presented the
 required animation frames, while the simulator screenshot still showed the
 startup splash despite the DOM having advanced. The new guard correctly refused
-the stale image. The next attempt explicitly opens the dedicated device in
-Xcode's Simulator application to provide its real display connection; the frame
-guard remains mandatory. This is a CI capture-environment correction, not a
-production audio or startup change. Native assets are still unaccepted.
+the stale image. Run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42608293814>
+then connected Xcode's Simulator display and passed the frame guard for actual
+workout and set screens. It stopped at the plans scene because the controller
+tried a shortcut that was not visible from the workout tab. Both native targets
+compiled successfully and their privacy resources were embedded and linted.
+No complete native asset set was produced or accepted.
+
+The controller now navigates through the visible Home shortcut and measures the
+real safe-area header and sticky workout controls when scrolling to an exercise,
+rather than assuming a fixed pixel offset. All 32 scene transitions across both
+languages and phone/tablet browser viewports were exercised against the real DOM
+with `node marketing/app-store/capture.cjs --native-controls-check`. That check
+does not simulate native services and is not a native-capture receipt. The
+simulator pipeline remains bounded at 60 minutes to accommodate measured slow
+GUI boot/launch and real frame presentation across both devices and languages.
+The frame guard remains mandatory. These are capture-environment/controller
+corrections, not production audio or startup changes.
 
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
@@ -177,8 +191,8 @@ These manifests deliberately do not invent data-collection or tracking answers.
 Formspree, optional speech processing, minors, native backup exclusion and the
 final aggregated dependency privacy report still require their separate review.
 The capture pipeline checks that both manifests are present and valid in the
-built app; this check applies to subsequent captures, not the already-running
-capture at source `528cc0b` or TestFlight build 52.
+built app. Native run `42608293814` verified this at source `b730d3a`; the
+declarations are not included in TestFlight build 52.
 
 Apple requires the bundle containing each executable to report its own covered
 API use; an SDK manifest is not a substitute for the app's declarations:

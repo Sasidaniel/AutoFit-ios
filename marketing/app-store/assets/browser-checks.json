@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-11-09T11:02:28.113Z",
+  "checkedAt": "2026-11-09T11:43:11.220Z",
   "checks": [
     {
       "language": "he",
@@ -178,6 +178,232 @@
       "horizontalOverflow": false,
       "publicContact": true,
       "draftExplicit": true
+    }
+  ],
+  "nativeControlChecks": [
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "workout",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "sets",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "plans",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "saved",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "statistics",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "history",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "cardio",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "he",
+      "screen": "library",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "workout",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "sets",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "plans",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "saved",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "statistics",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "history",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "cardio",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "iphone",
+      "language": "en",
+      "screen": "library",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "workout",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "sets",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "plans",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "saved",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "statistics",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "history",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "cardio",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "he",
+      "screen": "library",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "workout",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "sets",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "plans",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "saved",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "statistics",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "history",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "cardio",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
+    },
+    {
+      "family": "ipad",
+      "language": "en",
+      "screen": "library",
+      "actualDOMControls": true,
+      "nativeDeviceCapture": false
     }
   ],
   "localApprovalOnly": true,

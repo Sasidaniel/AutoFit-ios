@@ -40,19 +40,27 @@ async function waitForPaint() {
 function scrollCard(index) {
   const card = document.querySelector(`.exercise-card[data-entry-index="${index}"]`);
   if (!card) throw new Error('Missing actual exercise card');
-  window.scrollTo(0, card.getBoundingClientRect().top + scrollY - 170);
+  const header = document.querySelector('.topbar');
+  const status = document.querySelector('.workout-quick-status');
+  const inset = (header?.getBoundingClientRect().bottom || 0)
+    + (status?.getClientRects().length ? status.getBoundingClientRect().height + 6 : 0) + 12;
+  window.scrollTo(0, card.getBoundingClientRect().top + scrollY - inset);
 }
 async function prepare(screen) {
   if (screen === 'workout') {
     click('.tab-btn[data-tab="workout"]');
     await wait(() => document.querySelector('#tab-workout.active'), 'visible workout tab');
-    scrollCard(0);
+    window.scrollTo(0, 0);
   }
   if (screen === 'sets') {
     click('.exercise-card[data-entry-index="1"] .workout-card-toggle'); scrollCard(1);
   }
   if (screen === 'plans') {
-    click('[data-page-link="plans"]'); click('.plan-custom-builder summary'); click('#btnPersonalPlan');
+    click('.tab-btn[data-tab="home"]');
+    await wait(() => document.querySelector('#tab-home.active'), 'visible home tab');
+    click('#tab-home [data-page-link="plans"]');
+    await wait(() => document.querySelector('#tab-plans.active'), 'visible plans tab');
+    click('.plan-custom-builder summary'); click('#btnPersonalPlan');
     await wait(() => document.querySelector('dialog[open] #personalPlanForm'), 'personal plan form');
     const form = document.getElementById('personalPlanForm');
     for (const [key, value] of Object.entries({ goal: 'strength', experience: 'regular', days: '3', minutes: '45', location: 'gym' })) {
