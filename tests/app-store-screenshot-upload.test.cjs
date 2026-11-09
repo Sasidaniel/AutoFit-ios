@@ -22,7 +22,8 @@ const catalog = {
   }),
 };
 
-function mockApple({ unrelated = false, processingFailed = false, processingReads = 0 } = {}) {
+function mockApple({ unrelated = false, processingFailed = false, processingReads = 0,
+  placementState = 'ACTIVE', reverseReadback = false } = {}) {
   const images = [], placements = [], writes = [], transfers = [];
   const remaining = new Map();
   const version = { id: 'bd117cfb-bd2b-4874-9baf-92a0e4ede4cc', attributes: {
@@ -39,8 +40,9 @@ function mockApple({ unrelated = false, processingFailed = false, processingRead
     if (pathname === '/v1/appAssetLibraries/library/images') return { data: [...images] };
     if (pathname.endsWith('/placements')) {
       if (unrelated) return { data: [{ id: 'foreign', relationships: { image: { data: { id: 'foreign-image' } } } }] };
-      return { data: placements.filter((item) => item.localeID === pathname.split('/')[3]
-        && item.attributes.placementGroup === url.searchParams.get('filter[placementGroup]')) };
+      const selected = placements.filter((item) => item.localeID === pathname.split('/')[3]
+        && item.attributes.placementGroup === url.searchParams.get('filter[placementGroup]'));
+      return { data: reverseReadback ? selected.reverse() : selected };
     }
     if (pathname === '/v1/appAssetLibraryImages' && method === 'POST') {
       const image = { id: `image-${images.length}`, attributes: { ...body.data.attributes, state: 'AWAITING_UPLOAD',
@@ -66,7 +68,7 @@ function mockApple({ unrelated = false, processingFailed = false, processingRead
     }
     if (pathname === '/v1/appAssetLibraryPlacements' && method === 'POST') {
       const placement = { id: `placement-${placements.length}`, localeID: body.data.relationships.appStoreVersionLocalization.data.id,
-        attributes: { ...body.data.attributes, state: 'PARENT_PREPARE_FOR_SUBMISSION' }, relationships: body.data.relationships };
+        attributes: { ...body.data.attributes, state: placementState }, relationships: body.data.relationships };
       placements.push(placement); return { data: placement };
     }
     if (pathname === '/v1/appAssetLibraryPlacementOrderingRequests' && method === 'POST') return { data: { id: 'order' } };
@@ -114,6 +116,8 @@ test('native screenshot uploader verifies 32 processed images and four ordered g
   const result = await uploadScreenshots(listing, assets, mock.request, options);
   assert.equal(result.screenshotsVerified, true);
   assert.equal(result.records.length, 32);
+  assert.equal(result.placementChecks.length, 4);
+  assert.ok(result.placementChecks.every((item) => item.states.length === 8 && item.states.every((state) => state === 'ACTIVE')));
   assert.equal(result.submissionPerformed, false);
   assert.equal(result.publicationPerformed, false);
   assert.equal(mock.images.length, 32);
@@ -139,6 +143,19 @@ test('native screenshot uploads overlap Apple processing and tolerate more than 
   let waits = 0;
   const result = await uploadScreenshots(listing, assets, mock.request, {
     transfer: mock.transfer, wait: async () => { waits++; },
+  });
+
+  test('placement verification accepts the documented ready state but refuses pending assets or a different display order', async () => {
+    const documented = mockApple({ placementState: 'PARENT_PREPARE_FOR_SUBMISSION' });
+    assert.equal((await uploadScreenshots(listing, assets, documented.request, {
+      transfer: documented.transfer,
+    })).screenshotsVerified, true);
+    for (const settings of [{ placementState: 'ASSET_PROCESSING' }, { reverseReadback: true }]) {
+      const invalid = mockApple(settings);
+      await assert.rejects(uploadScreenshots(listing, assets, invalid.request, {
+        transfer: invalid.transfer,
+      }), /placement\/order readback did not match/);
+    }
   });
   assert.equal(result.screenshotsVerified, true);
   assert.equal(result.records.length, 32);

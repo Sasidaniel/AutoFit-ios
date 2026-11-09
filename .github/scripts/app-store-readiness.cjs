@@ -63,6 +63,7 @@ async function collectReadiness(read) {
       for (const set of sets) {
         const images = await many(`/v1/appScreenshotSets/${encodeURIComponent(set.id)}/appScreenshots?limit=50`);
         screenshots.push({
+          source: 'legacy-screenshot-set',
           displayType: set.attributes.screenshotDisplayType,
           count: images.length,
           states: images.map((image) => image.attributes.assetDeliveryState?.state || 'unknown'),

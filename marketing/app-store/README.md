@@ -51,6 +51,17 @@ waiting, allowing server-side processing to overlap, with a six-minute polling
 bound per image, safe retry reuse and sanitized processing checkpoints.
 Regression coverage includes processing lasting beyond the former limit.
 Neither an upload retry nor a green read-only inspection is an App Review receipt.
+Run <https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42628494856>
+committed all 32 images; 29 had finished processing at its readback and the
+first eight Hebrew iPhone screenshots were successfully placed. Its final
+guard expected the documentation's `PARENT_PREPARE_FOR_SUBMISSION`, but the
+live API returned `ACTIVE` (with the same eight legacy screenshots `COMPLETE`).
+Verification now accepts either observed ready representation, still checks
+exact ordered placement IDs and processed-image dimensions/specification,
+and still requires the parent version to remain editable with manual release.
+Pending placements and mismatched order are rejected. Both modern and
+legacy readiness views are source-labelled; they must not be summed as
+independent screenshots when Apple exposes the same assets through both APIs.
 
 ## Live Apple inspection — 2026-11-09
 

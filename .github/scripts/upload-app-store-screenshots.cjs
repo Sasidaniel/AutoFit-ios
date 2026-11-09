@@ -209,9 +209,13 @@ async function uploadScreenshots(listing, assets, request, {
           appStoreVersionLocalization: { data: { type: 'appStoreVersionLocalizations', id: localeID } } },
       } });
       const verified = await list(placementRoute);
+      report.placementChecks ||= [];
+      report.placementChecks.push({ family, language, expectedIDs: order,
+        actualIDs: verified.map((item) => item.id), states: verified.map((item) => item.attributes.state) });
+      checkpoint(report);
       if (JSON.stringify(verified.map((item) => item.id)) !== JSON.stringify(order)
-        || verified.some((item) => item.attributes.state !== 'PARENT_PREPARE_FOR_SUBMISSION')) {
-        throw new Error('Apple screenshot placement/order readback did not match');
+        || verified.some((item) => !['PARENT_PREPARE_FOR_SUBMISSION', 'ACTIVE'].includes(item.attributes.state))) {
+        throw new Error(`Apple screenshot placement/order readback did not match: ${JSON.stringify(report.placementChecks.at(-1))}`);
       }
     }
   }
