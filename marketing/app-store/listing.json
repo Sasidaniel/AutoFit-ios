@@ -9,18 +9,27 @@
     "readiness": "Required facts, policies and final native screenshots must be completed before submission"
   },
   "appleInspection": {
-    "checkedAt": "2026-11-09T09:04:58.554Z",
+    "checkedAt": "2026-11-09T09:38:06.580Z",
     "appID": "6820408299",
     "version": "1.0",
     "state": "PREPARE_FOR_SUBMISSION",
-    "currentReleaseType": "AFTER_APPROVAL",
+    "currentReleaseType": "MANUAL",
     "buildSelected": false,
     "reviewContactComplete": false,
     "privacyPolicyURLProvided": false,
     "supportURLProvided": false,
     "screenshotsUploaded": false,
-    "approvedListingUploaded": false,
-    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42590615251"
+    "approvedListingUploaded": true,
+    "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594889209"
+  },
+  "appleDraftVerification": {
+    "checkedAt": "2026-11-09T09:38:04.866Z",
+    "name": "AutoFit: Workout Partner",
+    "locales": ["he", "en-US"],
+    "metadataVerified": true,
+    "releaseType": "MANUAL",
+    "submissionPerformed": false,
+    "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594889209"
   },
   "appleDraftAttempt": {
     "date": "2026-11-09",

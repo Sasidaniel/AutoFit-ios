@@ -7,6 +7,10 @@ on:
         description: 'Measure only the production SwiftUI views; no app build or release'
         type: boolean
         default: false
+      store_screenshots:
+        description: 'Capture the actual app in iPhone and iPad simulators with synthetic data; no release'
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/workflows/ios-audio-validation.yml'
@@ -37,7 +41,7 @@ jobs:
             ${{ runner.temp }}/widget-layout.log
           retention-days: 3
   validate:
-    if: (github.event_name == 'workflow_dispatch' && !inputs.widget_only) || contains(github.event.head_commit.message, '[validate-audio]')
+    if: (github.event_name == 'workflow_dispatch' && !inputs.widget_only && !inputs.store_screenshots) || contains(github.event.head_commit.message, '[validate-audio]')
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -97,3 +101,37 @@ jobs:
             ${{ runner.temp }}/audio-build.log
             ${{ runner.temp }}/widget-layout.log
           retention-days: 3
+  store-screenshots:
+    if: github.event_name == 'workflow_dispatch' && inputs.store_screenshots
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/app-store-native-capture.test.cjs
+      - run: npm ci
+      - run: npx cap sync ios
+      - run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: Prime verified Capacitor binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          VERSION="$(node -p "require('./node_modules/@capacitor/ios/package.json').version")"
+          DOWNLOAD="$RUNNER_TEMP/capacitor-binaries"
+          mkdir -p "$DOWNLOAD"
+          gh api "repos/ionic-team/capacitor-swift-pm/releases/tags/$VERSION" --jq '{tag_name,assets:[.assets[]|{name,browser_download_url,digest}]}' > "$DOWNLOAD/release.json"
+          gh release download "$VERSION" --repo ionic-team/capacitor-swift-pm --pattern Capacitor.xcframework.zip --pattern Cordova.xcframework.zip --dir "$DOWNLOAD"
+          node .github/scripts/prime-capacitor-cache.cjs "$VERSION" "$DOWNLOAD" "$RUNNER_TEMP/swift-package-cache/artifacts"
+      - name: Capture actual iPhone and iPad app screens
+        run: bash .github/scripts/capture-store-simulator.sh
+      - name: Preserve native captures and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-store-captures
+          path: ${{ runner.temp }}/native-store-captures
+          if-no-files-found: error
+          retention-days: 14

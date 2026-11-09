@@ -3,7 +3,9 @@
 Local creative proposal requested on 2026-11-09. **Not submitted or published.**
 The reference binary is **1.0 (52)**, source
 `93bce49bf3f5aed3d9daf023d3ff31673e9f9035`.
-Application code, pricing, distribution, permissions and billing were not changed.
+Application runtime code, pricing, permissions and billing were not changed.
+The approved store name and bilingual copy are now saved in Apple's draft;
+manual release is configured, with no review submission or public distribution.
 
 On 2026-11-09 the owner approved the presentation and requested saving the
 materials and uploading to the App Store. This authorizes proceeding with
@@ -54,6 +56,24 @@ store name requires the owner's choice, while the in-app AutoFit branding stays.
 The owner selected **AutoFit: Workout Partner** for the next availability check
 and draft metadata upload. Both store localizations use that title; in-app
 branding and the screenshot compositions retain AutoFit.
+Apple accepted the selected name. A subsequent automatic English localization
+creation was handled without duplicating it. Successful run
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594889209>
+verified both complete text localizations and **MANUAL** release at
+2026-11-09T09:38:04Z. Version 1.0 remains **PREPARE_FOR_SUBMISSION**:
+no build selection, screenshots, pricing changes or review submission occurred.
+
+## Native screenshot preparation
+
+The existing no-release iOS validation workflow has an explicit
+`store_screenshots` mode. It builds the actual Capacitor app in Debug on macOS
+and captures iPhone 17 Pro Max and 13-inch iPad simulators in both languages.
+It uses the same synthetic fixture, actual controls and real native bridge.
+Native microphone/listening, Health delivery and music playback are not mocked.
+The CI-only loopback transport override and control script are not shipped in
+the app or available from the default review server.
+Successful capture and provenance must be inspected before treating those files
+as final store assets; the browser images remain review-only in the meantime.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 

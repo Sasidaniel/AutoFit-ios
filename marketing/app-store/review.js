@@ -1,7 +1,7 @@
 'use strict';
 const text = {
   he: {
-    draftLabel: 'לאישור בלבד · לא הוגש ל־Apple', introTitle: 'האימון כבר עובד.\nעכשיו נותנים לו במה.',
+    draftLabel: 'טיוטת חנות · טרם נשלחה לבדיקה', introTitle: 'האימון כבר עובד.\nעכשיו נותנים לו במה.',
     introText: 'תוכנית לפי הזמן, הסביבה והציוד שלכם. ליווי באימון וכלים להתקדמות מאימון לאימון. כך נציג את AutoFit בהשקה חינמית — עם מסר אישי וצילומי ממשק אמיתיים.',
     navProduct: 'עמוד החנות', navGallery: 'כל צילומי המסך', navCopy: 'הטקסטים המלאים', navReady: 'לפני הגשה',
     navIphone: 'החיבור לאייפון', iphoneHeading: 'מתאמנת איתכם. משתלבת באייפון.',
@@ -20,7 +20,7 @@ const text = {
     galleryHeading: 'רואים כל פרט, לפני שמאשרים.', galleryHint: 'לחיצה על תמונה פותחת תצוגה גדולה. קישור ההורדה שומר את אותו קובץ שמופיע כאן.',
     copyHeading: 'כך נספר את הסיפור.', downloadCopy: 'הורדת כל הטקסטים · JSON', downloadPackage: 'הורדת כל חבילת הסקירה · ZIP',
     reviewerHeading: 'הערות מוצעות לבודקי Apple (לא טקסט שיווקי)',
-    readinessHeading: 'העיצוב מוכן לסקירה. ההגשה עדיין לא.', readinessIntro: 'אישור הטקסטים והעיצוב אינו אישור פרסום. הפריטים הבאים נשארים גלויים כדי שלא נגיש חומר לא מדויק. לא שונו הגדרות App Store Connect.',
+    readinessHeading: 'טיוטת החנות מוכנה. ההגשה עדיין לא.', readinessIntro: 'השם והטקסטים בעברית ובאנגלית אומתו בטיוטת App Store Connect, עם שחרור ידני. האפליקציה טרם נשלחה לבדיקה או פורסמה. הפריטים הבאים עדיין דורשים השלמה.',
     approvalTitle: 'מה מאשרים בשלב הזה?', approvalText: 'השם וכותרת המשנה, המסר, סדר התמונות, העיצוב והטקסט המפורט. מחיר ההשקה המוצע הוא חינם, ללא הבטחת ״חינם לתמיד״. אין כאן קביעה לגבי המודל בתשלום בעתיד. הגשה ל־Apple ופרסום דורשים אישור נפרד אחרי סגירת הפרטים החסרים.',
     reviewButton: 'שמירת אישור עיצוב מקומי בלבד', sourcesLabel: 'מקורות Apple שעליהם מבוססת ההצעה',
     footerNote: 'תצוגה מקומית · ללא הגשה וללא פרסום', copied: 'הועתק', copy: 'העתקה', download: 'הורדת PNG',
@@ -29,7 +29,7 @@ const text = {
     saveError: 'לא ניתן לשמור את האישור המקומי. לא בוצעה הגשה.',
   },
   en: {
-    draftLabel: 'REVIEW ONLY · NOT SUBMITTED', introTitle: 'The workout is ready.\nGive it a worthy storefront.',
+    draftLabel: 'STORE DRAFT · NOT SENT FOR REVIEW', introTitle: 'The workout is ready.\nGive it a worthy storefront.',
     introText: 'A plan for your time, training space and equipment. Support during sessions and tools to track progress over time. The AutoFit free-launch proposal, with a personal message and real product screens.',
     navProduct: 'Product page', navGallery: 'Screenshot collection', navCopy: 'Full listing copy', navReady: 'Before submission',
     navIphone: 'iPhone integration', iphoneHeading: 'Your workout. Your iPhone. Together.',
@@ -48,7 +48,7 @@ const text = {
     galleryHeading: 'Every detail, before approval.', galleryHint: 'Open any image at full size. The download link saves the same file displayed here.',
     copyHeading: 'Words that do the work.', downloadCopy: 'Download all copy · JSON', downloadPackage: 'Download the complete review package · ZIP',
     reviewerHeading: 'Proposed Apple review notes (not marketing copy)',
-    readinessHeading: 'Ready to review. Not ready to submit.', readinessIntro: 'Creative approval is not publishing approval. These items remain visible so incomplete claims cannot pass as final. No App Store Connect settings have been changed.',
+    readinessHeading: 'Store draft ready. Not ready to submit.', readinessIntro: 'The name and Hebrew/English copy have been verified in the App Store Connect draft, with manual release. The app has not been submitted for review or published. These items still need completion.',
     approvalTitle: 'What are you approving here?', approvalText: 'The name and subtitle, message, image order, art direction and detailed copy. Proposed launch price: free, with no “free forever” promise. Future paid packaging remains undecided. Apple submission and public release need separate approval after the outstanding items are closed.',
     reviewButton: 'Save local creative approval only', sourcesLabel: 'Apple source references',
     footerNote: 'Local review · no submission or publishing', copied: 'Copied', copy: 'Copy', download: 'Download PNG',
