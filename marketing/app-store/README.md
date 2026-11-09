@@ -40,6 +40,20 @@ required by Apple must be handled directly in App Store Connect, never committed
 to this public repository. Do not select Non-trader merely because launch is free.
 Official instructions:
 <https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements/>.
+The owner subsequently confirmed that Apple has already approved Trader
+verification. Do not request verification documents or codes in chat.
+
+The approved draft upload attempt
+<https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594290741>
+stopped at Apple's HTTP 409 duplicate-name error: **AutoFit** is used by a
+different account. This is a draft metadata validation error, not an App Review
+rejection. The manual-release PATCH was accepted before that error; an
+independent readback is still required. No review submission occurred.
+The existing reserved app name is **AutoFit Workout Tracker**. An alternate
+store name requires the owner's choice, while the in-app AutoFit branding stays.
+The owner selected **AutoFit: Workout Partner** for the next availability check
+and draft metadata upload. Both store localizations use that title; in-app
+branding and the screenshot compositions retain AutoFit.
 Price, territories, agreements, age-rating and privacy-label answers remain
 unassessed by this read-only check.
 

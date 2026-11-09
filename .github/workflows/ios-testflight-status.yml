@@ -57,7 +57,7 @@ jobs:
           APPSTORE_DRAFT_REPORT: ${{ runner.temp }}/app-store-draft.json
         run: node .github/scripts/prepare-app-store-draft.cjs
       - name: Inspect App Store metadata without changing it
-        if: ${{ inputs.inspect_app_store || inputs.prepare_store_draft }}
+        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft) }}
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
@@ -65,7 +65,7 @@ jobs:
           APPSTORE_READINESS_REPORT: ${{ runner.temp }}/app-store-readiness.json
         run: node .github/scripts/app-store-readiness.cjs
       - name: Preserve sanitized App Store snapshot
-        if: ${{ success() && (inputs.inspect_app_store || inputs.prepare_store_draft) }}
+        if: ${{ always() && (inputs.inspect_app_store || inputs.prepare_store_draft) }}
         uses: actions/upload-artifact@v4
         with:
           name: app-store-readiness

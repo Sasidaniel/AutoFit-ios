@@ -22,6 +22,16 @@
     "approvedListingUploaded": false,
     "inspectionURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42590615251"
   },
+  "appleDraftAttempt": {
+    "date": "2026-11-09",
+    "workflowURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/42594290741",
+    "result": "Draft name update refused: AutoFit is already used by another Apple account",
+    "appleErrorCode": "ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE.DIFFERENT_ACCOUNT",
+    "metadataVerified": false,
+    "submissionPerformed": false,
+    "manualReleasePatchAccepted": true,
+    "manualReleaseReadbackVerified": false
+  },
   "referenceBuild": "1.0 (52)",
   "referenceSource": "93bce49bf3f5aed3d9daf023d3ff31673e9f9035",
   "price": "Free",
@@ -30,7 +40,7 @@
   "minimumIOS": "17.0",
   "locales": {
     "he": {
-      "name": "AutoFit",
+      "name": "AutoFit: Workout Partner",
       "subtitle": "העוזר האישי והשותף שלך באימון",
       "promotionalText": "תוכנית אישית לפי הזמן, הסביבה והציוד שלכם. שליטה קולית בעברית, מעקב התקדמות ותוכניות שמורות — עם החיבור לאייפון.",
       "keywords": "כושר,אימון,משקולות,חזרות,סטים,תוכנית,אישי,יומן",
@@ -68,7 +78,7 @@
       ]
     },
     "en": {
-      "name": "AutoFit",
+      "name": "AutoFit: Workout Partner",
       "subtitle": "Your personal workout partner",
       "promotionalText": "A personal plan for your time, space and equipment. Hebrew voice commands, saved plans and progress tracking, connected to your iPhone.",
       "keywords": "fitness,strength,weights,reps,sets,training,planner,exercise,rest,timer,hebrew,personal,workout",
