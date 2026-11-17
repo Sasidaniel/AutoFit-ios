@@ -1,0 +1,51 @@
+{
+  "verifiedAt": "2026-11-15T07:19:26.622Z",
+  "appID": "6820408299",
+  "version": "1.0",
+  "build": "52",
+  "reviewSubmissionID": "da769c03-e86d-4556-8c79-a8cb0d237a51",
+  "resolutionCenterThreadID": "10e13816-f75c-3e06-820a-8f710d7f6aa8",
+  "reviewURL": "https://appstoreconnect.apple.com/apps/6820408299/distribution/reviewsubmissions/details/da769c03-e86d-4556-8c79-a8cb0d237a51",
+  "rejectionGuidelines": ["4.3", "4.2.6"],
+  "appleRejectionMessageID": "82bd29aa-bbed-44ab-9b1f-5adda3836771",
+  "appleRejectionMessageCreatedAt": "2026-11-13T20:29:32.939Z",
+  "ownerAuthorizedSendingApprovedAnswers": true,
+  "approvedResponseFile": "marketing/app-store/APP-REVIEW-4.3-RESPONSE.md",
+  "replyCharacterLimit": 4000,
+  "allNineAnswersVerified": true,
+  "exactApprovedTextVerifiedBySHA256": true,
+  "verificationMethod": "Independent authenticated same-origin GET of the observed resolutionCenterMessages resource, with exact lengths and SHA-256 checks against the approved local response",
+  "postedMessages": [
+    {
+      "part": 1,
+      "questionNumbers": [1, 2, 3],
+      "id": "445aaba8-f88a-4140-a837-8a466d35be8c",
+      "createdAt": "2026-11-15T07:18:13.934Z",
+      "characters": 3737,
+      "sha256": "51cb4a9e8d9ae294299c46ac3af1f24936c94bff382ce63d55ac4175f0fd4b4e"
+    },
+    {
+      "part": 2,
+      "questionNumbers": [4, 5, 6, 7],
+      "id": "768327fa-3514-49dc-b29d-8bbd4a2a1094",
+      "createdAt": "2026-11-15T07:18:41.004Z",
+      "characters": 2566,
+      "sha256": "c83452ad1e520d302e23e3230b8a8a27b719280d9693e745e93c502ed9a82703"
+    },
+    {
+      "part": 3,
+      "questionNumbers": [8, 9],
+      "id": "2074d19c-8512-4cec-bb0b-868b7754fe39",
+      "createdAt": "2026-11-15T07:18:59.805Z",
+      "characters": 2331,
+      "sha256": "e68eb83c78a3e4f9ccae75de621af2cd4dc1117af0f0a56185498566f24108fd"
+    }
+  ],
+  "totalThreadMessageCount": 4,
+  "observedReviewStatusAfterReply": "Rejected",
+  "replyPerformed": true,
+  "resubmissionPerformed": false,
+  "formalAppealPerformed": false,
+  "binaryUploaded": false,
+  "publicationPerformed": false
+}

@@ -1,5 +1,18 @@
 # AutoFit App Store approval package
 
+**Latest update, 2026-11-15:** the owner supplied an Apple rejection citing
+guidelines 4.3 and 4.2.6. The submission receipt below is historical, not a claim
+that the app is still queued or approved. Apple asks for answers to nine questions
+in the existing review conversation, not immediate resubmission.
+[APP-REVIEW-4.3-RESPONSE.md](APP-REVIEW-4.3-RESPONSE.md) contains a source-backed
+English response and the owner's factual confirmations. **All nine answers were
+sent after explicit owner approval**, in three numbered messages due to Apple's
+4,000-character reply limit. Independent readback verified exact text hashes;
+[assets/apple-review-response-receipt.json](assets/apple-review-response-receipt.json)
+preserves the message IDs and timestamps. The live review status remained Rejected:
+we are awaiting Apple's reply, not claiming approval or a new review queue entry.
+No new binary, resubmission or release was performed.
+
 **For the next submission or Apple's response, read
 [APP-STORE-RUNBOOK.md](APP-STORE-RUNBOOK.md) first.** It records the proven path,
 existing files and receipts, known failure fixes, public-site dependencies and

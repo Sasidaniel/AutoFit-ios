@@ -1,5 +1,30 @@
 # AutoFit App Store runbook: the verified submission path
 
+**2026-11-17 current work:** authenticated App Review now lists **2.2.0
+Performance: Beta Testing**, with the draft-consent screenshot. The owner
+explicitly approved uploading **build 53** and submitting it for review after
+correction and validation. This supersedes the older build-53 refusal below for
+this one corrected build only. Public release must remain manual.
+See `RELEASE-NOTES.md` for the production-onboarding changes. Delivery and
+resubmission are not yet confirmed; do not reuse build-52 submission scripts
+whose guards intentionally select the old binary.
+
+**2026-11-15 follow-up:** the owner reported Apple's 4.3 / 4.2.6 rejection.
+Start with [APP-REVIEW-4.3-RESPONSE.md](APP-REVIEW-4.3-RESPONSE.md) for the
+nine-question clarification response. All answers were sent after owner approval
+in three messages, then verified exactly against the approved source:
+`assets\apple-review-response-receipt.json`. Do not rerun submission or repost
+the answers. Review status remained Rejected while awaiting Apple's response;
+the historical queue receipt below is not current status.
+
+The reply composer has a **4,000-character per-message limit**. Split long
+approved responses at complete question boundaries, clearly number the parts,
+verify each posted message before proceeding, and compare full text hashes on
+an independent messages readback. Never confuse **Reply** with **Resubmit to
+App Review**. Authentication in an external Chrome browser does not automatically
+authenticate this conversation's browser panel; the owner must sign into the
+actual panel. Do not request or store their password or verification code.
+
 Read this before repeating App Store work. This is the operational handover,
 not authorization to release another version. The historical investigation is in
 [README.md](README.md); current recorded facts are in
@@ -50,7 +75,9 @@ not a generic future-version release system.
 Apple's submission receipt estimated up to 48 hours and an email on completion;
 this is not a guaranteed review time. Do not promise approval or public availability.
 
-The owner declined preparing/uploading build 53. Do not interpret authorization
+Historically, the owner declined preparing/uploading build 53. That restriction
+was superseded by explicit build-53 approval on 2026-11-17 as noted above.
+Do not otherwise interpret authorization
 to submit build 52, fix metadata, or document the process as permission for a
 new binary, TestFlight upload, release workflow, or public publication.
 Do not accept developer agreements on the owner's behalf.
@@ -167,10 +194,17 @@ verifying every public URL.** A merge alone does not retarget Pages.
 node marketing\app-store\support-site.cjs --build52-notice --output docs
 ```
 
-This generator is deliberately scoped to the existing build-52 factual notice.
-It is not automatic policy approval for later builds. The original exporter
-still refuses unapproved draft policies; `--review-only` is local review only.
-Do not flip runtime approval flags to bypass that guard.
+The `--build52-notice` mode remains a historical, existing-build notice and must
+not be used for the corrected build. Current free-use documents are published
+from the same source used in the app with:
+
+```powershell
+node marketing\app-store\support-site.cjs --output docs
+```
+
+The exporter still refuses draft document versions. Paid-product approval flags
+remain false and separate from publishing factual free-use documents; do not
+enable commerce or invent business/legal approval to publish these pages.
 
 ## 7. Declarations that actually succeeded
 

@@ -5,12 +5,13 @@ export const COMMERCIAL_CONFIG = Object.freeze({
   privacyEmail: 'autofitrainer@gmail.com',
   businessAddress: '',
   businessRegistrationNumber: '',
+  // Purchase approval remains separate from the published free-use documents.
   termsApproved: false,
   privacyApproved: false,
   targetMarkets: [],
   commerceEnabled: false,
 });
-export const POLICY_IS_DRAFT = true;
+export const POLICY_IS_DRAFT = false;
 
 export function commercialReadiness(config = COMMERCIAL_CONFIG) {
   const missing = [];

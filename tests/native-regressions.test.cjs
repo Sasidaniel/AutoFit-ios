@@ -955,7 +955,7 @@ test('the page uses document scrolling rather than a fixed-height nested body sc
   assert.match(css, /(?:^|\n)html\s*\{[^}]*height:\s*100%;[^}]*overflow-x:\s*hidden/);
   assert.doesNotMatch(css.match(/(?:^|\n)body\s*\{([^}]+)\}/)[1], /overflow|(?:^|;)\s*height:/);
 });
-const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'cloudRestoreAllowed', 'restorableCloudData', 'profileAgeAllowed'],
+const legal = loadPhaseOneModule('www/js/legal.js', ['acceptLegalConsent', 'hasCurrentConsent', 'cloudRestoreAllowed', 'restorableCloudData', 'profileAgeAllowed'],
   loadPhaseOneModule('www/js/commercial-config.js', ['COMMERCIAL_CONFIG']));
 function localizationContext(extras = {}) {
   const context = nodeVM.createContext({ ...loadPhaseOneModule('www/js/cardio-insights.js', ['CARDIO_INSIGHT_TRANSLATIONS']), ...extras });
@@ -3266,15 +3266,15 @@ test('profile storage defaults absent or legacy empty gender to male without wri
   assert.equal(writes, 0);
 });
 
-test('profile and onboarding share optional native selections with exact age 12–120 boundaries', () => {
+test('profile and onboarding share optional native selections with exact adult age 18–120 boundaries', () => {
   const { root, fields, el } = profileFieldsFixture();
   for (const prefix of ['profile', 'ob']) {
     fields.renderProfileFields(prefix, {}, root);
     const ages = el(prefix + 'Age').options.map((option) => option.value);
     assert.equal(ages[0], '');
-    assert.equal(ages[1], '12');
+    assert.equal(ages[1], '18');
     assert.equal(ages.at(-1), '120');
-    assert.equal(ages.length, 110);
+    assert.equal(ages.length, 104);
     assert.equal(el(prefix + 'Height').value, '');
     assert.equal(el(prefix + 'Weight').value, '');
     assert.equal(el(prefix + 'WeightWhole').value, '');
@@ -3444,27 +3444,24 @@ test('profile saving retains existing precision, records only changed weights an
   assert.equal(el('btnSaveProfile').disabled, false);
 });
 
-test('minor profile age cannot be saved using an adult declaration or a cancelled guardian review', async () => {
+test('minor profile age cannot be saved or trigger a removed guardian flow', async () => {
   const { context, el, saved } = profileSaveFixture();
   el('profileAge').value = '12';
   await el('btnSaveProfile').listeners.click();
   assert.equal(saved.length, 0);
   assert.equal(context.profile.age, '42');
   context.privacyUI.reviewConsent = async () => {
-    context.settings = legal.acceptLegalConsent(context.settings, {
-      termsAccepted: true, privacyAcknowledged: true, healthDataConsent: true,
-      ageGroup: 'minor', guardianConfirmed: true, adultConfirmed: false,
-    }, 'he');
-    return true;
+    assert.fail('An unsupported minor age must not open another consent flow');
   };
   await el('btnSaveProfile').listeners.click();
-  assert.equal(saved[0].age, '12');
-  assert.equal(context.profile.age, '12');
+  assert.equal(saved.length, 0);
+  assert.equal(context.profile.age, '42');
 });
 
 test('profile review is guarded against repeat clicks and consent errors leave saving available', async () => {
   const { context, el, saved, messages } = profileSaveFixture();
-  el('profileAge').value = '12';
+  el('profileAge').value = '42';
+  context.settings.legalConsent = null;
   let resolveReview, reviews = 0;
   context.privacyUI.reviewConsent = () => { reviews++; return new Promise((resolve) => { resolveReview = resolve; }); };
   const first = el('btnSaveProfile').listeners.click();
@@ -3482,7 +3479,7 @@ test('profile review is guarded against repeat clicks and consent errors leave s
   assert.equal(el('btnSaveProfile').disabled, false);
 });
 
-test('onboarding saves dropdown values through the same guardian check without rounding or duplicate weight history', async () => {
+test('onboarding saves adult dropdown values without rounding or duplicate weight history and refuses minor ages', async () => {
   const { context, el, fields, root, saved } = profileSaveFixture();
   let finished = 0;
   context.native = { isNative: () => false };
@@ -3508,12 +3505,11 @@ test('onboarding saves dropdown values through the same guardian check without r
   assert.equal(finished, 1);
   assert.equal(el('btnOnboardingNext').disabled, false);
   el('obAge').value = '12';
-  let resolveReview, reviews = 0;
-  context.privacyUI.reviewConsent = () => { reviews++; return new Promise((resolve) => { resolveReview = resolve; }); };
+  let reviews = 0;
+  context.privacyUI.reviewConsent = () => { reviews++; return Promise.resolve(false); };
   const first = el('btnOnboardingNext').listeners.click();
   await el('btnOnboardingNext').listeners.click();
-  assert.equal(reviews, 1);
-  resolveReview(false);
+  assert.equal(reviews, 0);
   await first;
   assert.equal(finished, 1);
   assert.equal(context.profile.age, '42');
@@ -6344,6 +6340,21 @@ test('explicitly recovered legacy iCloud history enters memory without backgroun
   cloudChanged();
   assert.equal(reads, 1);
   assert.equal(context.activeSession.id, 'unfinished');
+  const oldSettings = JSON.parse(stored.get('ft_settings_v1'));
+  oldSettings.legalConsent.documentStatus = 'draft';
+  oldSettings.legalConsent.version = 'commercial-draft-3';
+  stored.set('ft_settings_v1', JSON.stringify(oldSettings));
+  let onboardingRequests = 0;
+  context.runOnboarding = () => { onboardingRequests++; };
+  observed = null;
+  context.location.search = '?previewSkip=1';
+  await context.bootstrap();
+  assert.equal(onboardingRequests, 1, 'An old receipt must require explicit consent even with previewSkip in the native URL');
+  assert.equal(observed, null, 'Native init cannot bypass the current consent screen');
+  assert.equal(context.activeSession.id, 'unfinished');
+  assert.equal(context.workouts[0].id, 'old');
+  assert.equal(JSON.parse(stored.get('ft_settings_v1')).legalConsent.documentStatus, 'draft',
+    'Opening the upgrade must not silently rewrite old consent');
 });
 
 test('failed or cancelled Face ID offers a working retry without destroying the app document', async () => {

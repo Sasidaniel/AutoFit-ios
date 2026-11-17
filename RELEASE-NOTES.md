@@ -1,5 +1,29 @@
 # AutoFit release notes
 
+## 1.0 (53) - guideline 2.2 correction (2026-11-17)
+
+Owner explicitly approved **"מאשר העלאת build 53 והגשה ל־Apple"** after being
+asked to authorize the new TestFlight upload and App Review submission.
+This does not authorize public release. Build 52 is immutable; the corrected
+binary remains version 1.0 with build number 53. Delivery is not yet confirmed.
+
+- Replace the draft-only onboarding and bundled documents with versioned
+  free-use terms and a factual privacy notice in Hebrew and English. Describe
+  actual storage, optional Apple services, Formspree processing/retention,
+  export/deletion and limits, without claiming legal certification.
+- Require four separate, initially unchecked confirmations. Old draft receipts
+  are not promoted to published consent; returning native users review the new
+  documents without deleting their history, plans or in-progress workout.
+- Remove the unfinished guardian/minor route. Require an adult declaration and
+  offer optional exact ages 18-120; retain previously stored values and export
+  access rather than deleting records.
+- Correct dark-on-dark consent labels and hints. Keep the existing light theme
+  for ordinary settings, offline documents, manual workout entry, optional
+  permissions and explicit data controls.
+- Publish matching bilingual support, privacy and terms pages from the same
+  document source. Purchases, subscriptions and new sensitive iCloud writes
+  remain disabled; there is no timed trial or new paywall.
+
 ## 1.0 (52) - verified internal TestFlight release (2026-11-08)
 
 Fresh user approval: **"תעלה גרסה"**.

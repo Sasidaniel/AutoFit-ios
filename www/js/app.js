@@ -6271,13 +6271,13 @@ function renderProfileTab() {
 
 async function confirmProfileAge(age) {
   if (age === '') return true;
-  if (!Number.isInteger(Number(age)) || Number(age) < 12 || Number(age) > 120) {
-    showToast('הגיל הוא שדה רשות. בחר גיל בין 12 ל-120 או השאר ללא בחירה.');
+  if (!Number.isInteger(Number(age)) || Number(age) < 18 || Number(age) > 120) {
+    showToast('הגיל הוא שדה רשות. בחר גיל בין 18 ל-120 או השאר ללא בחירה.');
     return false;
   }
   if (legal.profileAgeAllowed(settings, age)) return true;
   if (await privacyUI.reviewConsent() && legal.profileAgeAllowed(settings, age)) return true;
-  showToast('הגיל לא נשמר. יש לבחור מסלול גיל מתאים; בגיל 12–17 נדרש אישור הורה או אפוטרופוס.');
+  showToast('הגיל לא נשמר. נדרש אישור התנאים והפרטיות והצהרה שמלאו לך 18 שנים.');
   return false;
 }
 function renderBrand() {
@@ -6655,7 +6655,8 @@ async function bootstrap() {
     db.saveSettings(settings);
   }
 
-  if (!settings.onboardingComplete) {
+  if (!settings.onboardingComplete
+    || !legal.hasCurrentConsent(settings) && (native.isNative() || !previewParams.has('previewSkip'))) {
     runOnboarding();
   } else {
     init();

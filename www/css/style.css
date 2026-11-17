@@ -165,6 +165,8 @@ html.menu-open { overflow-y: hidden; }
 }
 .onboarding-step.active { display: flex; }
 #onboardingLegalForm { width: 100%; max-width: 480px; text-align: start; color: #eee; }
+#onboardingLegalForm .checkbox-row { color: #eee; }
+#onboardingLegalForm .field-hint { color: #c8c8cf; }
 .legal-consent-form { display: grid; gap: 12px; }
 .legal-consent-form p { margin: 4px 0; }
 .legal-consent-form .checkbox-row { align-items: flex-start; line-height: 1.6; }

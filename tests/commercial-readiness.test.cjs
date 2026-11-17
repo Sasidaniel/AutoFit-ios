@@ -227,10 +227,12 @@ test('a proposed week or configured monthly product never invents a free trial',
   assert.equal(offered.products[0].freeTrial.period.value, 7);
 });
 
-test('draft consent and incomplete business configuration cannot start a purchase even with a real Apple product', () => {
+test('free-use consent does not enable purchases without commercial setup and a matching verified Apple policy', () => {
   const settings = confirmed();
   assert.equal(commerce.purchaseAllowed(appleStatus(), settings), false);
-  assert.equal(commerce.purchaseAllowed(appleStatus({ policyVersion: legal.POLICY_VERSION }), settings, { ready: true }), false);
+  const draft = { ...settings, legalConsent: { ...settings.legalConsent, documentStatus: 'draft' } };
+  assert.equal(commerce.purchaseAllowed(appleStatus({ policyVersion: legal.POLICY_VERSION }), draft, { ready: true }), false);
+  assert.equal(commerce.purchaseAllowed(appleStatus({ policyVersion: legal.POLICY_VERSION }), settings), false);
   assert.equal(commerce.purchaseAllowed(null, settings, { ready: true }), false);
 });
 
@@ -389,11 +391,11 @@ test('overlapping commerce refreshes are coalesced and late results do not updat
   assert.equal(fixture.root.innerHTML, before);
 });
 
-test('commercial launch remains blocked even with filled configuration while authored policies are drafts', () => {
-  const result = config.commercialReadiness({ operatorLegalName: 'Example', privacyEmail: 'privacy@example.test',
-    businessAddress: 'Example address', termsApproved: true, privacyApproved: true, targetMarkets: ['IL'], commerceEnabled: true });
-  assert.equal(result.ready, false);
-  assert.ok(result.missing.includes('finalPolicyPublication'));
+test('published free-use documents do not approve paid products or fill missing business information', () => {
+  const result = config.commercialReadiness();
+  for (const field of ['businessAddress', 'termsApproved', 'privacyApproved', 'targetMarkets']) {
+    assert.ok(result.missing.includes(field));
+  }
   assert.equal(config.commercialReadiness().ready, false);
 });
 
@@ -419,7 +421,7 @@ test('consent is explicit, versioned, bilingual metadata and never inferred from
   assert.equal(legal.hasCurrentConsent(before), false);
   const result = legal.acceptLegalConsent(before, choices, 'en', new Date('2026-10-22T09:00:00Z'));
   assert.equal(legal.hasCurrentConsent(result), true);
-  assert.equal(result.legalConsent.documentStatus, 'draft');
+  assert.equal(result.legalConsent.documentStatus, 'published');
   assert.equal(result.legalConsent.language, 'en');
   assert.equal(result.legalConsent.version, legal.POLICY_VERSION);
   assert.equal(result.legalConsentHistory.length, 2);
@@ -438,7 +440,7 @@ test('each consent confirmation is independently required without truthy coercio
   assert.throws(() => legal.acceptLegalConsent({}, choices, 'he', new Date(NaN)), /Invalid/);
   const settings = confirmed();
   assert.equal(legal.hasCurrentConsent({ ...settings, legalConsent: { ...settings.legalConsent, acceptedAt: 'not-a-date' } }), false);
-  assert.equal(legal.hasCurrentConsent({ ...settings, legalConsent: { ...settings.legalConsent, documentStatus: 'published' } }), false);
+  assert.equal(legal.hasCurrentConsent({ ...settings, legalConsent: { ...settings.legalConsent, documentStatus: 'draft' } }), false);
 });
 
 test('legacy recovery needs separate consent and never implies permission for new sensitive cloud writes', () => {
@@ -447,31 +449,24 @@ test('legacy recovery needs separate consent and never implies permission for ne
   assert.equal(legal.cloudRestoreAllowed(confirmed({ privacyPreferences: { cloudRestore: true, cloudBackup: false } })), true);
 });
 
-test('ages 12–17 require a separate explicit guardian declaration and cannot reuse an adult receipt', () => {
+test('adult-only consent rejects minor and guardian paths without rewriting existing records or receipts', () => {
   const guardian = { ...choices, ageGroup: 'minor', adultConfirmed: false, guardianConfirmed: true };
-  const child = legal.acceptLegalConsent({}, guardian, 'he');
-  assert.equal(legal.hasCurrentConsent(child), true);
-  assert.equal(child.legalConsent.guardianConfirmed, true);
-  assert.equal(child.legalConsent.adultConfirmed, false);
-  for (const age of [12, 17]) {
-    assert.equal(legal.profileAgeAllowed(child, age), true);
-    assert.equal(legal.profileAgeAllowed(confirmed(), age), false);
-  }
-  for (const age of [18, 120]) {
-    assert.equal(legal.profileAgeAllowed(confirmed(), age), true);
-    assert.equal(legal.profileAgeAllowed(child, age), false);
-  }
-  for (const age of [11, 121, 'oops', 12.5]) assert.equal(legal.profileAgeAllowed(child, age), false);
-  assert.equal(legal.profileAgeAllowed(child, ''), true);
-  for (const value of [false, undefined, 'true', 1]) {
-    assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, guardianConfirmed: value }, 'he'), /Explicit/);
-  }
+  const previous = { workouts: [{ id: 'preserved' }], legalConsent: {
+    version: 'commercial-draft-3', documentStatus: 'draft', ...guardian,
+  } };
+  const before = plain(previous);
+  assert.equal(legal.hasCurrentConsent(previous), false);
+  assert.throws(() => legal.acceptLegalConsent(previous, guardian, 'he'), /Explicit/);
   assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, adultConfirmed: true }, 'he'), /Explicit/);
-  assert.throws(() => legal.acceptLegalConsent({}, { ...guardian, adultConfirmed: 'true' }, 'he'), /Explicit/);
   assert.throws(() => legal.acceptLegalConsent({}, { ...choices, guardianConfirmed: 'true' }, 'he'), /Explicit/);
-  assert.equal(legal.hasCurrentConsent({ legalConsent: { ...child.legalConsent, version: 'commercial-draft-1' } }), false);
-  assert.match(legal.legalDocumentHTML('privacy', 'en'), /identity and guardianship are not verified/);
-  assert.match(legal.legalDocumentHTML('terms', 'en'), /not child-specific/);
+  assert.deepEqual(plain(previous), before);
+  const adult = confirmed();
+  for (const age of [12, 17, 121, 'oops', 18.5]) assert.equal(legal.profileAgeAllowed(adult, age), false);
+  for (const age of [18, 120, '']) assert.equal(legal.profileAgeAllowed(adult, age), true);
+  assert.equal(legal.hasCurrentConsent({ legalConsent: { ...adult.legalConsent,
+    ageGroup: 'minor', adultConfirmed: false, guardianConfirmed: true } }), false);
+  assert.match(legal.legalDocumentHTML('privacy', 'en'), /not identity verification/);
+  assert.match(legal.legalDocumentHTML('terms', 'en'), /adults aged 18 or older/);
 });
 
 test('both complete offline legal documents disclose actual limitations and safely escape owner configuration', () => {
@@ -481,8 +476,8 @@ test('both complete offline legal documents disclose actual limitations and safe
     assert.match(he, /lang="he" dir="rtl"/);
     assert.match(en, /lang="en" dir="ltr"/);
     assert.doesNotMatch(en, /[\u0590-\u05ff]/);
-    assert.match(en, /Review draft/);
-    assert.match(en, /App Store|App Store/);
+    assert.doesNotMatch(en, /review draft|review version|before (?:commercial )?(?:launch|publication)|incomplete/i);
+    assert.match(en, /without (?:a purchase|payment)/);
     assert.match(en, /Health/);
     assert.match(en, /delete|delet|eras/i);
     assert.doesNotMatch(en, /<iframe|<img|<script|https:\/\/.*\.js/);

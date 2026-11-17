@@ -26,9 +26,7 @@ test('public existing-build notices disclose real external processing without ch
   assert.throws(() => createBuild52Notice({ ...listing, submissionRequest: {
     ...listing.submissionRequest, ownerAuthorizedReviewSubmission: false,
   } }), /authorization/);
-  assert.throws(() => createSupportPages(), /policies are not final and approved/);
-  assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'www', 'js', 'commercial-config.js'), 'utf8'),
-    /POLICY_IS_DRAFT = true/);
+  assert.match(createSupportPages()['privacy-en.html'], /2026-11-17-v1/);
 });
 
 test('both localizations meet actual metadata limits, including UTF-8 keyword bytes', () => {
@@ -124,8 +122,11 @@ test('final receipt verifies reused review and version queue states without clai
   for (const key of ['publicationPerformed', 'binaryUploaded']) assert.equal(receipt[key], false);
   assert.doesNotMatch(JSON.stringify(receipt), /Authorization|contactEmail|contactPhone|uploadOperations/);
   assert.deepEqual(receipt.privacyResponseTypes, ['Name', 'Email Address', 'Customer Support', 'Other Data Types']);
-  const { createBuild52Notice } = require('./support-site.cjs');
-  for (const [file, content] of Object.entries(createBuild52Notice(listing))) {
+  const { createSupportPages } = require('./support-site.cjs');
+  const pages = createSupportPages();
+  pages['index.html'] = pages['support.html'];
+  pages['.nojekyll'] = '';
+  for (const [file, content] of Object.entries(pages)) {
     assert.equal(fs.readFileSync(path.join(__dirname, '..', '..', 'docs', file), 'utf8').replace(/\r\n/g, '\n'), content);
   }
 });

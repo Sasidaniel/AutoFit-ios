@@ -1,6 +1,6 @@
 import * as i18n from './i18n.js';
 
-const ages = Array.from({ length: 109 }, (_, index) => String(index + 12));
+const ages = Array.from({ length: 103 }, (_, index) => String(index + 18));
 const heights = Array.from({ length: 201 }, (_, index) => String(index + 50));
 const kilograms = Array.from({ length: 191 }, (_, index) => String(index + 10));
 const fractions = Array.from({ length: 10 }, (_, index) => index ? `0.${index}` : '0');

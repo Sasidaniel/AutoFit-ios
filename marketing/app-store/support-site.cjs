@@ -17,8 +17,8 @@ function policySource() {
 function createSupportPages({ allowDraft = false } = {}) {
   const policy = policySource();
   const draft = policy.draft || policy.version.includes('draft');
-  if (!allowDraft && (draft || !policy.config.termsApproved || !policy.config.privacyApproved)) {
-    throw new Error('Public support-site publication refused: policies are not final and approved');
+  if (!allowDraft && draft) {
+    throw new Error('Public support-site publication refused: policies are drafts');
   }
   const pages = {};
   for (const language of ['he', 'en']) {
@@ -144,11 +144,13 @@ if (require.main === module) {
   const pages = process.argv.includes('--build52-notice')
     ? createBuild52Notice(JSON.parse(fs.readFileSync(path.join(__dirname, 'listing.json'), 'utf8')))
     : createSupportPages({ allowDraft: process.argv.includes('--review-only') });
+  pages['index.html'] = pages['support.html'];
+  pages['.nojekyll'] = '';
   const output = path.resolve(process.argv[outputIndex + 1]);
   fs.mkdirSync(output, { recursive: true });
   for (const [file, html] of Object.entries(pages)) fs.writeFileSync(path.join(output, file), html);
   const mode = process.argv.includes('--build52-notice') ? 'existing-build factual notice'
-    : process.argv.includes('--review-only') ? 'local draft review' : 'approved policies';
+    : process.argv.includes('--review-only') ? 'local review' : 'published free-use documents';
   console.log(`Created ${Object.keys(pages).length} site files; mode=${mode}`);
 }
 module.exports = { createSupportPages, createBuild52Notice };
