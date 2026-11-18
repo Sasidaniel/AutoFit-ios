@@ -1,0 +1,74 @@
+{
+  "verifiedAt": "2026-11-18T09:29:43.758Z",
+  "submittedAt": "2026-11-18T09:28:20.177Z",
+  "source": "Authenticated App Store Connect UI and independent fresh server readback",
+  "appID": "6820408299",
+  "bundleID": "com.sasidaniel.autofit",
+  "versionID": "bd117cfb-bd2b-4874-9baf-92a0e4ede4cc",
+  "version": "1.0",
+  "versionState": "WAITING_FOR_REVIEW",
+  "buildID": "630ed2f3-a60c-48eb-840a-ea4053be04e7",
+  "build": "53",
+  "referenceSource": "2abb2a886015a3a63792521654517aeedc7ac5c6",
+  "reviewSubmissionID": "da769c03-e86d-4556-8c79-a8cb0d237a51",
+  "reviewState": "WAITING_FOR_REVIEW",
+  "submittedItemCount": 1,
+  "existingSubmissionReused": true,
+  "releaseType": "MANUAL",
+  "submissionPerformed": true,
+  "publicationPerformed": false,
+  "reviewURL": "https://appstoreconnect.apple.com/apps/6820408299/distribution/reviewsubmissions/details/da769c03-e86d-4556-8c79-a8cb0d237a51",
+  "upload": {
+    "runID": "44108969012",
+    "runURL": "https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44108969012",
+    "runConclusion": "success",
+    "uploadSucceededAt": "2026-11-17T15:16:12.776Z",
+    "appleUploadedAt": "2026-11-17T15:16:57Z",
+    "appleValidationConfirmedAt": "2026-11-17T15:19:19Z",
+    "processingState": "VALID",
+    "internalBetaState": "IN_BETA_TESTING",
+    "javascriptTestsPassed": 832,
+    "swiftSuitesPassed": 4,
+    "nativeStreamingContractsPassed": 2,
+    "swiftUILayoutCasesPassed": 144,
+    "signedArchiveExportAndUploadSucceeded": true,
+    "note": "The original upload succeeded; an interrupted local monitoring command was not a failed build or upload. No replacement upload was dispatched."
+  },
+  "reply": {
+    "threadID": "10e13816-f75c-3e06-820a-8f710d7f6aa8",
+    "messageID": "69410396-d83a-45fe-9110-3528dc2e5de5",
+    "createdAt": "2026-11-18T09:24:51.542Z",
+    "verifiedAt": "2026-11-18T09:24:55.741Z",
+    "sourceFile": "APP-REVIEW-2.2-RESPONSE.md",
+    "characters": 2274,
+    "sha256": "6526da8dcb79cbe2f65004e5593f63dc7757f72d17822f6137c03cdef4357960",
+    "exactMatchingPersistedMessages": 1,
+    "threadMessagesAfterReply": 6,
+    "selectedBuildVerifiedBeforeReply": true
+  },
+  "reviewNotes": {
+    "characters": 1195,
+    "sha256": "1b3199da7bcf7955005e4987e0de98258cfcbcd565491635221718d58b8e03e9",
+    "text": "Build 53 replaces build 52 and addresses guideline 2.2 and Screenshot-1117-142255.png.\n\nRemoved draft-only onboarding and policy wording throughout Hebrew/English consent and privacy settings. Published versioned free-use terms and factual privacy documents, matching the public support website. Corrected dark-on-dark consent labels and hints. Removed the incomplete parent/guardian route; this version requires an adult (18+) declaration. Earlier draft consent is not silently converted, and existing records are retained.\n\nThe workout features are available without payment, a subscription, a time-limited trial or an external AutoFit account. New sensitive iCloud writes and purchases remain disabled.\n\nFresh-install review steps: choose Hebrew or English, Continue, review the documents and provide the four separate confirmations. Continue through profile details (name, exact age, body measurements and photo are optional), then skip optional system permissions and finish onboarding. Manual workout entry is available without microphone or Health permission. Optional speech commands currently support Hebrew.\n\nNo demo login or activation code is required. Public release remains manual."
+  },
+  "chinaCompliance": {
+    "verifiedAt": "2026-11-18T09:29:25.695Z",
+    "officialGuidance": "https://developer.apple.com/help/app-store-connect/manage-compliance-information/view-china-mainland-compliance-information",
+    "securityAssessmentFeatures": {
+      "answer": "NO",
+      "formID": "46144b55-5fdb-43d3-b5d5-3dbaaf99b2aa",
+      "status": "COLLECTED_VERIFY_NOT_NECESSARY",
+      "displayedStatus": "Active"
+    },
+    "aigcServices": {
+      "answer": "NO",
+      "formID": "85ff8ee9-5f4c-4594-8186-ca9cccab3419",
+      "status": "COLLECTED_VERIFY_NOT_NECESSARY",
+      "displayedStatus": "Active"
+    },
+    "basis": "The app offers local deterministic workout planning and authored exercise guidance, not AI chatbots, generative image/video or voice/face alteration services, AI-generated content distribution services or end-to-end instant messaging. Apple's guidance explicitly permits No when those features are not offered.",
+    "permitsFabricated": false,
+    "territorySelectionChanged": false
+  },
+  "boundaries": "Free pricing retained. No public release, new binary, additional upload, developer-agreement acceptance or change to automatic release was performed during this resubmission. Historical build-52 receipts remain unchanged."
+}

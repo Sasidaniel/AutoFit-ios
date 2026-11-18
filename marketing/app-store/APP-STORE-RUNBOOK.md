@@ -1,12 +1,40 @@
 # AutoFit App Store runbook: the verified submission path
 
-**2026-11-17 current work:** authenticated App Review now lists **2.2.0
+**2026-11-18 current verified state: 1.0 (53), WAITING_FOR_REVIEW.**
+The corrected binary uploaded successfully in
+[run 44108969012](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44108969012),
+source `2abb2a886015a3a63792521654517aeedc7ac5c6`.
+The full [2.2 response](APP-REVIEW-2.2-RESPONSE.md) was sent once after exact build
+selection and verified independently by SHA-256. Apple accepted the resubmission
+at **2026-11-18T09:28:20.177Z**; fresh reads confirmed both version and reused
+submission `WAITING_FOR_REVIEW`, build **53**, and **MANUAL** release.
+Current receipt:
+[assets/apple-review-build53-receipt.json](assets/apple-review-build53-receipt.json).
+Do not rerun the upload, repost the response, or submit again while queued.
+Another binary or public publication requires separate owner approval.
+
+The proven replacement path was: verify build 53 VALID, remove only the old
+build selection, select the exact replacement, save review notes with MANUAL
+release, independently read back the saved build, send and verify the reply,
+then **Update Review** to mark the rejected item Ready for Review, followed by
+**Resubmit to App Review**. Replying alone does not resubmit.
+
+The first Update Review was blocked by newly required China compliance forms.
+Apple's [official guidance](https://developer.apple.com/help/app-store-connect/manage-compliance-information/view-china-mainland-compliance-information)
+permits **No** when the listed regulated features are not offered. The actual
+local deterministic planner and exercise library do not offer AIGC generation
+services, AI-content distribution services or end-to-end instant messaging.
+Both factual No declarations were saved and independently read back
+`COLLECTED_VERIFY_NOT_NECESSARY` (UI: Active). No permits were fabricated,
+territories removed, pricing changed or developer agreements accepted.
+
+**Historical correction work, 2026-11-17:** authenticated App Review listed **2.2.0
 Performance: Beta Testing**, with the draft-consent screenshot. The owner
 explicitly approved uploading **build 53** and submitting it for review after
 correction and validation. This supersedes the older build-53 refusal below for
 this one corrected build only. Public release must remain manual.
 See `RELEASE-NOTES.md` for the production-onboarding changes. Delivery and
-resubmission are not yet confirmed; do not reuse build-52 submission scripts
+resubmission are now verified above. Do not reuse build-52 submission scripts
 whose guards intentionally select the old binary.
 
 **2026-11-15 follow-up:** the owner reported Apple's 4.3 / 4.2.6 rejection.
@@ -27,8 +55,9 @@ actual panel. Do not request or store their password or verification code.
 
 Read this before repeating App Store work. This is the operational handover,
 not authorization to release another version. The historical investigation is in
-[README.md](README.md); current recorded facts are in
-[listing.json](listing.json).
+[README.md](README.md). [listing.json](listing.json) and the original build-52
+receipt remain historical; the separate build-53 receipt above is authoritative
+for this resubmission.
 
 ## 1. Start here: do not repeat completed work
 
@@ -53,6 +82,7 @@ queued version, or upload a binary just to check its status.
 | App / bundle | `6820408299` / `com.sasidaniel.autofit` |
 | Version 1.0 | `bd117cfb-bd2b-4874-9baf-92a0e4ede4cc` |
 | Existing build 52 | `8848fbbb-477b-4fc0-b40a-94a5b61920f2` |
+| Current build 53 | `630ed2f3-a60c-48eb-840a-ea4053be04e7` |
 | App information | `7a445717-79ed-48f3-83df-05c6aece83fe` |
 | Reused review submission | `da769c03-e86d-4556-8c79-a8cb0d237a51` |
 

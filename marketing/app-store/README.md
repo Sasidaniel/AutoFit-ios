@@ -1,6 +1,33 @@
 # AutoFit App Store approval package
 
-**Latest update, 2026-11-15:** the owner supplied an Apple rejection citing
+**Latest verified update, 2026-11-18:** corrected **1.0 (53)** was successfully
+resubmitted at **09:28:20.177 UTC**. Independent App Store Connect reads confirmed
+both version and existing review submission **WAITING_FOR_REVIEW**, with
+**MANUAL** release retained. The app remains free, not approved or publicly
+released. No further owner action is currently required for the review queue.
+
+[Build/upload run 44108969012](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44108969012)
+succeeded for source `2abb2a886015a3a63792521654517aeedc7ac5c6`.
+The actual binary corrects draft-only onboarding/policy presentation, unreadable
+consent and the incomplete guardian route. The full
+[guideline-2.2 response](APP-REVIEW-2.2-RESPONSE.md) was sent once after build 53
+was selected; independent readback verified its exact hash and message ID.
+Required China declarations were completed as **No** for regulated security
+assessment features and AIGC services, based on the actual local rules-based app
+and Apple's guidance. Both show Active; no territory or pricing change was made.
+[assets/apple-review-build53-receipt.json](assets/apple-review-build53-receipt.json)
+is the current sanitized delivery, response and submission evidence.
+
+Older build-52 receipts, `listing.json` and the history below are preserved
+unchanged as historical records, not the current selected binary or review state.
+Do not rerun delivery or resubmit an already queued version.
+
+The refreshed `assets\approval-package.zip` retains the original screenshot
+assets and historical receipts, adds both review responses and the build-53
+receipt, and updates `public-site` to the current bilingual published documents.
+Its `support-review` files are historical review snapshots, not current policies.
+
+**Historical follow-up, 2026-11-15:** the owner supplied an Apple rejection citing
 guidelines 4.3 and 4.2.6. The submission receipt below is historical, not a claim
 that the app is still queued or approved. Apple asks for answers to nine questions
 in the existing review conversation, not immediate resubmission.
@@ -18,7 +45,7 @@ No new binary, resubmission or release was performed.
 existing files and receipts, known failure fixes, public-site dependencies and
 approval boundaries. Do not restart the historical attempts below.
 
-**Submitted successfully on 2026-11-09 at 14:25:55.992Z; waiting for Apple review.**
+**Historical build-52 submission on 2026-11-09 at 14:25:55.992Z.**
 Fresh independent reads verified both the version and the reused review submission
 as `WAITING_FOR_REVIEW`. **Not approved or publicly released.**
 The reference binary is **1.0 (52)**, source
@@ -35,7 +62,7 @@ submission preparation; it does not establish missing privacy declarations,
 legal facts. The later verified submission receipt supersedes earlier attempts.
 Keep manual release configured rather than automatically publishing after review.
 
-## Current verified state — later updates supersede historical notes below
+## Historical build-52 state — superseded by the build-53 update above
 
 Apple confirmed **1 Item Submitted** for existing **1.0 (52)**. The existing
 review `da769c03-e86d-4556-8c79-a8cb0d237a51` was reused, not duplicated.

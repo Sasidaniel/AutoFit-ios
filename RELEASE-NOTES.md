@@ -5,7 +5,26 @@
 Owner explicitly approved **"מאשר העלאת build 53 והגשה ל־Apple"** after being
 asked to authorize the new TestFlight upload and App Review submission.
 This does not authorize public release. Build 52 is immutable; the corrected
-binary remains version 1.0 with build number 53. Delivery is not yet confirmed.
+binary remains version 1.0 with build number 53.
+
+**Uploaded successfully and resubmitted: WAITING_FOR_REVIEW.** Apple confirmed
+VALID / IN_BETA_TESTING on **2026-11-17 at 15:19:19 UTC**, after upload succeeded
+at **15:16:12.776 UTC**, from source
+`2abb2a886015a3a63792521654517aeedc7ac5c6`.
+Apple build ID: `630ed2f3-a60c-48eb-840a-ea4053be04e7`.
+[Build/upload run 44108969012](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44108969012)
+succeeded with 832 JS tests, four Swift suites, two native streaming contracts,
+144 SwiftUI layout cases and the signed archive/export/upload.
+
+The guideline-2.2 explanation was sent and independently verified on
+**2026-11-18 at 09:24:51.542 UTC**. The existing App Review submission accepted
+the replacement **1.0 (53)** at **09:28:20.177 UTC**. Fresh server reads confirmed
+both queue states and **MANUAL** release. The China compliance declarations were
+truthfully completed as not offering the listed regulated features; no permit,
+AI service, territory change or legal certification was invented.
+[Permanent receipt](marketing/app-store/assets/apple-review-build53-receipt.json).
+This is submission, not Apple approval or public publication; another binary
+release or public release requires separate owner approval.
 
 - Replace the draft-only onboarding and bundled documents with versioned
   free-use terms and a factual privacy notice in Hebrew and English. Describe
