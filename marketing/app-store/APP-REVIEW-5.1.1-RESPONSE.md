@@ -1,7 +1,8 @@
 # AutoFit: guideline 5.1.1(iv) correction
 
-Prepared 2026-11-22. **Not yet sent.** Send only after the replacement
-version 1.0 build 54 is confirmed processed and selected in App Store Connect.
+Prepared 2026-11-22. **Sent and independently verified 2026-11-22.** Replacement
+version 1.0 build 54 was confirmed VALID, its signed IPA was inspected, and the
+exact build was saved in App Store Connect before sending.
 The owner approved this build's upload and resubmission after validation;
 public release remains manual.
 
@@ -46,5 +47,15 @@ Please review build 54 rather than build 53. Thank you.
 
 ## Delivery evidence
 
-Pending exact build selection, independent reply readback and resubmission.
-This prepared response is not proof of delivery or Apple approval.
+Apple persisted the complete 1,973-character response at
+**2026-11-22T07:48:47.813Z**, message
+`bf3ea32b-7507-4339-b9c6-3e0201534849`. Independent readback found exactly one
+matching reply, with SHA-256
+`5b8d58b0f4558ec4d09e3696e9a3241742145e8eafd142148a446fb056bd585f`.
+
+The existing submission accepted replacement **1.0 (54)** at
+**2026-11-22T07:49:22.978Z**. Fresh server reads confirmed both version and
+submission **WAITING_FOR_REVIEW**, with **MANUAL** release retained.
+[assets/apple-review-build54-receipt.json](assets/apple-review-build54-receipt.json)
+preserves the upload, packaged-source checks, reply and queue evidence.
+Submission is not Apple approval or public publication.

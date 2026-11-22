@@ -1,6 +1,6 @@
 # AutoFit release notes
 
-## 1.0 (54) - permission requests (2026-11-22; delivery pending)
+## 1.0 (54) - permission requests (2026-11-22; submitted)
 
 Apple reviewed 1.0 (53) on an iPad Air 11-inch (M3) on November 21 and rejected
 the permission pre-alert under guideline 5.1.1(iv): custom "Allow" controls and
@@ -30,7 +30,24 @@ read back on November 22; the 18+ override and other answers were preserved.
 The owner explicitly approved **"מאשר העלאת build 54 והגשה ל־Apple לאחר הבדיקות"**.
 This authorizes this corrected build's upload, explanation and review submission
 after validation, not public release. Build 53 is immutable and was rejected.
-Build-54 delivery and the new reply/submission are not yet confirmed.
+**Uploaded successfully and resubmitted: WAITING_FOR_REVIEW.**
+Source `56f62ca0e4447b62759cb874724bbde22269f66b`;
+[run 44998570373](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44998570373)
+passed all 835 regressions, four Swift suites, two native streaming contracts,
+144 real SwiftUI layouts, signed archive, export and upload.
+Upload succeeded at **2026-11-22T07:43:42.198937Z**; Apple confirmed
+**VALID / IN_BETA_TESTING at 07:45:29.554128Z**.
+Build ID: `37df68b5-6e45-4356-a3cd-92c267df58d2`.
+
+The actual signed IPA's identity and eight changed/dependent source files were
+independently inspected: exact approved source apart from Git line endings,
+removed pre-alert and fresh-install opt-in defaults confirmed in the package.
+The full explanation was sent and hash-verified at **07:48:47.813Z**.
+The existing App Review submission accepted **1.0 (54) at 07:49:22.978Z**;
+fresh reads confirmed both queue states and **MANUAL** release.
+[Permanent receipt](marketing/app-store/assets/apple-review-build54-receipt.json).
+This is not Apple approval or public publication. Further binary uploads or
+public release require separate owner approval.
 Review acceptance cannot be guaranteed. Reference:
 <https://developer.apple.com/design/human-interface-guidelines/privacy#Pre-alert-screens-windows-or-views>.
 

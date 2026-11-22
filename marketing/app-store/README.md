@@ -1,11 +1,24 @@
 # AutoFit App Store approval package
 
-**Current update, 2026-11-22:** Apple rejected build 53 on November 21 under
-guideline 5.1.1(iv), citing the onboarding permission pre-alert. This supersedes
-the historical queue state below. The local correction removes that step,
-leaves optional access opt-in and keeps existing records. The owner approved
-build 54 upload and resubmission after checks; delivery is still pending.
-[Prepared new response](APP-REVIEW-5.1.1-RESPONSE.md). No public release is authorized.
+**Current verified update, 2026-11-22: 1.0 (54), WAITING_FOR_REVIEW.**
+Apple accepted the corrected resubmission at **07:49:22.978 UTC**. Independent
+server reads confirmed both queue states, the exact build and **MANUAL** release.
+The complete [5.1.1(iv) response](APP-REVIEW-5.1.1-RESPONSE.md) was sent once and
+verified by SHA-256. [Current receipt](assets/apple-review-build54-receipt.json).
+
+This corrects the November 21 build-53 rejection concerning the onboarding
+permission pre-alert. That screen is removed; new installs keep voice/biometric
+access opt-in, while existing records and choices are retained. All 835
+regressions, four Swift suites, native streaming and real widget layouts passed
+in [run 44998570373](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44998570373).
+The actual signed IPA was independently checked against the approved source.
+Both bilingual browser onboarding flows, refused-permission fallback, current
+public notices, free pricing, complete review contact and new age-rating
+questions were checked before submission.
+
+The app is not approved or publicly released. No further owner action is
+currently required for the review queue. Do not repost, resubmit or upload
+another binary merely to check status. No public release is authorized.
 
 **Historical verified update, 2026-11-18:** corrected **1.0 (53)** was successfully
 resubmitted at **09:28:20.177 UTC**. Independent App Store Connect reads confirmed

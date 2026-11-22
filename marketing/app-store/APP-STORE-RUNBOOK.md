@@ -1,13 +1,33 @@
 # AutoFit App Store runbook: the verified submission path
 
-**2026-11-22 current work: build 53 was rejected on November 21 under
+**2026-11-22 current verified state: 1.0 (54), WAITING_FOR_REVIEW.**
+Build/upload [run 44998570373](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44998570373)
+succeeded, source `56f62ca0e4447b62759cb874724bbde22269f66b`.
+Apple build ID `37df68b5-6e45-4356-a3cd-92c267df58d2` is VALID and available in
+internal TestFlight. The signed IPA was independently inspected before review:
+identity and eight source files matched exactly apart from Git line endings.
+After exact build selection, the full explanation was posted once and verified
+by hash. Apple accepted resubmission at **2026-11-22T07:49:22.978Z**; fresh reads
+confirmed version and reused review submission WAITING_FOR_REVIEW with MANUAL
+release. [Current receipt](assets/apple-review-build54-receipt.json).
+Do not dispatch, reupload, repost or resubmit while queued.
+
+The preflight also completed the newly required Shared Location and Dating and
+Relationships questions as No, preserving all other answers and the 18+ override
+(legacy 17+). Both China declarations remained Active, free pricing and 148/27
+territory selection unchanged, all four contact fields complete, no demo login.
+All six public support/privacy/terms pages were verified HTTPS 200 and exact
+current source. Browser checks are not claimed as actual iOS permission sheets.
+Another binary upload or public release requires separate owner approval.
+
+**Historical rejection and correction work: build 53 was rejected on November 21 under
 5.1.1(iv), not an upload failure.** Apple reviewed 1.0 (53) on iPad Air 11-inch
 (M3), message `dbd07530-18d1-49a8-a324-3dd94f06e892`. The issue is the optional
 onboarding permission pre-alert's "Allow" controls and bypass action.
 The owner explicitly approved build 54 upload and resubmission after checks.
 See `RELEASE-NOTES.md` and
 [APP-REVIEW-5.1.1-RESPONSE.md](APP-REVIEW-5.1.1-RESPONSE.md).
-The new response has not yet been sent, and build-54 delivery is not yet verified.
+The response and build-54 delivery are now verified above.
 Do not treat the prior build-53 queue receipt as current status or reuse the
 build-52 helper. Retain manual release.
 
@@ -19,7 +39,7 @@ The full [2.2 response](APP-REVIEW-2.2-RESPONSE.md) was sent once after exact bu
 selection and verified independently by SHA-256. Apple accepted the resubmission
 at **2026-11-18T09:28:20.177Z**; fresh reads confirmed both version and reused
 submission `WAITING_FOR_REVIEW`, build **53**, and **MANUAL** release.
-Current receipt:
+Historical build-53 receipt:
 [assets/apple-review-build53-receipt.json](assets/apple-review-build53-receipt.json).
 Do not rerun the upload, repost the response, or submit again while queued.
 Another binary or public publication requires separate owner approval.
