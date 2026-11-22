@@ -1,5 +1,39 @@
 # AutoFit release notes
 
+## 1.0 (54) - permission requests (2026-11-22; delivery pending)
+
+Apple reviewed 1.0 (53) on an iPad Air 11-inch (M3) on November 21 and rejected
+the permission pre-alert under guideline 5.1.1(iv): custom "Allow" controls and
+a "Finish and begin" action that bypassed the system request.
+
+Remove the optional-permission step from onboarding entirely. After legal
+consent and profile details, both native and browser users enter the app without
+microphone, speech, Health, notification or biometric permission requests.
+New installations default voice commands and biometric locking off; previously
+saved choices, consent, plans, history and active workouts are preserved.
+Existing feature/settings actions still request the actual native permissions
+when chosen. Settings request buttons now use neutral "Continue to ... permission
+request" labels in Hebrew and English; system prompts alone grant permission.
+The Apple Music workout control uses the same neutral request wording, and its
+native purpose string describes playback use rather than instructing approval.
+
+Preflight: 835 local regressions passed, including native-controller completion
+without onboarding requests, denied microphone/manual fallback, denied Health
+retry, and saved voice/biometric choices and workout records. Real browser
+onboarding was completed in Hebrew and English with four initially unchecked
+legal confirmations, optional measurements, voice/biometric defaults off and
+no permission pre-alert. Browser checks do not simulate actual iOS sheets;
+native compilation/signing and the existing Swift suites remain CI checks.
+Apple's new shared-location and dating questions were saved as No and freshly
+read back on November 22; the 18+ override and other answers were preserved.
+
+The owner explicitly approved **"מאשר העלאת build 54 והגשה ל־Apple לאחר הבדיקות"**.
+This authorizes this corrected build's upload, explanation and review submission
+after validation, not public release. Build 53 is immutable and was rejected.
+Build-54 delivery and the new reply/submission are not yet confirmed.
+Review acceptance cannot be guaranteed. Reference:
+<https://developer.apple.com/design/human-interface-guidelines/privacy#Pre-alert-screens-windows-or-views>.
+
 ## 1.0 (53) - guideline 2.2 correction (2026-11-17)
 
 Owner explicitly approved **"מאשר העלאת build 53 והגשה ל־Apple"** after being

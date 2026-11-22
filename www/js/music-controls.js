@@ -12,7 +12,7 @@ export function createMusicControls(api, doc = document) {
   function render() {
     const authorized = state?.authorization === 'authorized';
     const label = busy ? 'ממתין ל-Apple Music'
-      : state && ['notDetermined', 'denied', 'restricted'].includes(state.authorization) ? 'אפשר Apple Music'
+      : state && ['notDetermined', 'denied', 'restricted'].includes(state.authorization) ? 'המשך לבקשת הרשאת Apple Music'
         : authorized && state.state === 'playing' ? 'עצור מוזיקה' : 'נגן מוזיקה';
     for (const button of buttons) {
       button.textContent = t(label);

@@ -32,7 +32,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AutoFit listens for spoken workout commands (like "set finished" or "skip rest") so you can keep your phone away during a workout.</string>
 	<key>NSAppleMusicUsageDescription</key>
-	<string>Allow AutoFit to pause or resume Apple Music when you tap the music button during a workout. AutoFit does not read or upload your music library.</string>
+	<string>AutoFit uses Apple Music access to pause or resume playback when you tap the music button during a workout. AutoFit does not read or upload your music library.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>AutoFit recognizes spoken workout commands (like "set finished" or "skip rest") so you can keep your phone away during a workout.</string>
 	<key>UIBackgroundModes</key>

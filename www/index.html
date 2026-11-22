@@ -75,48 +75,6 @@
     <button id="btnOnboardingNext" class="btn btn-primary onboarding-btn">המשך</button>
   </div>
 
-  <div class="onboarding-step" id="onboardingStepPermissions">
-    <img src="icons/icon-512.png" alt="AutoFit" class="onboarding-logo">
-    <h1 class="onboarding-title">הרשאות</h1>
-    <p class="onboarding-subtitle">כל הרשאה היא בחירה. אפשר לדלג ולהמשיך בהזנה ידנית.</p>
-    <div class="onboarding-permission-card">
-      <div class="onboarding-permission-icon">❤️</div>
-      <div class="onboarding-permission-text">
-        <div class="onboarding-permission-title">חיבור ל-Apple Health</div>
-        <div class="onboarding-permission-desc">שמירת אימונים ישירות באפליקציית הבריאות</div>
-      </div>
-      <button type="button" id="btnOnboardingHealth" class="btn btn-secondary btn-small">אפשר</button>
-      <span id="healthPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
-    </div>
-    <div class="onboarding-permission-card">
-      <div class="onboarding-permission-icon">🔒</div>
-      <div class="onboarding-permission-text">
-        <div class="onboarding-permission-title">נעילת Face ID</div>
-        <div class="onboarding-permission-desc">הגנה על הנתונים האישיים שלך</div>
-      </div>
-      <button type="button" id="btnOnboardingFaceId" class="btn btn-secondary btn-small">אפשר</button>
-      <span id="faceIdPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
-    </div>
-    <div class="onboarding-permission-card">
-      <div class="onboarding-permission-icon">🔔</div>
-      <div class="onboarding-permission-text">
-        <div class="onboarding-permission-title">התראות</div>
-        <div class="onboarding-permission-desc">קבלת הכרזות וטיימרים גם כשהאפליקציה ברקע</div>
-      </div>
-      <button type="button" id="btnOnboardingNotifications" class="btn btn-secondary btn-small">אפשר</button>
-      <span id="notifPermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
-    </div>
-    <div class="onboarding-permission-card">
-      <div class="onboarding-permission-icon">🎙️</div>
-      <div class="onboarding-permission-text">
-        <div class="onboarding-permission-title">מיקרופון ופקודות קוליות</div>
-        <div class="onboarding-permission-desc">שימוש בפקודות קוליות באימון (לדוגמה: "סט הושלם") במקום להזין הכל ידנית</div>
-      </div>
-      <button type="button" id="btnOnboardingVoice" class="btn btn-secondary btn-small">אפשר</button>
-      <span id="voicePermStatus" class="onboarding-permission-status" aria-live="polite">—</span>
-    </div>
-    <button id="btnOnboardingFinish" class="btn btn-primary onboarding-btn">סיום והתחלה</button>
-  </div>
 </div>
 
 <header class="topbar">
@@ -504,13 +462,13 @@
       <p id="permissionMusic" class="field-hint" data-no-translate></p>
       <p class="field-hint">ההרשאה מאפשרת שליטה בניגון Apple Music בלבד. אינה נדרשת לאימון או לפקודות קוליות, ואישור שלה אינו מתחיל לנגן מוזיקה.</p>
       <div class="settings-actions">
-        <button id="btnEnableMusicSettings" type="button" class="btn btn-secondary">אפשר הרשאת Apple Music</button>
+        <button id="btnEnableMusicSettings" type="button" class="btn btn-secondary">המשך לבקשת הרשאת Apple Music</button>
       </div>
       <h3 class="field-label">Apple Health</h3>
       <p id="permissionHealth" class="field-hint" data-no-translate></p>
       <p class="field-hint">המצב מתייחס להרשאת כתיבת אימונים בלבד. iOS אינו מאפשר לבדוק אם אושרה קריאת נתוני בריאות. שינוי סוגי הנתונים נעשה באפליקציית בריאות.</p>
       <div class="settings-actions">
-        <button id="btnEnableHealthSettings" class="btn btn-secondary">🩺 אפשר גישה לאפליקציית בריאות</button>
+        <button id="btnEnableHealthSettings" class="btn btn-secondary">המשך לבקשת הרשאת Apple Health</button>
       </div>
       <h3 class="field-label">Face ID / Touch ID</h3>
       <p id="permissionBiometrics" class="field-hint" data-no-translate></p>
@@ -521,14 +479,14 @@
       <h3 class="field-label">התראות</h3>
       <p id="permissionNotifications" class="field-hint" data-no-translate></p>
       <div class="settings-actions">
-        <button id="btnEnableNotificationsSettings" class="btn btn-secondary">🔔 אפשר התראות</button>
+        <button id="btnEnableNotificationsSettings" class="btn btn-secondary">המשך לבקשת הרשאת התראות</button>
       </div>
       <h3 class="field-label">מיקרופון וזיהוי דיבור</h3>
       <p id="permissionMicrophone" class="field-hint" data-no-translate></p>
       <p id="permissionSpeech" class="field-hint" data-no-translate></p>
       <p class="field-hint">הרשאה מאושרת אינה אומרת שהאפליקציה מאזינה כרגע. מצב ההאזנה והמיקרופון הפעיל מוצגים בטאב האימון.</p>
       <div class="settings-actions">
-        <button id="btnEnableVoiceSettings" class="btn btn-secondary">🎙️ אפשר מיקרופון ופקודות קוליות</button>
+        <button id="btnEnableVoiceSettings" class="btn btn-secondary">המשך לבקשת הרשאות מיקרופון וזיהוי דיבור</button>
       </div>
       <h3 class="field-label">Live Activity — מסך נעילה ואי דינמי</h3>
       <p id="permissionLiveActivities" class="field-hint" data-no-translate></p>

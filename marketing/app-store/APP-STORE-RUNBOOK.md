@@ -1,6 +1,17 @@
 # AutoFit App Store runbook: the verified submission path
 
-**2026-11-18 current verified state: 1.0 (53), WAITING_FOR_REVIEW.**
+**2026-11-22 current work: build 53 was rejected on November 21 under
+5.1.1(iv), not an upload failure.** Apple reviewed 1.0 (53) on iPad Air 11-inch
+(M3), message `dbd07530-18d1-49a8-a324-3dd94f06e892`. The issue is the optional
+onboarding permission pre-alert's "Allow" controls and bypass action.
+The owner explicitly approved build 54 upload and resubmission after checks.
+See `RELEASE-NOTES.md` and
+[APP-REVIEW-5.1.1-RESPONSE.md](APP-REVIEW-5.1.1-RESPONSE.md).
+The new response has not yet been sent, and build-54 delivery is not yet verified.
+Do not treat the prior build-53 queue receipt as current status or reuse the
+build-52 helper. Retain manual release.
+
+**Historical verified submission, 2026-11-18: 1.0 (53), WAITING_FOR_REVIEW.**
 The corrected binary uploaded successfully in
 [run 44108969012](https://github.com/Sasidaniel/AutoFit-ios/actions/runs/44108969012),
 source `2abb2a886015a3a63792521654517aeedc7ac5c6`.

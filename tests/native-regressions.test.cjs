@@ -68,7 +68,7 @@ test('music permission is user initiated and permission approval alone never sta
   const fixture = musicControlsFixture({ authorization: 'notDetermined', state: 'unavailable' });
   await fixture.flush();
   assert.deepEqual(fixture.calls, ['observe', 'status']);
-  assert.ok(fixture.buttons.every((button) => button.textContent === 'אפשר Apple Music'));
+  assert.ok(fixture.buttons.every((button) => button.textContent === 'המשך לבקשת הרשאת Apple Music'));
   await fixture.buttons[0].click();
   assert.ok(fixture.calls.includes('authorize'));
   assert.ok(!fixture.calls.includes('play'));
@@ -3397,7 +3397,7 @@ test('empty gender prevents both profile saving and onboarding completion withou
   fields.renderProfileFields('ob', {}, root);
   el('obGender').value = '';
   nodeVM.runInContext(section("  el('btnOnboardingNext').addEventListener('click', async () => {",
-    "  el('btnOnboardingFinish').addEventListener"), context);
+    "// On first native launch").replace(/\r?\n\}\s*$/, ''), context);
   await el('btnOnboardingNext').listeners.click();
   assert.equal(saved.length, 0);
   assert.equal(finished, 0);
@@ -3489,7 +3489,7 @@ test('onboarding saves adult dropdown values without rounding or duplicate weigh
   el('obName').value = 'New demo';
   el('obGender').value = 'female';
   const start = "  el('btnOnboardingNext').addEventListener('click', async () => {";
-  nodeVM.runInContext(section(start, "  el('btnOnboardingFinish').addEventListener"), context);
+  nodeVM.runInContext(section(start, "// On first native launch").replace(/\r?\n\}\s*$/, ''), context);
   await el('btnOnboardingNext').listeners.click();
   assert.equal(saved[0].heightCm, '180.5');
   assert.equal(saved[0].weightKg, '83.25');
@@ -3522,6 +3522,45 @@ test('a cancelled image picker leaves the profile unchanged', async () => {
   assert.equal(saved.length, 0);
   assert.equal(messages.length, 0);
   assert.equal(context.profile.photoDataUrl, 'data:image/jpeg;base64,old');
+});
+
+test('native onboarding completes after profile consent without requesting optional permissions or showing a pre-alert', async () => {
+  const { context, el, fields, root, saved } = profileSaveFixture();
+  let finished = 0;
+  const unexpectedPermission = () => { throw Error('Onboarding must not request permission'); };
+  context.native = { isNative: () => true, healthRequestAuthorization: unexpectedPermission,
+    voiceRequestPermission: unexpectedPermission, notificationsRequestPermission: unexpectedPermission,
+    biometricVerify: unexpectedPermission };
+  context.legal = { ...legal, hasCurrentConsent: () => true };
+  context.finishOnboarding = () => { finished++; };
+  fields.renderProfileFields('ob', context.profile, root);
+  el('obName').value = 'Demo';
+  nodeVM.runInContext(section("  el('btnOnboardingNext').addEventListener('click', async () => {",
+    "// On first native launch").replace(/\r?\n\}\s*$/, ''), context);
+  await el('btnOnboardingNext').listeners.click();
+  assert.equal(finished, 1);
+  assert.equal(saved.length, 1);
+  assert.equal(el('btnOnboardingNext').disabled, false);
+  const onboarding = section('function runOnboarding()', '// On first native launch');
+  assert.doesNotMatch(onboarding, /healthRequestAuthorization|voiceRequestPermission|notificationsRequestPermission|btnOnboardingFinish|onboardingStepPermissions/);
+  assert.doesNotMatch(read('www/index.html'), /id="(?:onboardingStepPermissions|btnOnboardingHealth|btnOnboardingVoice|btnOnboardingFinish)"/);
+});
+
+test('fresh installs leave voice and biometric permissions opt-in while saved choices and workout records survive', () => {
+  const stored = new Map();
+  const localStorage = { getItem: key => stored.get(key) || null,
+    setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) };
+  const context = nodeVM.createContext({ localStorage });
+  nodeVM.runInContext(read('www/js/db.js').replace(/^export /gm, ''), context);
+  assert.equal(context.getSettings().voiceCommandsEnabled, false);
+  assert.equal(context.getSettings().faceIdEnabled, false);
+  context.saveSettings({ onboardingComplete: true, voiceCommandsEnabled: true, faceIdEnabled: true });
+  context.saveWorkouts([{ id: 'saved-workout' }]);
+  context.saveActiveSession({ id: 'in-progress' });
+  assert.equal(context.getSettings().voiceCommandsEnabled, true);
+  assert.equal(context.getSettings().faceIdEnabled, true);
+  assert.equal(context.getWorkouts()[0].id, 'saved-workout');
+  assert.equal(context.getActiveSession().id, 'in-progress');
 });
 
 test('photo decoding or local save failure preserves the saved image and allows retrying the same file', async () => {
@@ -5078,6 +5117,22 @@ test('workout-tab microphone activation repairs an older persisted off setting w
   assert.equal(vm.runInContext('voiceListeningActive', context), true);
   assert.equal(session.running, false);
   assert.ok(calls.includes('saveSettings'));
+});
+
+test('refusing microphone access leaves voice disabled and the manual workout unchanged', async () => {
+  const { context, session, calls } = voiceContext();
+  const before = JSON.stringify(session);
+  let requests = 0, listeningRequests = 0;
+  context.native.voiceRequestPermission = async () => { requests++; return { granted: false, reason: 'permission denied' }; };
+  context.native.voiceStartListening = async () => { listeningRequests++; return { listening: true }; };
+  vm.runInContext('voiceListeningActive = false; settings.voiceCommandsEnabled = false;', context);
+  await context.requestVoiceActivation();
+  assert.equal(requests, 1);
+  assert.equal(listeningRequests, 0);
+  assert.equal(context.settings.voiceCommandsEnabled, false);
+  assert.equal(vm.runInContext('voiceListeningActive', context), false);
+  assert.equal(JSON.stringify(session), before);
+  assert.ok(!calls.includes('saveSettings'));
 });
 
 test('next exercise skips completed strength and cardio entries', () => {

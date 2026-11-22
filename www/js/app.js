@@ -6679,7 +6679,7 @@ function hideSplash() {
   setTimeout(() => splash.classList.add('hidden'), 550);
 }
 
-// Consent precedes personal details; each optional native permission is requested on its own action.
+// Consent precedes personal details; optional permissions belong to feature use, not onboarding.
 function runOnboarding() {
   const screen = el('onboardingScreen');
   screen.classList.remove('hidden');
@@ -6690,7 +6690,6 @@ function runOnboarding() {
   renderProfileFields('ob', profile);
 
   const stepDetails = el('onboardingStepDetails');
-  const stepPermissions = el('onboardingStepPermissions');
   const stepLegal = el('onboardingStepLegal');
   const legalForm = el('onboardingLegalForm');
   legalForm.innerHTML = consentFormHTML();
@@ -6723,40 +6722,6 @@ function runOnboarding() {
     init();
   }
 
-  const permission = (buttonId, statusId, request, apply) => {
-    const button = el(buttonId);
-    button.addEventListener('click', async () => {
-      if (button.disabled) return;
-      button.disabled = true;
-      const status = el(statusId);
-      status.textContent = '⏳';
-      try {
-        const result = await request();
-        if (apply) apply(result.granted);
-        status.textContent = result.granted ? '✓' : '✗';
-        if (!result.granted) showToast(result.reason || 'ההרשאה לא אושרה. אפשר להמשיך בהזנה ידנית.');
-      } catch (error) {
-        console.error('Optional onboarding permission failed', error);
-        status.textContent = '✗';
-        showToast('ההרשאה לא הושלמה. אפשר להמשיך בהזנה ידנית.');
-      } finally { button.disabled = false; }
-    });
-  };
-  permission('btnOnboardingHealth', 'healthPermStatus', native.healthRequestAuthorization);
-  permission('btnOnboardingNotifications', 'notifPermStatus', native.notificationsRequestPermission);
-  permission('btnOnboardingFaceId', 'faceIdPermStatus', async () => {
-    const available = await native.biometricIsAvailable();
-    return available.available ? { granted: await native.biometricVerify() } : { granted: false, reason: available.reason };
-  }, (granted) => {
-    const next = { ...settings, faceIdEnabled: granted };
-    db.saveSettings(next);
-    settings = next;
-  });
-  permission('btnOnboardingVoice', 'voicePermStatus', native.voiceRequestPermission, (granted) => {
-    const next = { ...settings, voiceCommandsEnabled: granted };
-    db.saveSettings(next);
-    settings = next;
-  });
   if (native.isNative()) {
     if (!localStorage.getItem('ft_exercises_v1') && !localStorage.getItem('ft_workouts_v1')) {
       el('onboardingCloudRestore').classList.remove('hidden');
@@ -6809,16 +6774,13 @@ function runOnboarding() {
       db.saveProfile(next);
       profile = next;
       applyProfileWording();
-      if (!native.isNative()) { finishOnboarding(); return; }
-      stepDetails.classList.remove('active');
-      stepPermissions.classList.add('active');
+      finishOnboarding();
     } catch (error) {
       console.error('Onboarding profile save failed', error);
       showToast('הפרטים לא נשמרו. בדוק את האחסון ונסה שוב.');
     } finally { button.disabled = false; }
   });
 
-  el('btnOnboardingFinish').addEventListener('click', finishOnboarding);
 }
 
 // On first native launch (local storage empty), pull any previously-synced
